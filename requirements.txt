@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+httpx
 requests
 python-dotenv
 pandas
