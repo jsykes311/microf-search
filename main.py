@@ -1562,7 +1562,11 @@ async def bdr_summary_report(
     """Activations, account counts, and platform breakdown per BDR."""
     from datetime import timezone
     print("\nBDR summary report...")
-    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    try:
+        slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    except BaseException as _e:
+        print(f"[bdr-summary] CAUGHT {type(_e).__name__}: {_e}")
+        return JSONResponse(status_code=500, content={"detail": str(_e), "type": type(_e).__name__})
 
     bdr_data: dict = defaultdict(lambda: {"total_slps": 0, "activated": 0,
                                            "platforms": defaultdict(int), "accounts": set()})
