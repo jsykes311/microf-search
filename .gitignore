@@ -3,6 +3,8 @@
 
 # ── Then explicitly allow the app files ─────────────────────────────────────
 !.gitignore
+!.github/
+!.github/**
 !main.py
 !requirements.txt
 !static/
