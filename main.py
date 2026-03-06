@@ -294,7 +294,7 @@ async def ac_get_all(path: str, key: str, params: dict = None) -> list:
             else:
                 seen[len(seen)] = item   # fallback for items without id
         if total is None:
-            total = int(data.get("meta", {}).get("total", 0)) or None
+            total = int((data.get("meta") or {}).get("total", 0)) or None
         offset += limit
         if not page:
             break
