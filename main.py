@@ -19,18 +19,14 @@ load_dotenv()
 
 app = FastAPI()
 
-# Allow SharePoint origins + localhost for dev.
-# SharePoint pages are served from *.sharepoint.com so we allow that pattern.
-_ALLOWED_ORIGINS = [
-    "https://*.sharepoint.com",
-    "https://*.sharepoint.us",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+# Allow Azure Static Web Apps + SharePoint + localhost for dev.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://.*\.sharepoint\.(com|us)$",
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
+    allow_origin_regex=r"https://.*\.(azurestaticapps\.net|sharepoint\.com|sharepoint\.us)$",
     allow_credentials=True,
     allow_methods=["GET"],
     allow_headers=["*"],
