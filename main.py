@@ -2928,7 +2928,7 @@ async def _run_slp_sync(dry_run: bool) -> None:
                     continue
 
                 try:
-                    await ac_put(f"customObjects/records/{SLP_SCHEMA_ID}/{rec_id}",
+                    await ac_put(f"customObjects/records/{rec_id}",
                                  {"record": {"fields": to_update}})
                     updated += 1
                 except Exception as e:
