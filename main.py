@@ -404,8 +404,10 @@ async def get_fields(object_type: str):
             obj   = {"id": fid, "label": label, "type": "primary", "dataType": ftype}
             if ftype in ("dropdown", "listbox", "radio"):
                 opts = cf.get("fieldOptions", "")
-                if opts:
+                if isinstance(opts, str) and opts:
                     obj["options"] = [o.strip() for o in opts.replace("\n", ",").split(",") if o.strip()]
+                elif isinstance(opts, list):
+                    obj["options"] = [str(o.get("value", o)) for o in opts if o]
             fields.append(obj)
             ftypes[fid] = obj
         # Cross-object fields
