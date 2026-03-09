@@ -1,0 +1,34 @@
+name: Sync SLP Fields from Account Data
+
+on:
+  workflow_dispatch:   # manual trigger only — run from GitHub Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Start sync
+        run: |
+          curl -f --max-time 30 -s \
+            -X POST \
+            -u "${{ secrets.APP_USER }}:${{ secrets.APP_PASS }}" \
+            "https://microf-search.onrender.com/api/sync-slp-fields"
+          echo "Sync started"
+
+      - name: Poll until done
+        run: |
+          for i in $(seq 1 55); do
+            sleep 30
+            STATUS=$(curl -s --max-time 20 \
+              -u "${{ secrets.APP_USER }}:${{ secrets.APP_PASS }}" \
+              "https://microf-search.onrender.com/api/sync-slp-fields/status")
+            echo "[$i] $STATUS"
+            STATE=$(echo "$STATUS" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))")
+            if [ "$STATE" = "done" ] || [ "$STATE" = "error" ]; then
+              echo "Sync finished with status: $STATE"
+              exit 0
+            fi
+          done
+          echo "Timed out waiting for sync to complete"
+          exit 1
