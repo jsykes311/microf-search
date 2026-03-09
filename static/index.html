@@ -928,7 +928,9 @@ select, input { font-family: inherit; }
         <input type="date" id="ta-to"/>
       </div>
       <div class="btn-row">
-        <button class="btn btn-email" onclick="sendEmailReport('training-activity','ta-from','ta-to','ta-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('training-activity')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('training-activity')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('training-activity','ta-from','ta-to','ta-result')">✉ Email</button>
       </div>
       <div id="ta-result" style="margin-top:10px;"></div>
     </div>
@@ -948,7 +950,9 @@ select, input { font-family: inherit; }
         <input type="date" id="su-to"/>
       </div>
       <div class="btn-row">
-        <button class="btn btn-email" onclick="sendEmailReport('stale-untrained','su-from','su-to','su-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('stale-untrained')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('stale-untrained')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('stale-untrained','su-from','su-to','su-result')">✉ Email</button>
       </div>
       <div id="su-result" style="margin-top:10px;"></div>
     </div>
@@ -960,7 +964,9 @@ select, input { font-family: inherit; }
       <h3>Account Status Summary</h3>
       <p>All accounts with their current status and sales region — a full snapshot of the account base.</p>
       <div class="btn-row" style="margin-top:8px;">
-        <button class="btn btn-email" onclick="sendEmailReport('account-status',null,null,'as-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('account-status')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('account-status')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('account-status',null,null,'as-result')">✉ Email</button>
       </div>
       <div id="as-result" style="margin-top:10px;"></div>
     </div>
@@ -987,7 +993,9 @@ select, input { font-family: inherit; }
         <input type="date" id="pb-to"/>
       </div>
       <div class="btn-row">
-        <button class="btn btn-email" onclick="sendEmailReport('platform-breakdown','pb-from','pb-to','pb-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('platform-breakdown')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('platform-breakdown')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('platform-breakdown','pb-from','pb-to','pb-result')">✉ Email</button>
       </div>
       <div id="pb-result" style="margin-top:10px;"></div>
     </div>
@@ -1014,7 +1022,9 @@ select, input { font-family: inherit; }
         <input type="date" id="pa-to"/>
       </div>
       <div class="btn-row">
-        <button class="btn btn-email" onclick="sendEmailReport('partner-activation','pa-from','pa-to','pa-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('partner-activation')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('partner-activation')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('partner-activation','pa-from','pa-to','pa-result')">✉ Email</button>
       </div>
       <div id="pa-result" style="margin-top:10px;"></div>
     </div>
@@ -1034,7 +1044,9 @@ select, input { font-family: inherit; }
         <input type="date" id="om-to"/>
       </div>
       <div class="btn-row">
-        <button class="btn btn-email" onclick="sendEmailReport('oracle-missing','om-from','om-to','om-result')">✉ Send Email</button>
+        <button class="btn btn-primary" onclick="runPrebuilt('oracle-missing')">▶ Run</button>
+        <button class="btn btn-success" onclick="downloadPrebuilt('oracle-missing')">⬇ CSV</button>
+        <button class="btn btn-email" onclick="sendEmailReport('oracle-missing','om-from','om-to','om-result')">✉ Email</button>
       </div>
       <div id="om-result" style="margin-top:10px;"></div>
     </div>
@@ -1741,11 +1753,55 @@ function prebuiltParams(type) {
     if (to)   p.set('to_date', to);
     return { endpoint: 'team-activity', params: p };
   }
+  if (type === 'training-activity') {
+    const from = document.getElementById('ta-from').value;
+    const to   = document.getElementById('ta-to').value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return { endpoint: 'training-activity', params: p };
+  }
+  if (type === 'stale-untrained') {
+    const from = document.getElementById('su-from').value;
+    const to   = document.getElementById('su-to').value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return { endpoint: 'stale-untrained', params: p };
+  }
+  if (type === 'account-status') {
+    return { endpoint: 'account-status', params: p };
+  }
+  if (type === 'platform-breakdown') {
+    const from = document.getElementById('pb-from').value;
+    const to   = document.getElementById('pb-to').value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return { endpoint: 'platform-breakdown', params: p };
+  }
+  if (type === 'partner-activation') {
+    const from = document.getElementById('pa-from').value;
+    const to   = document.getElementById('pa-to').value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return { endpoint: 'partner-activation', params: p };
+  }
+  if (type === 'oracle-missing') {
+    const from = document.getElementById('om-from').value;
+    const to   = document.getElementById('om-to').value;
+    if (from) p.set('from_date', from);
+    if (to)   p.set('to_date', to);
+    return { endpoint: 'oracle-missing', params: p };
+  }
 }
 
 async function runPrebuilt(type) {
   const { endpoint, params } = prebuiltParams(type);
-  const resultId = { activations: 'act-result', license: 'lic-result', bdr: 'bdr-result', training: 'trn-result', acta: 'acta-result', team: 'team-result' }[type];
+  const resultId = {
+    activations: 'act-result', license: 'lic-result', bdr: 'bdr-result',
+    training: 'trn-result', acta: 'acta-result', team: 'team-result',
+    'training-activity': 'ta-result', 'stale-untrained': 'su-result',
+    'account-status': 'as-result', 'platform-breakdown': 'pb-result',
+    'partner-activation': 'pa-result', 'oracle-missing': 'om-result',
+  }[type];
   document.getElementById(resultId).innerHTML = '<span style="color:#6b7280; font-size:0.82rem;">Loading…</span>';
 
   try {

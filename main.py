@@ -2509,6 +2509,309 @@ async def serve_ui(_: None = Depends(require_auth)):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# BROWSER-VIEW REPORTS  (JSON + CSV download, no email)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _csv_response(records: list, filename: str):
+    out = io.StringIO()
+    if records:
+        w = csv.DictWriter(out, fieldnames=list(records[0].keys()))
+        w.writeheader(); w.writerows(records)
+    return StreamingResponse(iter([out.getvalue()]), media_type="text/csv",
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.get("/api/report/training-activity")
+async def report_training_activity(
+    from_date: Optional[str] = Query(None),
+    to_date:   Optional[str] = Query(None),
+    format:    str           = Query("json"),
+):
+    from datetime import timezone
+    tz = timezone.utc
+    from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=tz) if from_date else None
+    to_dt   = datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=tz) if to_date else None
+
+    tr_records  = await ac_get_all(f"customObjects/records/{TRAINING_SCHEMA_ID}", "records", {})
+    account_ids: set = set()
+    candidates = []
+    for r in tr_records:
+        fields   = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        date_str = str(fields.get("date-of-training", "")).strip()
+        if date_str and (from_dt or to_dt):
+            try:
+                td = (datetime.fromisoformat(date_str.replace("Z", "+00:00")) if "T" in date_str
+                      else datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=tz))
+                if from_dt and td < from_dt: continue
+                if to_dt   and td > to_dt:   continue
+            except Exception:
+                continue
+        elif not date_str and (from_dt or to_dt):
+            continue
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if acc_id: account_ids.add(acc_id)
+        candidates.append({"fields": fields, "account_id": acc_id})
+
+    acct_cache: dict = {}
+    for aid in account_ids:
+        try:
+            d = await ac_get(f"accounts/{aid}")
+            acct_cache[aid] = d.get("account", {}).get("name", "")
+        except Exception:
+            acct_cache[aid] = ""
+
+    results = []
+    for c in candidates:
+        f   = c["fields"]
+        aid = c["account_id"] or ""
+        results.append({
+            "account":       acct_cache.get(aid, ""),
+            "dealer_id":     _account_to_dealer.get(aid, ""),
+            "trained_by":    f.get("trained-by", ""),
+            "training_type": f.get("training-type", ""),
+            "agenda":        f.get("training-agenda", ""),
+            "date":          str(f.get("date-of-training", ""))[:10],
+            "notes":         (f.get("training-notes", "") or "")[:200],
+        })
+    results.sort(key=lambda x: x["date"], reverse=True)
+    if format == "csv":
+        return _csv_response(results, f"training_activity_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+@app.get("/api/report/stale-untrained")
+async def report_stale_untrained(
+    from_date:  Optional[str] = Query(None, description="Filter by activation date from"),
+    to_date:    Optional[str] = Query(None, description="Filter by activation date to"),
+    stale_days: int           = Query(90),
+    format:     str           = Query("json"),
+):
+    today        = date.today()
+    stale_cutoff = str(today - timedelta(days=stale_days))
+
+    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    tr_records  = await ac_get_all(f"customObjects/records/{TRAINING_SCHEMA_ID}", "records", {})
+
+    training_by_acct: dict = defaultdict(list)
+    for r in tr_records:
+        fields   = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        date_str = str(fields.get("date-of-training", "")).strip()
+        if not date_str: continue
+        for aid in r.get("relationships", {}).get("account", []):
+            training_by_acct[str(aid)].append(date_str[:10])
+
+    account_ids: set = set()
+    candidates = []
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        if fields.get("slp-status-detail") != "Contractor Activated": continue
+        act_str  = str(fields.get("contractor-activated-date", "")).strip()
+        act_date = act_str[:10] if act_str else ""
+        if from_date and act_date and act_date < from_date: continue
+        if to_date   and act_date and act_date > to_date:   continue
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if acc_id: account_ids.add(acc_id)
+        trainings  = training_by_acct.get(acc_id or "", [])
+        last_train = max(trainings) if trainings else None
+        if last_train and last_train >= stale_cutoff: continue
+        days_stale = (today - date.fromisoformat(last_train)).days if last_train else None
+        candidates.append({"fields": fields, "account_id": acc_id, "act_date": act_date,
+                           "training_count": len(trainings), "last_training": last_train or "",
+                           "days_stale": days_stale})
+
+    acct_cache: dict = {}
+    for aid in account_ids:
+        try:
+            d = await ac_get(f"accounts/{aid}")
+            acct_cache[aid] = d.get("account", {}).get("name", "")
+        except Exception:
+            acct_cache[aid] = ""
+
+    results = []
+    for c in sorted(candidates, key=lambda x: x["days_stale"] or 99999, reverse=True):
+        f   = c["fields"]
+        aid = c["account_id"] or ""
+        results.append({
+            "account":         acct_cache.get(aid, ""),
+            "dealer_id":       f.get("dealer-id")    or _account_to_dealer.get(aid, ""),
+            "platform":        f.get("platform")     or _account_to_platform.get(aid, ""),
+            "bdr":             f.get("assigned-bdr") or _account_to_bdr.get(aid, ""),
+            "activation_date": c["act_date"],
+            "training_count":  c["training_count"],
+            "last_training":   c["last_training"] or "Never",
+            "days_stale":      c["days_stale"] if c["days_stale"] is not None else "Never trained",
+        })
+    if format == "csv":
+        return _csv_response(results, f"stale_untrained_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+@app.get("/api/report/account-status")
+async def report_account_status(format: str = Query("json")):
+    all_accounts = await ac_get_all("accounts", "accounts", {})
+    cf_map       = await _fetch_acct_cf_map({"19", "23"})
+
+    results = []
+    for a in all_accounts:
+        aid  = str(a.get("id", ""))
+        cfs  = cf_map.get(aid, {})
+        results.append({
+            "account":      a.get("name", ""),
+            "dealer_id":    _account_to_dealer.get(aid, ""),
+            "platform":     _account_to_platform.get(aid, ""),
+            "bdr":          _account_to_bdr.get(aid, ""),
+            "status":       cfs.get("19", ""),
+            "sales_region": cfs.get("23", ""),
+        })
+    results.sort(key=lambda x: (x["status"], x["sales_region"], x["account"]))
+    if format == "csv":
+        return _csv_response(results, f"account_status_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+@app.get("/api/report/platform-breakdown")
+async def report_platform_breakdown(
+    from_date: Optional[str] = Query(None),
+    to_date:   Optional[str] = Query(None),
+    format:    str           = Query("json"),
+):
+    from datetime import timezone
+    tz = timezone.utc
+    from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=tz) if from_date else None
+    to_dt   = datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=tz) if to_date else None
+
+    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    plat_data: dict = defaultdict(lambda: {"new_activations": 0, "active_slps": 0,
+                                           "total_slps": 0, "bdrs": defaultdict(int)})
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        plat   = (str(fields.get("platform", "")).strip()
+                  or _account_to_platform.get(acc_id or "", "") or "Unknown")
+        bdr    = (str(fields.get("assigned-bdr", "")).strip()
+                  or _account_to_bdr.get(acc_id or "", "") or "Unassigned")
+        plat_data[plat]["total_slps"] += 1
+        if fields.get("slp-status-detail") == "Contractor Activated":
+            plat_data[plat]["active_slps"] += 1
+            act_str = str(fields.get("contractor-activated-date", "")).strip()
+            if act_str and (from_dt or to_dt):
+                try:
+                    act_dt = (datetime.fromisoformat(act_str.replace("Z", "+00:00")) if "T" in act_str
+                              else datetime.strptime(act_str[:10], "%Y-%m-%d").replace(tzinfo=tz))
+                    if from_dt and act_dt < from_dt: pass
+                    elif to_dt and act_dt > to_dt:   pass
+                    else:
+                        plat_data[plat]["new_activations"] += 1
+                        plat_data[plat]["bdrs"][bdr] += 1
+                except Exception:
+                    pass
+            elif not from_dt and not to_dt:
+                plat_data[plat]["new_activations"] += 1
+                plat_data[plat]["bdrs"][bdr] += 1
+
+    results = []
+    for plat, d in sorted(plat_data.items()):
+        top_bdr = max(d["bdrs"], key=d["bdrs"].get) if d["bdrs"] else ""
+        results.append({
+            "platform":        plat,
+            "new_activations": d["new_activations"],
+            "active_slps":     d["active_slps"],
+            "total_slps":      d["total_slps"],
+            "top_bdr":         top_bdr,
+        })
+    results.sort(key=lambda x: x["new_activations"], reverse=True)
+    if format == "csv":
+        return _csv_response(results, f"platform_breakdown_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+@app.get("/api/report/partner-activation")
+async def report_partner_activation(
+    from_date: Optional[str] = Query(None),
+    to_date:   Optional[str] = Query(None),
+    format:    str           = Query("json"),
+):
+    cf_map       = await _fetch_acct_cf_map({"26"})
+    all_accounts = await ac_get_all("accounts", "accounts", {})
+    acct_by_id   = {str(a.get("id", "")): a for a in all_accounts}
+
+    results = []
+    for aid, cfs in cf_map.items():
+        pa_val = cfs.get("26", "")
+        if not pa_val: continue
+        pa_str = str(pa_val)[:10]
+        try:
+            if from_date and pa_str < from_date: continue
+            if to_date   and pa_str > to_date:   continue
+        except Exception:
+            pass
+        a = acct_by_id.get(aid, {})
+        results.append({
+            "account":            a.get("name", ""),
+            "dealer_id":          _account_to_dealer.get(aid, ""),
+            "platform":           _account_to_platform.get(aid, ""),
+            "bdr":                _account_to_bdr.get(aid, ""),
+            "partner_activation": pa_str,
+        })
+    results.sort(key=lambda x: x["partner_activation"], reverse=True)
+    if format == "csv":
+        return _csv_response(results, f"partner_activation_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+@app.get("/api/report/oracle-missing")
+async def report_oracle_missing(
+    from_date: Optional[str] = Query(None, description="Filter by activation date from"),
+    to_date:   Optional[str] = Query(None, description="Filter by activation date to"),
+    format:    str           = Query("json"),
+):
+    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    cf_map      = await _fetch_acct_cf_map({"118"})
+
+    account_ids: set = set()
+    candidates = []
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        if fields.get("slp-status-detail") != "Contractor Activated": continue
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if cf_map.get(acc_id or "", {}).get("118"): continue
+        act_str  = str(fields.get("contractor-activated-date", "")).strip()
+        act_date = act_str[:10] if act_str else ""
+        if from_date and act_date and act_date < from_date: continue
+        if to_date   and act_date and act_date > to_date:   continue
+        if acc_id: account_ids.add(acc_id)
+        candidates.append({"fields": fields, "account_id": acc_id, "act_date": act_date})
+
+    acct_cache: dict = {}
+    for aid in account_ids:
+        try:
+            d = await ac_get(f"accounts/{aid}")
+            acct_cache[aid] = d.get("account", {}).get("name", "")
+        except Exception:
+            acct_cache[aid] = ""
+
+    results = []
+    for c in candidates:
+        f   = c["fields"]
+        aid = c["account_id"] or ""
+        results.append({
+            "account":         acct_cache.get(aid, ""),
+            "dealer_id":       f.get("dealer-id")    or _account_to_dealer.get(aid, ""),
+            "platform":        f.get("platform")     or _account_to_platform.get(aid, ""),
+            "bdr":             f.get("assigned-bdr") or _account_to_bdr.get(aid, ""),
+            "activation_date": c["act_date"],
+        })
+    results.sort(key=lambda x: (x["platform"], x["bdr"], x["account"]))
+    if format == "csv":
+        return _csv_response(results, f"oracle_missing_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # SCHEDULED EMAIL REPORTS
 # Triggered by GitHub Actions cron → /api/send-report/{type}
 # Can also be triggered manually via the same endpoint (Basic Auth required).
