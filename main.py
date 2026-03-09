@@ -2849,22 +2849,18 @@ _SLP_SYNC_FIELDS = [
     ("assigned-bdr", "119"),
 ]
 
-@app.post("/api/sync-slp-fields")
-async def sync_slp_fields(
-    dry_run: bool = Query(False, description="Preview changes without writing to AC"),
-    _: None = Depends(require_auth),
-):
-    """Copy missing SLP field values from their linked account.
+# Holds the last sync job result/status in memory
+_slp_sync_status: dict = {"status": "idle"}
 
-    Returns counts: scanned / updated / skipped (already filled) / errors.
-    Processes records in batches to stay within Render free-tier memory limits.
-    Pass ?dry_run=true to preview first 50 changes without writing anything.
-    """
-    BATCH       = 20   # account CF fetches in parallel at once
-    CF_SEM      = asyncio.Semaphore(BATCH)
-    PAGE_SIZE   = 100
+async def _run_slp_sync(dry_run: bool) -> None:
+    """Background worker — pages through SLP records and fills blank fields from account CFs."""
+    global _slp_sync_status
+    _slp_sync_status = {"status": "running", "dry_run": dry_run,
+                        "scanned": 0, "updated": 0, "skipped": 0, "errors": 0,
+                        "started": datetime.utcnow().isoformat()}
 
-    sem_cf = asyncio.Semaphore(BATCH)
+    PAGE_SIZE = 100
+    sem_cf    = asyncio.Semaphore(20)   # max 20 parallel account CF fetches
 
     async def _get_acct_cfs(aid: str) -> tuple:
         async with sem_cf:
@@ -2877,82 +2873,107 @@ async def sync_slp_fields(
                 return aid, {}
 
     scanned = updated = skipped = errors = 0
-    preview = []   # first 50 dry-run samples
+    preview = []
     offset  = 0
 
-    while True:
-        page = await ac_get(
-            f"customObjects/records/{SLP_SCHEMA_ID}",
-            {"limit": PAGE_SIZE, "offset": offset},
-        )
-        records = page.get("records", [])
-        if not records:
-            break
+    try:
+        while True:
+            page    = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}",
+                                   {"limit": PAGE_SIZE, "offset": offset})
+            records = page.get("records", [])
+            if not records:
+                break
 
-        # Find which accounts need CF lookup this page
-        need_cf: set = set()
-        for r in records:
-            fields = {fo["id"]: fo.get("value") for fo in r.get("fields", [])}
-            if any(not fields.get(fid) for fid, _ in _SLP_SYNC_FIELDS):
+            need_cf: set = set()
+            for r in records:
+                fields = {fo["id"]: fo.get("value") for fo in r.get("fields", [])}
+                if any(not fields.get(fid) for fid, _ in _SLP_SYNC_FIELDS):
+                    rel    = r.get("relationships", {}).get("account", [])
+                    acc_id = str(rel[0]) if rel else None
+                    if acc_id:
+                        need_cf.add(acc_id)
+
+            acct_cf_map: dict = dict(await asyncio.gather(*[_get_acct_cfs(aid) for aid in need_cf]))
+
+            for r in records:
+                scanned += 1
+                rec_id = r.get("id")
+                fields = {fo["id"]: fo.get("value") for fo in r.get("fields", [])}
                 rel    = r.get("relationships", {}).get("account", [])
                 acc_id = str(rel[0]) if rel else None
-                if acc_id:
-                    need_cf.add(acc_id)
 
-        # Fetch CFs for this page's accounts
-        acct_cf_map: dict = dict(await asyncio.gather(*[_get_acct_cfs(aid) for aid in need_cf]))
+                to_update = []
+                for slp_fid, cf_id in _SLP_SYNC_FIELDS:
+                    if fields.get(slp_fid):
+                        continue
+                    if cf_id is None:
+                        val = _account_to_dealer.get(acc_id, "") if acc_id else ""
+                    else:
+                        val = acct_cf_map.get(acc_id, {}).get(cf_id, "") if acc_id else ""
+                    if val:
+                        to_update.append({"id": slp_fid, "value": val})
 
-        # Process records
-        for r in records:
-            scanned += 1
-            rec_id = r.get("id")
-            fields = {fo["id"]: fo.get("value") for fo in r.get("fields", [])}
-            rel    = r.get("relationships", {}).get("account", [])
-            acc_id = str(rel[0]) if rel else None
-
-            to_update = []
-            for slp_fid, cf_id in _SLP_SYNC_FIELDS:
-                if fields.get(slp_fid):
+                if not to_update:
+                    skipped += 1
                     continue
-                if cf_id is None:
-                    val = _account_to_dealer.get(acc_id, "") if acc_id else ""
-                else:
-                    val = acct_cf_map.get(acc_id, {}).get(cf_id, "") if acc_id else ""
-                if val:
-                    to_update.append({"id": slp_fid, "value": val})
 
-            if not to_update:
-                skipped += 1
-                continue
+                if dry_run:
+                    if len(preview) < 50:
+                        preview.append({"record_id": rec_id, "account_id": acc_id,
+                                        "fields": to_update})
+                    updated += 1
+                    continue
 
-            if dry_run:
-                if len(preview) < 50:
-                    preview.append({"record_id": rec_id, "account_id": acc_id, "fields": to_update})
-                updated += 1
-                continue
+                try:
+                    await ac_put(f"customObjects/records/{SLP_SCHEMA_ID}/{rec_id}",
+                                 {"record": {"fields": to_update}})
+                    updated += 1
+                except Exception as e:
+                    errors += 1
+                    print(f"[sync-slp] Error updating record {rec_id}: {e}")
 
-            try:
-                await ac_put(
-                    f"customObjects/records/{SLP_SCHEMA_ID}/{rec_id}",
-                    {"record": {"fields": to_update}},
-                )
-                updated += 1
-            except Exception as e:
-                errors += 1
-                print(f"[sync-slp] Error updating record {rec_id}: {e}")
+            # Update live progress
+            _slp_sync_status.update({"scanned": scanned, "updated": updated,
+                                     "skipped": skipped, "errors": errors})
+            del acct_cf_map, records
+            offset += PAGE_SIZE
+            if len(page.get("records", [])) < PAGE_SIZE:
+                break
 
-        # Discard page data before fetching next
-        del acct_cf_map, records
-        offset += PAGE_SIZE
+        _slp_sync_status.update({"status": "done", "scanned": scanned, "updated": updated,
+                                  "skipped": skipped, "errors": errors,
+                                  "finished": datetime.utcnow().isoformat()})
+        if dry_run:
+            _slp_sync_status["preview"] = preview
+        print(f"[sync-slp] Done — scanned={scanned} updated={updated} skipped={skipped} errors={errors}")
 
-        if len(page.get("records", [])) < PAGE_SIZE:
-            break
+    except Exception as e:
+        _slp_sync_status.update({"status": "error", "detail": str(e),
+                                  "scanned": scanned, "updated": updated,
+                                  "skipped": skipped, "errors": errors})
+        print(f"[sync-slp] Fatal error: {e}")
 
-    result = {"scanned": scanned, "updated": updated, "skipped": skipped,
-              "errors": errors, "dry_run": dry_run}
-    if dry_run:
-        result["preview"] = preview
-    return result
+
+@app.post("/api/sync-slp-fields")
+async def sync_slp_fields(
+    dry_run: bool = Query(False, description="Preview changes without writing to AC"),
+    _: None = Depends(require_auth),
+):
+    """Start a background sync of missing SLP fields from account data.
+
+    Returns immediately. Poll GET /api/sync-slp-fields/status to track progress.
+    """
+    if _slp_sync_status.get("status") == "running":
+        return {"status": "already_running", "progress": _slp_sync_status}
+    asyncio.create_task(_run_slp_sync(dry_run))
+    return {"status": "started", "dry_run": dry_run,
+            "poll": "/api/sync-slp-fields/status"}
+
+
+@app.get("/api/sync-slp-fields/status")
+async def sync_slp_fields_status(_: None = Depends(require_auth)):
+    """Check the status/results of the last sync-slp-fields run."""
+    return _slp_sync_status
 
 
 if __name__ == "__main__":
