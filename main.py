@@ -2864,17 +2864,14 @@ async def _run_slp_sync(dry_run: bool) -> None:
                         "started": datetime.utcnow().isoformat()}
 
     PAGE_SIZE = 100
-    sem_cf    = asyncio.Semaphore(20)   # max 20 parallel account CF fetches
-
-    async def _get_acct_cfs(aid: str) -> tuple:
-        async with sem_cf:
-            try:
-                cf_r = await ac_get(f"accounts/{aid}/accountCustomFieldData")
-                cfs  = {str(i.get("customFieldId", "")): (i.get("fieldValue") or "").strip()
-                        for i in cf_r.get("accountCustomFieldData", [])}
-                return aid, cfs
-            except Exception:
-                return aid, {}
+    async def _get_acct_cfs(aid: str) -> dict:
+        """Fetch account custom fields sequentially — avoids memory spikes."""
+        try:
+            cf_r = await ac_get(f"accounts/{aid}/accountCustomFieldData")
+            return {str(i.get("customFieldId", "")): (i.get("fieldValue") or "").strip()
+                    for i in cf_r.get("accountCustomFieldData", [])}
+        except Exception:
+            return {}
 
     scanned = updated = skipped = errors = 0
     preview = []
@@ -2888,6 +2885,7 @@ async def _run_slp_sync(dry_run: bool) -> None:
             if not records:
                 break
 
+            # Collect unique account IDs needing CF lookup for this page
             need_cf: set = set()
             for r in records:
                 fields = {fo["id"]: fo.get("value") for fo in r.get("fields", [])}
@@ -2897,7 +2895,10 @@ async def _run_slp_sync(dry_run: bool) -> None:
                     if acc_id:
                         need_cf.add(acc_id)
 
-            acct_cf_map: dict = dict(await asyncio.gather(*[_get_acct_cfs(aid) for aid in need_cf]))
+            # Fetch CFs one account at a time to stay within Render memory limits
+            acct_cf_map: dict = {}
+            for aid in need_cf:
+                acct_cf_map[aid] = await _get_acct_cfs(aid)
 
             for r in records:
                 scanned += 1
