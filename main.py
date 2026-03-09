@@ -53,8 +53,11 @@ app.add_middleware(
 # Set APP_USER and APP_PASS environment variables to enable password protection.
 # If neither is set (e.g. local dev), auth is skipped entirely.
 _basic = HTTPBasic(auto_error=False)
-_APP_USER = os.getenv("APP_USER", "")
-_APP_PASS = os.getenv("APP_PASS", "")
+_APP_USER   = os.getenv("APP_USER", "")
+_APP_PASS   = os.getenv("APP_PASS", "")
+# Separate token for internal/automated endpoints (no special chars needed).
+# Set SYNC_TOKEN on Render and in GitHub Secrets.
+_SYNC_TOKEN = os.getenv("SYNC_TOKEN", "")
 
 # ── Scheduled email reports ───────────────────────────────────────────────
 # Set these env vars on Render to enable report delivery.
@@ -2954,14 +2957,22 @@ async def _run_slp_sync(dry_run: bool) -> None:
         print(f"[sync-slp] Fatal error: {e}")
 
 
+def _check_sync_token(token: str = Query(..., description="SYNC_TOKEN value from Render env")):
+    if not _SYNC_TOKEN:
+        return   # not configured → open (local dev)
+    if not secrets.compare_digest(token, _SYNC_TOKEN):
+        raise HTTPException(status_code=401, detail="Invalid sync token")
+
+
 @app.post("/api/sync-slp-fields")
 async def sync_slp_fields(
     dry_run: bool = Query(False, description="Preview changes without writing to AC"),
-    _: None = Depends(require_auth),
+    _: None = Depends(_check_sync_token),
 ):
     """Start a background sync of missing SLP fields from account data.
 
     Returns immediately. Poll GET /api/sync-slp-fields/status to track progress.
+    Authenticate with ?token=<SYNC_TOKEN>.
     """
     if _slp_sync_status.get("status") == "running":
         return {"status": "already_running", "progress": _slp_sync_status}
@@ -2971,7 +2982,9 @@ async def sync_slp_fields(
 
 
 @app.get("/api/sync-slp-fields/status")
-async def sync_slp_fields_status(_: None = Depends(require_auth)):
+async def sync_slp_fields_status(
+    _: None = Depends(_check_sync_token),
+):
     """Check the status/results of the last sync-slp-fields run."""
     return _slp_sync_status
 
