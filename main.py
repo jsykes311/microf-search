@@ -2942,7 +2942,7 @@ async def _run_slp_sync(dry_run: bool) -> None:
             # Update live progress
             _slp_sync_status.update({"scanned": scanned, "updated": updated,
                                      "skipped": skipped, "errors": errors})
-            del acct_cf_map, records
+            del records
             offset += PAGE_SIZE
             if len(page.get("records", [])) < PAGE_SIZE:
                 break
