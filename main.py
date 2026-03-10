@@ -3652,6 +3652,185 @@ async def _job_oracle_missing(start_date: Optional[date] = None, end_date: Optio
     )
 
 
+# ── Account Activity (ad hoc / on-demand) ────────────────────────────────
+
+async def _job_account_activity(start_date=None, end_date=None, preset=None, recipients=None):
+    """Email account activity summary — per-account note/deal/contact counts."""
+    from datetime import timezone
+    today = str(date.today())
+    _start, _end = _resolve_date_range(start_date, end_date, preset)
+    date_label = f"{_start} – {_end}" if (_start or _end) else "All Time"
+    from_date = str(_start) if _start else None
+    to_date   = str(_end)   if _end   else None
+    from_dt   = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                 if from_date else None)
+    to_dt     = (datetime.strptime(to_date, "%Y-%m-%d")
+                 .replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+                 if to_date else None)
+
+    accounts_data, all_contacts, all_notes, all_deals = await asyncio.gather(
+        ac_get_all("accounts", "accounts", {}),
+        ac_get_all("contacts", "contacts", {}),
+        ac_get_all("notes",    "notes",    {}),
+        ac_get_all("deals",    "deals",    {}),
+    )
+
+    contact_to_account: dict  = {}
+    contacts_by_account: dict = defaultdict(list)
+    for c in all_contacts:
+        aid = str(c.get("account", ""))
+        cid = str(c.get("id", ""))
+        if aid:
+            contact_to_account[cid] = aid
+            contacts_by_account[aid].append(c)
+
+    notes_by_account: dict = defaultdict(list)
+    for n in all_notes:
+        if (n.get("reltype") or "").lower() != "contact":
+            continue
+        cid = str(n.get("rel_id", ""))
+        aid = contact_to_account.get(cid)
+        if not aid:
+            continue
+        if from_dt or to_dt:
+            raw_date = n.get("cdate", "")
+            try:
+                nd = (datetime.fromisoformat(raw_date.replace("Z", "+00:00")) if "T" in raw_date
+                      else datetime.strptime(raw_date[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc))
+                if from_dt and nd < from_dt: continue
+                if to_dt   and nd > to_dt:   continue
+            except Exception:
+                continue
+        notes_by_account[aid].append(n)
+
+    deals_by_account: dict = defaultdict(list)
+    for d in all_deals:
+        aid = str(d.get("account", ""))
+        if aid:
+            deals_by_account[aid].append(d)
+
+    records = []
+    for acc in accounts_data:
+        aid        = str(acc.get("id", ""))
+        acct_notes = sorted(notes_by_account.get(aid, []), key=lambda n: n.get("cdate", ""), reverse=True)
+        acct_deals = deals_by_account.get(aid, [])
+        if not acct_notes and not acct_deals:
+            continue
+        last_note = acct_notes[0] if acct_notes else None
+        records.append({
+            "Account":        acc.get("name", ""),
+            "Account ID":     aid,
+            "Contacts":       len(contacts_by_account.get(aid, [])),
+            "Notes":          len(acct_notes),
+            "Last Note Date": last_note.get("cdate", "")[:10] if last_note else "",
+            "Deals":          len(acct_deals),
+        })
+    records.sort(key=lambda x: x["Last Note Date"], reverse=True)
+
+    cols = [("Account","Account"), ("Account ID","Account ID"),
+            ("Contacts","Contacts"), ("Notes","Notes"),
+            ("Last Note Date","Last Note Date"), ("Deals","Deals")]
+    html = _HTML_WRAPPER.format(
+        title=f"Account Activity — {date_label}",
+        subtitle=f"{len(records)} active account{'s' if len(records) != 1 else ''}",
+        table=_html_table(records, cols),
+        timestamp=datetime.now().strftime("%b %d %Y %H:%M"),
+    )
+    await _send_email(
+        subject=f"Account Activity — {today} ({len(records)} records)",
+        html=html,
+        csv_data=_csv_bytes(records),
+        csv_name=f"account_activity_{today}.csv",
+        recipients=recipients,
+    )
+
+
+# ── Team Activity (ad hoc / on-demand) ───────────────────────────────────
+
+async def _job_team_activity(start_date=None, end_date=None, preset=None, recipients=None):
+    """Email team performance summary — per-user note activity."""
+    from datetime import timezone
+    today = str(date.today())
+    _start, _end = _resolve_date_range(start_date, end_date, preset)
+    date_label = f"{_start} – {_end}" if (_start or _end) else "All Time"
+    from_date = str(_start) if _start else None
+    to_date   = str(_end)   if _end   else None
+    from_dt   = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                 if from_date else None)
+    to_dt     = (datetime.strptime(to_date, "%Y-%m-%d")
+                 .replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
+                 if to_date else None)
+
+    users_data, all_notes_raw, all_contacts = await asyncio.gather(
+        ac_get("users"),
+        ac_get_all("notes", "notes", {}),
+        ac_get_all("contacts", "contacts", {}),
+    )
+
+    users: dict = {}
+    for u in (users_data.get("users", []) if isinstance(users_data, dict) else []):
+        uid  = str(u.get("id", ""))
+        name = f"{u.get('firstName','').strip()} {u.get('lastName','').strip()}".strip()
+        users[uid] = name or u.get("email", f"User {uid}")
+
+    contact_to_account: dict = {}
+    for c in all_contacts:
+        cid = str(c.get("id", ""))
+        aid = str(c.get("account", "") or "")
+        if aid and aid != "0":
+            contact_to_account[cid] = aid
+
+    user_stats: dict = defaultdict(lambda: {"note_count": 0, "accounts": set(), "latest_date": ""})
+    for n in all_notes_raw:
+        reltype = (n.get("reltype") or "").lower()
+        if reltype not in ("contact", "deal"):
+            continue
+        raw_date = n.get("cdate", "")
+        if from_dt or to_dt:
+            try:
+                nd = (datetime.fromisoformat(raw_date.replace("Z", "+00:00")) if "T" in raw_date
+                      else datetime.strptime(raw_date[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc))
+                if from_dt and nd < from_dt: continue
+                if to_dt   and nd > to_dt:   continue
+            except Exception:
+                continue
+        uid = str(n.get("userid", "") or "")
+        cid = str(n.get("rel_id", "") or "") if reltype == "contact" else ""
+        aid = contact_to_account.get(cid, "")
+        if uid:
+            s = user_stats[uid]
+            s["note_count"] += 1
+            if aid:
+                s["accounts"].add(aid)
+            if raw_date > s["latest_date"]:
+                s["latest_date"] = raw_date
+
+    records = []
+    for uid, s in sorted(user_stats.items(), key=lambda x: x[1]["note_count"], reverse=True):
+        records.append({
+            "Team Member": users.get(uid, f"User {uid}"),
+            "Notes":       s["note_count"],
+            "Accounts":    len(s["accounts"]),
+            "Last Active": s["latest_date"][:10] if s["latest_date"] else "",
+        })
+
+    cols = [("Team Member","Team Member"), ("Notes","Notes"),
+            ("Accounts","Accounts"), ("Last Active","Last Active")]
+    html = _HTML_WRAPPER.format(
+        title=f"Team Performance — {date_label}",
+        subtitle=f"{len(records)} team member{'s' if len(records) != 1 else ''} with activity",
+        table=_html_table(records, cols),
+        timestamp=datetime.now().strftime("%b %d %Y %H:%M"),
+    )
+    await _send_email(
+        subject=f"Team Performance — {today} ({len(records)} records)",
+        html=html,
+        csv_data=_csv_bytes(records),
+        csv_name=f"team_activity_{today}.csv",
+        recipients=recipients,
+    )
+
+
 # ── Manual / GitHub Actions trigger ──────────────────────────────────────
 
 _REPORT_JOBS = {
@@ -3664,6 +3843,8 @@ _REPORT_JOBS = {
     "platform-breakdown":   _job_platform_breakdown,
     "partner-activation":   _job_partner_activation,
     "oracle-missing":       _job_oracle_missing,
+    "account-activity":     _job_account_activity,
+    "team-activity":        _job_team_activity,
 }
 
 @app.get("/api/send-report/{report_type}")
