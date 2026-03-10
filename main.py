@@ -309,6 +309,13 @@ async def ac_get(path: str, params: dict = None):
         r.raise_for_status()
         return r.json()
 
+async def ac_post(path: str, body: dict):
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(ac_url(path), headers=HEADERS, json=body)
+        if not r.is_success:
+            raise Exception(f"HTTP {r.status_code} {r.text[:300]}")
+        return r.json()
+
 async def ac_put(path: str, body: dict):
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.put(ac_url(path), headers=HEADERS, json=body)
@@ -3954,8 +3961,8 @@ async def _run_slp_sync(dry_run: bool) -> None:
                     continue
 
                 try:
-                    await ac_put(f"customObjects/records/{rec_id}",
-                                 {"record": {"fields": to_update}})
+                    await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}",
+                                  {"record": {"id": rec_id, "fields": to_update}})
                     updated += 1
                 except Exception as e:
                     errors += 1
