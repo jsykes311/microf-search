@@ -785,11 +785,41 @@ select, input { font-family: inherit; }
       </div>
       <div class="form-row">
         <label>Platform (optional)</label>
-        <input type="text" id="act-platform" placeholder="e.g. OPTIMUS"/>
+        <select id="act-platform">
+          <option value="">— all platforms —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+        </select>
       </div>
       <div class="form-row">
         <label>Assigned BDR (optional)</label>
-        <input type="text" id="act-bdr" placeholder="e.g. Chip Harden"/>
+        <select id="act-bdr">
+          <option value="">— all BDRs —</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>State (optional)</label>
+        <select id="act-state">
+          <option value="">— all states —</option>
+          <option>AL</option><option>AK</option><option>AZ</option><option>AR</option>
+          <option>CA</option><option>CO</option><option>CT</option><option>DE</option>
+          <option>FL</option><option>GA</option><option>HI</option><option>ID</option>
+          <option>IL</option><option>IN</option><option>IA</option><option>KS</option>
+          <option>KY</option><option>LA</option><option>ME</option><option>MD</option>
+          <option>MA</option><option>MI</option><option>MN</option><option>MS</option>
+          <option>MO</option><option>MT</option><option>NE</option><option>NV</option>
+          <option>NH</option><option>NJ</option><option>NM</option><option>NY</option>
+          <option>NC</option><option>ND</option><option>OH</option><option>OK</option>
+          <option>OR</option><option>PA</option><option>RI</option><option>SC</option>
+          <option>SD</option><option>TN</option><option>TX</option><option>UT</option>
+          <option>VT</option><option>VA</option><option>WA</option><option>WV</option>
+          <option>WI</option><option>WY</option>
+        </select>
       </div>
       <div class="form-row">
         <label>Exclude Platforms (comma-separated)</label>
@@ -851,6 +881,19 @@ select, input { font-family: inherit; }
       <div class="form-row">
         <label>Activation To Date (optional)</label>
         <input type="date" id="bdr-to"/>
+      </div>
+      <div class="form-row">
+        <label>Platform (optional)</label>
+        <select id="bdr-platform">
+          <option value="">— all platforms —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+        </select>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="runPrebuilt('bdr')">▶ Run</button>
@@ -1034,14 +1077,37 @@ select, input { font-family: inherit; }
       <span class="schedule-badge">Monthly</span>
       <span class="badge-icon">⚠️</span>
       <h3>Stale / Untrained Dealers</h3>
-      <p>Activated dealers with no training on record, or last training more than 90 days ago.</p>
+      <p>Activated dealers with no training on record, or last training more than N days ago.</p>
       <div class="form-row" style="margin-top:4px;">
+        <label>Stale After (days)</label>
+        <input type="number" id="su-stale-days" value="90" min="1" style="width:80px;"/>
+      </div>
+      <div class="form-row">
         <label>Activation From Date (optional)</label>
         <input type="date" id="su-from"/>
       </div>
       <div class="form-row">
         <label>Activation To Date (optional)</label>
         <input type="date" id="su-to"/>
+      </div>
+      <div class="form-row">
+        <label>Platform (optional)</label>
+        <select id="su-platform">
+          <option value="">— all platforms —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>BDR (optional)</label>
+        <select id="su-bdr">
+          <option value="">— all BDRs —</option>
+        </select>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="runPrebuilt('stale-untrained')">▶ Run</button>
@@ -1136,6 +1202,25 @@ select, input { font-family: inherit; }
       <div class="form-row">
         <label>Activation To Date (optional)</label>
         <input type="date" id="om-to"/>
+      </div>
+      <div class="form-row">
+        <label>Platform (optional)</label>
+        <select id="om-platform">
+          <option value="">— all platforms —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>BDR (optional)</label>
+        <select id="om-bdr">
+          <option value="">— all BDRs —</option>
+        </select>
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="runPrebuilt('oracle-missing')">▶ Run</button>
@@ -1802,16 +1887,18 @@ function applyPeriod(period, fromId, toId, btn) {
 function prebuiltParams(type) {
   const p = new URLSearchParams();
   if (type === 'activations') {
-    const from = document.getElementById('act-from').value;
-    const to   = document.getElementById('act-to').value;
-    const plat = document.getElementById('act-platform').value.trim();
-    const bdr  = document.getElementById('act-bdr').value.trim();
-    const excl = document.getElementById('act-exclude').value.trim();
-    if (from) p.set('from_date', from);
-    if (to)   p.set('to_date', to);
-    if (plat) p.set('platform', plat);
-    if (bdr)  p.set('bdr', bdr);
-    if (excl) p.set('exclude_platforms', excl);
+    const from  = document.getElementById('act-from').value;
+    const to    = document.getElementById('act-to').value;
+    const plat  = document.getElementById('act-platform').value;
+    const bdr   = document.getElementById('act-bdr').value;
+    const state = document.getElementById('act-state').value;
+    const excl  = document.getElementById('act-exclude').value.trim();
+    if (from)  p.set('from_date', from);
+    if (to)    p.set('to_date', to);
+    if (plat)  p.set('platform', plat);
+    if (bdr)   p.set('bdr', bdr);
+    if (state) p.set('state', state);
+    if (excl)  p.set('exclude_platforms', excl);
     return { endpoint: 'activations', params: p };
   }
   if (type === 'license') {
@@ -1822,8 +1909,10 @@ function prebuiltParams(type) {
   if (type === 'bdr') {
     const from = document.getElementById('bdr-from').value;
     const to   = document.getElementById('bdr-to').value;
+    const plat = document.getElementById('bdr-platform').value;
     if (from) p.set('from_date', from);
     if (to)   p.set('to_date', to);
+    if (plat) p.set('platform', plat);
     return { endpoint: 'bdr-summary', params: p };
   }
   if (type === 'training') {
@@ -1863,10 +1952,16 @@ function prebuiltParams(type) {
     return { endpoint: 'training-activity', params: p };
   }
   if (type === 'stale-untrained') {
-    const from = document.getElementById('su-from').value;
-    const to   = document.getElementById('su-to').value;
-    if (from) p.set('from_date', from);
-    if (to)   p.set('to_date', to);
+    const from  = document.getElementById('su-from').value;
+    const to    = document.getElementById('su-to').value;
+    const plat  = document.getElementById('su-platform').value;
+    const bdr   = document.getElementById('su-bdr').value;
+    const stale = document.getElementById('su-stale-days').value;
+    if (from)  p.set('from_date', from);
+    if (to)    p.set('to_date', to);
+    if (plat)  p.set('platform', plat);
+    if (bdr)   p.set('bdr', bdr);
+    if (stale) p.set('stale_days', stale);
     return { endpoint: 'stale-untrained', params: p };
   }
   if (type === 'account-status') {
@@ -1889,8 +1984,12 @@ function prebuiltParams(type) {
   if (type === 'oracle-missing') {
     const from = document.getElementById('om-from').value;
     const to   = document.getElementById('om-to').value;
+    const plat = document.getElementById('om-platform').value;
+    const bdr  = document.getElementById('om-bdr').value;
     if (from) p.set('from_date', from);
     if (to)   p.set('to_date', to);
+    if (plat) p.set('platform', plat);
+    if (bdr)  p.set('bdr', bdr);
     return { endpoint: 'oracle-missing', params: p };
   }
 }
@@ -1986,7 +2085,7 @@ async function sendEmailReport(type, fromId, toId, resultId) {
   }
 }
 
-// Restore cred status + To field on load
+// Restore cred status + To field on load; populate BDR dropdowns
 document.addEventListener('DOMContentLoaded', () => {
   if (sessionStorage.getItem('email_user')) {
     const el = document.getElementById('email-cred-status');
@@ -1997,7 +2096,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('email-to');
     if (el) el.value = savedTo;
   }
+  populateBdrDropdowns();
 });
+
+async function populateBdrDropdowns() {
+  // BDR dropdowns: act-bdr, su-bdr, om-bdr
+  const selIds = ['act-bdr', 'su-bdr', 'om-bdr'];
+  const sels = selIds.map(id => document.getElementById(id)).filter(Boolean);
+  if (!sels.length) return;
+  try {
+    const res  = await fetch('/api/field-values/slp/assigned-bdr');
+    const data = await res.json();
+    const bdrs = (data.values || []).filter(v => v).sort();
+    for (const sel of sels) {
+      bdrs.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b; opt.textContent = b;
+        sel.appendChild(opt);
+      });
+    }
+  } catch(e) { /* silently ignore — dropdown just stays empty */ }
+}
 
 // ── Dealer Profile ─────────────────────────────────────────────
 async function lookupProfile() {

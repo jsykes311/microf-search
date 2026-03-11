@@ -241,6 +241,41 @@ async def _build_dealer_id_index() -> None:
         acct_to_name = {str(a.get("id", "")): a.get("name", "") for a in all_accounts}
         print(f"[dealer-index] {len(all_accounts)} account names loaded")
 
+        # ── Phase 2b: per-account CF fallback for accounts missed by bulk ──
+        # The bulk accountCustomFieldData endpoint misses some accounts
+        # (e.g. accounts whose CF data was set via the per-account API).
+        # For those accounts, fetch CF data directly.
+        missed_ids = [str(a.get("id", "")) for a in all_accounts
+                      if str(a.get("id", "")) not in acct_to_dealer]
+        print(f"[dealer-index] {len(missed_ids)} accounts not in bulk index; "
+              f"checking per-account CF data…")
+
+        FALL_CONCURRENCY = 20
+
+        async def _fetch_per_account_cfs(aid: str) -> None:
+            try:
+                d = await ac_get(f"accounts/{aid}/accountCustomFieldData")
+                for cf in d.get("customerAccountCustomFieldData", []):
+                    cf_id = int(cf.get("custom_field_id", 0))
+                    val   = (cf.get("custom_field_text_value") or "").strip()
+                    if not val:
+                        continue
+                    if cf_id == DEALER_CF_ID and aid not in acct_to_dealer:
+                        acct_to_dealer[aid]   = val
+                    elif cf_id == PLATFORM_CF_ID and aid not in acct_to_platform:
+                        acct_to_platform[aid] = val
+                    elif cf_id == BDR_CF_ID and aid not in acct_to_bdr:
+                        acct_to_bdr[aid]      = val
+            except Exception:
+                pass
+
+        for i in range(0, len(missed_ids), FALL_CONCURRENCY):
+            await asyncio.gather(*[_fetch_per_account_cfs(aid)
+                                   for aid in missed_ids[i : i + FALL_CONCURRENCY]])
+
+        print(f"[dealer-index] After fallback: {len(acct_to_dealer)} dealer IDs, "
+              f"{len(acct_to_platform)} platforms, {len(acct_to_bdr)} BDRs")
+
         # ── Build indexes ─────────────────────────────────────────────────
         new_did: dict = {}   # dealer_id → {"id": account_id, "name": name}
         new_atd: dict = {}   # account_id → dealer_id
@@ -1434,6 +1469,7 @@ async def activations_report(
     to_date:          Optional[str] = Query(None, description="YYYY-MM-DD"),
     platform:         Optional[str] = Query(None),
     bdr:              Optional[str] = Query(None),
+    state:            Optional[str] = Query(None, description="2-letter state abbreviation"),
     exclude_platforms:Optional[str] = Query(None, description="Comma-separated"),
     format:           str           = Query("json"),
 ):
@@ -1458,6 +1494,10 @@ async def activations_report(
             continue
         if bdr and str(fields.get("assigned-bdr", "")).strip() != bdr:
             continue
+        if state:
+            states_val = str(fields.get("doing-business-in-states", "") or "").upper()
+            if state.upper() not in [s.strip() for s in states_val.split(",")]:
+                continue
 
         act_str = str(fields.get("contractor-activated-date", "")).strip()
         if not act_str:
@@ -1617,6 +1657,7 @@ async def license_expiration_report(
 async def bdr_summary_report(
     from_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
     to_date:   Optional[str] = Query(None, description="YYYY-MM-DD"),
+    platform:  Optional[str] = Query(None),
     format:    str           = Query("json"),
 ):
     """Activations, account counts, and platform breakdown per BDR."""
@@ -1632,6 +1673,9 @@ async def bdr_summary_report(
                                            "platforms": defaultdict(int), "accounts": set()})
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        plat   = str(fields.get("platform", "")).strip()
+        if platform and plat != platform:
+            continue
         bdr    = str(fields.get("assigned-bdr", "")).strip() or "Unassigned"
         bdr_data[bdr]["total_slps"] += 1
 
@@ -2619,6 +2663,8 @@ async def report_stale_untrained(
     from_date:  Optional[str] = Query(None, description="Filter by activation date from"),
     to_date:    Optional[str] = Query(None, description="Filter by activation date to"),
     stale_days: int           = Query(90),
+    platform:   Optional[str] = Query(None),
+    bdr:        Optional[str] = Query(None),
     format:     str           = Query("json"),
 ):
     today        = date.today()
@@ -2640,12 +2686,18 @@ async def report_stale_untrained(
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
         if fields.get("slp-status-detail") != "Contractor Activated": continue
+        slp_plat = str(fields.get("platform", "")).strip()
+        slp_bdr  = str(fields.get("assigned-bdr", "")).strip()
+        rel      = r.get("relationships", {}).get("account", [])
+        acc_id   = str(rel[0]) if rel else None
+        eff_plat = slp_plat or _account_to_platform.get(acc_id or "", "")
+        eff_bdr  = slp_bdr  or _account_to_bdr.get(acc_id or "", "")
+        if platform and eff_plat != platform: continue
+        if bdr      and eff_bdr  != bdr:      continue
         act_str  = str(fields.get("contractor-activated-date", "")).strip()
         act_date = act_str[:10] if act_str else ""
         if from_date and act_date and act_date < from_date: continue
         if to_date   and act_date and act_date > to_date:   continue
-        rel    = r.get("relationships", {}).get("account", [])
-        acc_id = str(rel[0]) if rel else None
         if acc_id: account_ids.add(acc_id)
         trainings  = training_by_acct.get(acc_id or "", [])
         last_train = max(trainings) if trainings else None
@@ -2800,6 +2852,8 @@ async def report_partner_activation(
 async def report_oracle_missing(
     from_date: Optional[str] = Query(None, description="Filter by activation date from"),
     to_date:   Optional[str] = Query(None, description="Filter by activation date to"),
+    platform:  Optional[str] = Query(None),
+    bdr:       Optional[str] = Query(None),
     format:    str           = Query("json"),
 ):
     slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
@@ -2810,9 +2864,15 @@ async def report_oracle_missing(
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
         if fields.get("slp-status-detail") != "Contractor Activated": continue
-        rel    = r.get("relationships", {}).get("account", [])
-        acc_id = str(rel[0]) if rel else None
+        rel      = r.get("relationships", {}).get("account", [])
+        acc_id   = str(rel[0]) if rel else None
         if cf_map.get(acc_id or "", {}).get("118"): continue
+        slp_plat = str(fields.get("platform", "")).strip()
+        slp_bdr  = str(fields.get("assigned-bdr", "")).strip()
+        eff_plat = slp_plat or _account_to_platform.get(acc_id or "", "")
+        eff_bdr  = slp_bdr  or _account_to_bdr.get(acc_id or "", "")
+        if platform and eff_plat != platform: continue
+        if bdr      and eff_bdr  != bdr:      continue
         act_str  = str(fields.get("contractor-activated-date", "")).strip()
         act_date = act_str[:10] if act_str else ""
         if from_date and act_date and act_date < from_date: continue
