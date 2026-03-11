@@ -338,11 +338,20 @@
       cards.innerHTML  = '';
 
       if (total === 0) {
-        cards.innerHTML = `
-          <div class="no-results">
-            <div class="nr-icon">🔍</div>
-            <div class="nr-msg">No results for <strong>${esc(data.query)}</strong></div>
-          </div>`;
+        if (data.index_loading) {
+          cards.innerHTML = `
+            <div class="no-results">
+              <div class="nr-icon">⏳</div>
+              <div class="nr-msg">Search index is still loading after server restart.<br>
+              Please wait 10–15 seconds and try again.</div>
+            </div>`;
+        } else {
+          cards.innerHTML = `
+            <div class="no-results">
+              <div class="nr-icon">🔍</div>
+              <div class="nr-msg">No results for <strong>${esc(data.query)}</strong></div>
+            </div>`;
+        }
         return;
       }
 

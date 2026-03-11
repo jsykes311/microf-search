@@ -186,8 +186,8 @@ async def _build_dealer_id_index() -> None:
     DEALER_CF_ID   = 18    # customFieldId for "Parent Dealer ID"
     PLATFORM_CF_ID = 29    # customFieldId for "Dealer Program"
     BDR_CF_ID      = 119   # customFieldId for "Assigned BDR"
-    CF_PAGE        = 100   # smaller pages to keep memory low on Render
-    CONCURRENCY    = 3     # 3 concurrent requests max to avoid OOM
+    CF_PAGE        = 1000  # 1000 records/page → ~190 pages instead of ~1900
+    CONCURRENCY    = 8     # 8 concurrent requests → index builds in ~10s instead of ~5min
 
     try:
         print("[dealer-index] Starting build…")
@@ -2385,13 +2385,20 @@ async def global_search(q: str = Query(..., min_length=1)):
     for a in matched_accounts:
         a.pop("_needs_name", None)
 
+    # If a numeric query returned nothing and the index hasn't finished building yet,
+    # flag it so the UI can show a helpful "still loading" message instead of "no results".
+    index_loading = False
+    if is_numeric and not matched_accounts and _dealer_index_ts == 0:
+        index_loading = True
+
     total = len(matched_accounts) + len(matched_contacts) + len(matched_slps)
     return {
-        "query":    q,
-        "total":    total,
-        "accounts": matched_accounts,
-        "contacts": matched_contacts,
-        "slps":     matched_slps,
+        "query":         q,
+        "total":         total,
+        "accounts":      matched_accounts,
+        "contacts":      matched_contacts,
+        "slps":          matched_slps,
+        "index_loading": index_loading,
     }
 
 
