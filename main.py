@@ -53,8 +53,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
-# Auth middleware — added after CORS so CORS headers are still sent on 401s
-app.add_middleware(_MSAuthMiddleware)
 
 # ── Microsoft OAuth (Azure AD) ────────────────────────────────────────────────
 # Set these on Render. AZURE_CLIENT_ID is required to enable auth;
@@ -131,6 +129,10 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
             return RedirectResponse(url="/login", status_code=302)
         return await call_next(request)
+
+# Register auth middleware after the class is defined, after CORS so CORS
+# headers are still applied before the 401/redirect response is returned.
+app.add_middleware(_MSAuthMiddleware)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
