@@ -365,34 +365,43 @@ async def ac_put(path: str, body: dict):
             raise Exception(f"HTTP {r.status_code} {r.text[:300]}")
         return r.json()
 
-async def ac_get_all(path: str, key: str, params: dict = None) -> list:
-    """Paginate through all records, deduplicating by id.
-
-    AC's custom-objects endpoint has non-deterministic pagination: pages overlap
-    heavily and meta.total is inflated (~4855 vs ~3500 unique records).
-    Stop ONLY on an empty page to ensure we collect every unique record.
-    """
-    seen   = {}   # id → record
+async def _ac_get_all_pass(path: str, key: str, params: dict) -> dict:
+    """Single pagination pass — returns id→record dict."""
+    seen   = {}
     offset = 0
     limit  = 100
     while True:
-        p    = {**(params or {}), "limit": limit, "offset": offset}
+        p    = {**params, "limit": limit, "offset": offset}
         data = await ac_get(path, p)
         page = data.get(key, [])
-
-        if not page:   # empty page → truly done
+        if not page:
             break
-
         for item in page:
             item_id = item.get("id")
             if item_id is not None:
                 seen[item_id] = item
             else:
-                seen[len(seen)] = item   # fallback for items without id
-
+                seen[len(seen)] = item
         offset += limit
+    return seen
 
-    return list(seen.values())
+
+async def ac_get_all(path: str, key: str, params: dict = None) -> list:
+    """Paginate through all records, deduplicating by id.
+
+    AC's custom-objects endpoint has non-deterministic pagination: pages overlap
+    heavily and meta.total is inflated (~4855 vs ~3500 unique records).
+    Two independent passes are unioned to catch records that slip through in
+    either pass due to AC's reordering between requests.
+    """
+    p = params or {}
+    pass1, pass2 = await asyncio.gather(
+        _ac_get_all_pass(path, key, p),
+        _ac_get_all_pass(path, key, p),
+    )
+    merged = {**pass1, **pass2}
+    print(f"[ac_get_all] pass1={len(pass1)} pass2={len(pass2)} merged={len(merged)}")
+    return list(merged.values())
 
 
 # ═══════════════════════════════════════════════════════════════════════════
