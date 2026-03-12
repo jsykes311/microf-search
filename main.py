@@ -368,12 +368,9 @@ async def ac_put(path: str, body: dict):
 async def ac_get_all(path: str, key: str, params: dict = None) -> list:
     """Paginate through all records, deduplicating by id.
 
-    Break conditions (whichever comes first):
-      - Empty page returned → no more records
-      - Partial page (< limit) → last page, no need for another round-trip
-    We intentionally ignore meta.total because AC's custom-objects endpoint
-    reports the page count in that field rather than the grand total, which
-    caused early exit and inconsistent result counts.
+    AC's custom-objects endpoint has non-deterministic pagination: pages overlap
+    heavily and meta.total is inflated (~4855 vs ~3500 unique records).
+    Stop ONLY on an empty page to ensure we collect every unique record.
     """
     seen   = {}   # id → record
     offset = 0
@@ -382,18 +379,19 @@ async def ac_get_all(path: str, key: str, params: dict = None) -> list:
         p    = {**(params or {}), "limit": limit, "offset": offset}
         data = await ac_get(path, p)
         page = data.get(key, [])
-        size_before = len(seen)
+
+        if not page:   # empty page → truly done
+            break
+
         for item in page:
             item_id = item.get("id")
             if item_id is not None:
                 seen[item_id] = item
             else:
                 seen[len(seen)] = item   # fallback for items without id
-        new_items = len(seen) - size_before
+
         offset += limit
-        # Stop if: empty/partial page, OR full page but no new unique records
-        if len(page) < limit or new_items == 0:
-            break
+
     return list(seen.values())
 
 
