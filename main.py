@@ -303,6 +303,8 @@ _dealer_id_index:  dict  = {}   # dealer_id (str) → {"id": account_id, "name":
 _account_to_dealer: dict = {}   # account_id (str) → dealer_id (str)
 _account_to_platform: dict = {} # account_id (str) → platform/Dealer Program (customfield 29)
 _account_to_bdr: dict = {}      # account_id (str) → Assigned BDR (customfield 119)
+_account_to_name: dict = {}     # account_id (str) → account name
+_program_to_accounts: dict = {} # lowercase(dealer_program) → set of account_ids
 _dealer_index_ts:  float = 0.0
 _dealer_index_error: str = ""   # last build error message, for /api/dealer-index/status
 
@@ -406,8 +408,19 @@ async def _build_dealer_id_index() -> None:
         _account_to_dealer.clear();  _account_to_dealer.update(new_atd)
         _account_to_platform.clear(); _account_to_platform.update(acct_to_platform)
         _account_to_bdr.clear();     _account_to_bdr.update(acct_to_bdr)
+        _account_to_name.clear();    _account_to_name.update(acct_to_name)
+
+        # Reverse index: lowercase dealer program → set of account IDs
+        new_prog: dict = {}
+        for aid, prog in acct_to_platform.items():
+            key = prog.lower().strip()
+            if key:
+                new_prog.setdefault(key, set()).add(aid)
+        _program_to_accounts.clear(); _program_to_accounts.update(new_prog)
+
         _dealer_index_ts = _time.time()
-        print(f"[dealer-index] Done. {len(new_did)} dealer IDs indexed across {len(new_atd)} accounts.")
+        print(f"[dealer-index] Done. {len(new_did)} dealer IDs, "
+              f"{len(new_prog)} dealer programs indexed across {len(new_atd)} accounts.")
 
     except Exception as _build_exc:
         import traceback
@@ -2422,6 +2435,38 @@ async def global_search(q: str = Query(..., min_length=1)):
     is_phone_like = (not q.isdigit()) and q_digits.isdigit() and len(q_digits) >= 7
     if is_phone_like:
         q = q_digits   # search AC with the stripped version
+
+    # ── Multi-term dealer-program intersection search ─────────────────────────
+    # If query has 2+ words and at least one matches a known dealer program
+    # (e.g. "ARS GoodLeap"), intersect name-matched accounts with program accounts
+    # and return early without hitting the AC API at all.
+    words = q.split()
+    if len(words) >= 2 and _program_to_accounts:
+        program_terms = [w for w in words if w.lower() in _program_to_accounts]
+        name_terms    = [w for w in words if w.lower() not in _program_to_accounts]
+        if program_terms and name_terms:
+            # Accounts matching all program terms
+            prog_ids: set = set(_program_to_accounts[program_terms[0].lower()])
+            for pt in program_terms[1:]:
+                prog_ids &= _program_to_accounts.get(pt.lower(), set())
+            # Intersect with accounts whose name contains all name terms
+            final_ids = {
+                aid for aid in prog_ids
+                if all(nt.lower() in _account_to_name.get(aid, "").lower()
+                       for nt in name_terms)
+            }
+            accounts_out = []
+            for aid in sorted(final_ids):
+                accounts_out.append({
+                    "id":           aid,
+                    "name":         _account_to_name.get(aid, ""),
+                    "dealer_id":    _account_to_dealer.get(aid, ""),
+                    "dealer_program": _account_to_platform.get(aid, ""),
+                    "account_url":  ac_account_url(aid),
+                    "matched_on":   "dealer program + name",
+                })
+            accounts_out.sort(key=lambda x: x["name"].lower())
+            return {"accounts": accounts_out, "slps": [], "contacts": []}
 
     is_numeric = q.isdigit()
 
