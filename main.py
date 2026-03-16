@@ -304,6 +304,7 @@ _account_to_dealer: dict = {}   # account_id (str) → dealer_id (str)
 _account_to_platform: dict = {} # account_id (str) → platform/Dealer Program (customfield 29)
 _account_to_bdr: dict = {}      # account_id (str) → Assigned BDR (customfield 119)
 _account_to_name: dict = {}     # account_id (str) → account name
+_account_to_owner: dict = {}    # account_id (str) → owner user_id (str)
 _program_to_accounts: dict = {} # lowercase(dealer_program) → set of account_ids
 _dealer_index_ts:  float = 0.0
 _dealer_index_error: str = ""   # last build error message, for /api/dealer-index/status
@@ -394,7 +395,8 @@ async def _build_dealer_id_index() -> None:
 
         # ── Phase 2: paginate accounts for names ──────────────────────────
         all_accounts = await ac_get_all("accounts", "accounts", {})
-        acct_to_name = {str(a.get("id", "")): a.get("name", "") for a in all_accounts}
+        acct_to_name  = {str(a.get("id", "")): a.get("name", "")              for a in all_accounts}
+        acct_to_owner = {str(a.get("id", "")): str(a.get("owner", "") or "")  for a in all_accounts}
         print(f"[dealer-index] {len(all_accounts)} account names loaded")
 
         # ── Publish index from bulk scan immediately so app is usable ─────
@@ -409,6 +411,7 @@ async def _build_dealer_id_index() -> None:
         _account_to_platform.clear(); _account_to_platform.update(acct_to_platform)
         _account_to_bdr.clear();     _account_to_bdr.update(acct_to_bdr)
         _account_to_name.clear();    _account_to_name.update(acct_to_name)
+        _account_to_owner.clear();   _account_to_owner.update(acct_to_owner)
 
         # Reverse index: lowercase dealer program → set of account IDs
         new_prog: dict = {}
@@ -2134,11 +2137,10 @@ async def team_activity_report(
     from datetime import timezone
     print("\nTeam activity report...")
 
-    users_data, all_notes_raw, all_contacts, all_accounts_raw, all_activity = await asyncio.gather(
+    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
         ac_get("users"),
         ac_get_all("notes", "notes", {}),
         ac_get_all("contacts", "contacts", {}),
-        ac_get_all("accounts", "accounts", {}),
         ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
     )
 
@@ -2175,13 +2177,8 @@ async def team_activity_report(
         if aid and aid != "0":
             contact_to_account[cid] = aid
 
-    # account_id → owner user_id (fallback when performed-by is blank)
-    account_owner: dict = {}
-    for a in all_accounts_raw:
-        aid   = str(a.get("id", ""))
-        owner = str(a.get("owner", "") or "")
-        if aid and owner and owner != "0":
-            account_owner[aid] = owner
+    # account_id → owner user_id — use pre-built startup index (no extra API call)
+    account_owner = _account_to_owner
 
     from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                if from_date else None)
