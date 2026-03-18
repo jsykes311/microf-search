@@ -4360,12 +4360,33 @@ async def report_ars_360(
         and _account_to_platform.get(str(a["id"]), "") == "360 Finance"
     }
 
-    all_contacts = await ac_get_all("contacts", "contacts", {})
+    # Fetch contacts per account using accountContacts (more reliable than
+    # filtering all contacts by the account field)
     by_account: dict = defaultdict(list)
-    for c in all_contacts:
-        aid = str(c.get("account", ""))
-        if aid in ars_accounts:
-            by_account[aid].append(c)
+    async def _fetch_contacts_for_account(aid: str):
+        try:
+            ac_resp = await ac_get(f"accounts/{aid}/accountContacts")
+            contact_ids = [
+                str(ac.get("contact"))
+                for ac in ac_resp.get("accountContacts", [])
+                if ac.get("contact")
+            ]
+            contacts = []
+            for cid in contact_ids:
+                try:
+                    cr = await ac_get(f"contacts/{cid}")
+                    contacts.append(cr.get("contact", {}))
+                except Exception:
+                    pass
+            return aid, contacts
+        except Exception:
+            return aid, []
+
+    contact_results = await asyncio.gather(
+        *[_fetch_contacts_for_account(aid) for aid in ars_accounts]
+    )
+    for aid, contacts in contact_results:
+        by_account[aid] = contacts
 
     results = []
     for aid, acct in sorted(ars_accounts.items(), key=lambda x: x[1].get("name", "")):
