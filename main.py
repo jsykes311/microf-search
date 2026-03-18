@@ -1635,8 +1635,16 @@ async def activations_report(
             continue
         if plat in exclude_set:
             continue
-        if bdr and str(fields.get("assigned-bdr", "")).strip() != bdr:
+
+        # Resolve acc_id early so we can fall back to account-level BDR
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+
+        slp_bdr = str(fields.get("assigned-bdr", "")).strip()
+        eff_bdr = slp_bdr or _account_to_bdr.get(acc_id or "", "")
+        if bdr and eff_bdr != bdr:
             continue
+
         if state:
             states_val = str(fields.get("doing-business-in-states", "") or "").upper()
             if state.upper() not in [s.strip() for s in states_val.split(",")]:
@@ -1656,11 +1664,9 @@ async def activations_report(
         if to_date and act_dt > datetime.strptime(to_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc):
             continue
 
-        rel    = r.get("relationships", {}).get("account", [])
-        acc_id = str(rel[0]) if rel else None
         if acc_id:
             account_ids.add(acc_id)
-        candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
+        candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id"), "eff_bdr": eff_bdr})
 
     print(f"  {len(candidates)} candidates")
 
@@ -1692,7 +1698,7 @@ async def activations_report(
             "slp_status":                f.get("slp-status-detail", ""),
             "contractor_activated_date": f.get("contractor-activated-date", ""),
             "original_owner":            f.get("original-owner", ""),
-            "assigned_bdr":              f.get("assigned-bdr", ""),
+            "assigned_bdr":              c.get("eff_bdr") or f.get("assigned-bdr", ""),
             "sales_region":              cfs.get(ACCT_FIELD["sales_region"], ""),
             "dealer_program":            cfs.get(ACCT_FIELD["dealer_program"], ""),
             "oracle_producer_id":        cfs.get(ACCT_FIELD["oracle_producer_id"], ""),
@@ -4336,6 +4342,57 @@ async def sync_slp_fields_status(
 ):
     """Check the status/results of the last sync-slp-fields run."""
     return _slp_sync_status
+
+
+@app.get("/api/report/ars-360")
+async def report_ars_360(
+    format: str = Query("json"),
+    _: None = Depends(require_auth),
+):
+    """ARS dealers on 360 Finance program with all linked contacts."""
+    all_accounts = await ac_get_all("accounts", "accounts", {})
+
+    # Filter to ARS accounts on 360 Finance
+    ars_accounts = {
+        str(a["id"]): a
+        for a in all_accounts
+        if "ARS" in a.get("name", "").upper()
+        and _account_to_platform.get(str(a["id"]), "") == "360 Finance"
+    }
+
+    all_contacts = await ac_get_all("contacts", "contacts", {})
+    by_account: dict = defaultdict(list)
+    for c in all_contacts:
+        aid = str(c.get("account", ""))
+        if aid in ars_accounts:
+            by_account[aid].append(c)
+
+    results = []
+    for aid, acct in sorted(ars_accounts.items(), key=lambda x: x[1].get("name", "")):
+        contacts = by_account.get(aid, [])
+        base = {
+            "dealer_id":      _account_to_dealer.get(aid, ""),
+            "dealer_name":    acct.get("name", ""),
+            "dealer_program": _account_to_platform.get(aid, ""),
+            "bdr":            _account_to_bdr.get(aid, ""),
+        }
+        if contacts:
+            for c in contacts:
+                results.append({**base,
+                    "contact_first": c.get("firstName", ""),
+                    "contact_last":  c.get("lastName", ""),
+                    "contact_email": c.get("email", ""),
+                    "contact_phone": c.get("phone", ""),
+                })
+        else:
+            results.append({**base,
+                "contact_first": "", "contact_last": "",
+                "contact_email": "", "contact_phone": "",
+            })
+
+    if format == "csv":
+        return _csv_response(results, f"ars_360_{datetime.now().strftime('%Y%m%d')}.csv")
+    return {"count": len(results), "records": results}
 
 
 if __name__ == "__main__":
