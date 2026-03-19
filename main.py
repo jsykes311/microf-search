@@ -73,7 +73,7 @@ _SYNC_TOKEN = os.getenv("SYNC_TOKEN", "")
 # ── Scheduled email reports ───────────────────────────────────────────────
 # Set these env vars on Render to enable report delivery.
 # SMTP_USER + REPORT_RECIPIENTS are required; everything else has defaults.
-_SMTP_HOST  = os.getenv("SMTP_HOST",      "smtp.office365.com")
+_SMTP_HOST  = os.getenv("SMTP_HOST",      "smtp.gmail.com")
 _SMTP_PORT  = int(os.getenv("SMTP_PORT",  "587"))
 _SMTP_USER  = os.getenv("SMTP_USER",      "")
 _SMTP_PASS  = os.getenv("SMTP_PASS",      "")
@@ -4482,9 +4482,16 @@ async def trigger_report(
         )
     override_recipients = [r.strip() for r in to.split(",") if r.strip()] if to else None
     final_recipients    = override_recipients or _RECIPIENTS
-    asyncio.create_task(job(start_date=start_date, end_date=end_date, preset=preset,
-                            recipients=override_recipients))
-    return {"status": "queued", "report": report_type,
+    if not _SMTP_USER or not _SMTP_PASS:
+        raise HTTPException(status_code=503, detail="Email not configured — set SMTP_USER and SMTP_PASS in Render environment variables")
+    if not final_recipients:
+        raise HTTPException(status_code=400, detail="No recipients — enter an email address in the To field")
+    try:
+        await job(start_date=start_date, end_date=end_date, preset=preset,
+                  recipients=override_recipients)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Email failed: {exc}")
+    return {"status": "sent", "report": report_type,
             "start_date": str(start_date) if start_date else None,
             "end_date":   str(end_date)   if end_date   else None,
             "preset":     preset,
