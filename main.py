@@ -85,7 +85,7 @@ _RECIPIENTS = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") 
 
 # ── Admin / Scheduler ─────────────────────────────────────────────────────
 _ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "jsykes@microf.com")
-_SCHEDULES_FILE = os.path.join(os.path.dirname(__file__), "schedules.json")
+_SCHEDULES_FILE = os.getenv("SCHEDULES_FILE", os.path.join(os.path.dirname(__file__), "schedules.json"))
 _scheduler      = AsyncIOScheduler()
 _schedules: dict = {}   # job_id → schedule dict
 
