@@ -662,7 +662,7 @@ select, input { font-family: inherit; }
       <div class="ab-search-wrap">
         <input id="ab-search" class="ab-search" placeholder="Search accounts…"
                oninput="abSearch(this.value)" autocomplete="off"/>
-        <select id="ab-program" onchange="abSearch(document.getElementById('ab-search').value)"
+        <select id="ab-program" onchange="abLoad(document.getElementById('ab-search').value.trim())"
                 style="margin-top:6px;width:100%;padding:5px 8px;font-size:0.76rem;border:1px solid var(--ms-g40);border-radius:2px;background:var(--ms-g10);font-family:inherit;">
           <option value="">— all dealer programs —</option>
           <option>OPTIMUS</option>
