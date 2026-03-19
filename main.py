@@ -2498,45 +2498,61 @@ async def global_search(q: str = Query(..., min_length=1),
     if is_phone_like:
         q = q_digits   # search AC with the stripped version
 
-    # ── Multi-term dealer-program intersection search ─────────────────────────
-    # If the query contains a known dealer program name (possibly multi-word,
-    # e.g. "360 Finance") intersect name-matched accounts with program accounts.
+    # ── In-memory intersection search (program filter or multi-term query) ────
+    # When a program param is supplied, or when the query embeds a known program
+    # name (e.g. "ARS 360 Finance"), use _program_to_accounts + _account_to_name
+    # for name matching instead of the AC API so we don't hit the limit-50 cap
+    # or miss accounts whose names don't come back from the AC search.
     words = q.split()
-    if len(words) >= 2 and _program_to_accounts:
+
+    # Determine which program key to use
+    _use_program_key: str | None = None
+    if program and _program_to_accounts:
+        _use_program_key = program.lower().strip()
+        if _use_program_key not in _program_to_accounts:
+            _use_program_key = None   # unknown program — fall through to AC search
+    elif len(words) >= 2 and _program_to_accounts:
         q_lower = q.lower()
-        # Find the longest matching program key that appears in the query
-        best_prog_key = max(
+        _use_program_key = max(
             (pk for pk in _program_to_accounts if pk in q_lower),
             key=len, default=None
         )
-        if best_prog_key is None:
-            # Fallback: single-word match against keys
+        if _use_program_key is None:
             for w in words:
                 if w.lower() in _program_to_accounts:
-                    best_prog_key = w.lower()
+                    _use_program_key = w.lower()
                     break
-        if best_prog_key:
-            name_part  = q_lower.replace(best_prog_key, "").strip()
-            name_terms = name_part.split() if name_part else []
-            if name_terms:
-                prog_ids: set = set(_program_to_accounts[best_prog_key])
-                final_ids = {
-                    aid for aid in prog_ids
-                    if all(nt in _account_to_name.get(aid, "").lower()
-                           for nt in name_terms)
-                }
-                accounts_out = []
-                for aid in sorted(final_ids):
-                    accounts_out.append({
-                        "id":           aid,
-                        "name":         _account_to_name.get(aid, ""),
-                        "dealer_id":    _account_to_dealer.get(aid, ""),
-                        "dealer_program": _account_to_platform.get(aid, ""),
-                        "account_url":  ac_account_url(aid),
-                        "matched_on":   "dealer program + name",
-                    })
-                accounts_out.sort(key=lambda x: x["name"].lower())
-                return {"accounts": accounts_out, "slps": [], "contacts": []}
+
+    if _use_program_key and _account_to_name:
+        # Name terms = query minus the program token (if it was embedded in query)
+        q_lower = q.lower()
+        if _use_program_key in q_lower:
+            name_part  = q_lower.replace(_use_program_key, "").strip()
+        else:
+            name_part  = q_lower   # program came from ?program= param, full query is name
+        name_terms = name_part.split() if name_part else []
+
+        prog_ids: set = set(_program_to_accounts[_use_program_key])
+        if name_terms:
+            final_ids = {
+                aid for aid in prog_ids
+                if all(nt in _account_to_name.get(aid, "").lower() for nt in name_terms)
+            }
+        else:
+            final_ids = prog_ids
+
+        accounts_out = []
+        for aid in sorted(final_ids):
+            accounts_out.append({
+                "id":             aid,
+                "name":           _account_to_name.get(aid, ""),
+                "dealer_id":      _account_to_dealer.get(aid, ""),
+                "dealer_program": _account_to_platform.get(aid, ""),
+                "account_url":    ac_account_url(aid),
+                "matched_on":     "dealer program + name",
+            })
+        accounts_out.sort(key=lambda x: x["name"].lower())
+        return {"accounts": accounts_out, "slps": [], "contacts": [], "query": q, "total": len(accounts_out)}
 
     is_numeric = q.isdigit()
 
