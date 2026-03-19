@@ -2835,7 +2835,14 @@ async function abInit() {
   await abLoad('');
 }
 
+let _abController = null;
+
 async function abLoad(q) {
+  // Cancel any in-flight request
+  if (_abController) { _abController.abort(); }
+  _abController = new AbortController();
+  const signal = _abController.signal;
+
   const list    = document.getElementById('ab-list');
   const count   = document.getElementById('ab-count');
   const program = document.getElementById('ab-program').value;
@@ -2846,13 +2853,13 @@ async function abLoad(q) {
   if (!q.trim() && !program) {
     // No query — show 20 recent accounts
     try {
-      const res  = await fetch(`/api/accounts/search?q=&limit=20`);
+      const res  = await fetch(`/api/accounts/search?q=&limit=20`, { signal });
       const data = await res.json();
       ab.results = (data.accounts || []).map(a => ({ type:'account', id:a.id, accountId:a.id, name:a.name, sub:a.dealer_id ? `dealer id ${a.dealer_id}` : '' }));
       count.textContent = `${ab.results.length} accounts`;
       abRenderList();
     } catch(e) {
-      list.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:0.82rem;">Error</div>`;
+      if (e.name !== 'AbortError') list.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:0.82rem;">Error</div>`;
     }
     return;
   }
@@ -2861,7 +2868,7 @@ async function abLoad(q) {
   try {
     let url = `/api/global-search?q=${encodeURIComponent(q || ' ')}`;
     if (program) url += `&program=${encodeURIComponent(program)}`;
-    const res  = await fetch(url);
+    const res  = await fetch(url, { signal });
     const data = await res.json();
     ab.results = [];
     for (const a of (data.accounts||[])) {
@@ -2878,7 +2885,7 @@ async function abLoad(q) {
     abRenderList();
     if (ab.results.length) exportBtn.style.display = 'block';
   } catch(e) {
-    list.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:0.82rem;">Search error</div>`;
+    if (e.name !== 'AbortError') list.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:0.82rem;">Search error</div>`;
   }
 }
 
