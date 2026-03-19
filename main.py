@@ -2485,7 +2485,8 @@ async def account_detail(account_id: str):
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/global-search")
-async def global_search(q: str = Query(..., min_length=1)):
+async def global_search(q: str = Query(..., min_length=1),
+                        program: Optional[str] = Query(None)):
     """Search accounts (by name), contacts (by email only, text queries), and SLPs (by dealer ID or name)."""
     q = q.strip()
 
@@ -2679,6 +2680,22 @@ async def global_search(q: str = Query(..., min_length=1)):
     if is_numeric and not matched_accounts and _dealer_index_ts == 0:
         index_loading = True
 
+    # ── Program filter: keep only accounts whose SLP platform matches ─────────
+    if program:
+        prog_lower = program.lower()
+        # Build set of account IDs that have a matching SLP platform
+        prog_account_ids: set = set()
+        for slp in matched_slps:
+            if (slp.get("platform") or "").lower() == prog_lower:
+                prog_account_ids.add(str(slp["account_id"]))
+        # Also check in-memory index for accounts not yet in matched_slps
+        for aid, plat in _account_to_platform.items():
+            if plat.lower() == prog_lower:
+                prog_account_ids.add(str(aid))
+        matched_accounts = [a for a in matched_accounts if str(a["id"]) in prog_account_ids]
+        matched_slps     = [s for s in matched_slps     if (s.get("platform") or "").lower() == prog_lower]
+        matched_contacts = [c for c in matched_contacts if str(c.get("account_id","")) in prog_account_ids]
+
     total = len(matched_accounts) + len(matched_contacts) + len(matched_slps)
     return {
         "query":         q,
@@ -2688,6 +2705,74 @@ async def global_search(q: str = Query(..., min_length=1)):
         "slps":          matched_slps,
         "index_loading": index_loading,
     }
+
+
+@app.get("/api/global-search/export")
+async def global_search_export(q: str = Query(default=" "),
+                               program: Optional[str] = Query(None)):
+    """Export global search results (accounts + SLPs + contacts) as CSV."""
+    import re as _re
+    q = q.strip()
+    name_terms = [t for t in _re.split(r'\s+', q.lower()) if t] if q else []
+
+    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+
+    # Build account_id → SLPs (filtered by program)
+    slp_by_account: dict = {}
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        slp_plat = str(fields.get("platform", "")).strip()
+        if program and slp_plat.lower() != program.lower():
+            continue
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if not acc_id:
+            continue
+        slp_by_account.setdefault(acc_id, []).append(fields)
+
+    rows = []
+    for acc_id, slps in slp_by_account.items():
+        acct_name = _account_to_name.get(acc_id, "")
+        if not acct_name:
+            try:
+                d = await ac_get(f"accounts/{acc_id}")
+                acct_name = d.get("account", {}).get("name", "")
+            except Exception:
+                pass
+
+        if name_terms and not all(t in acct_name.lower() for t in name_terms):
+            continue
+
+        # Fetch contacts for this account
+        try:
+            con_data = await ac_get(f"accounts/{acc_id}/contacts")
+            contact_ids = [ac.get("contact") for ac in con_data.get("accountContacts", [])]
+            con_results = await asyncio.gather(*[ac_get(f"contacts/{cid}") for cid in contact_ids[:5]], return_exceptions=True)
+            contacts = []
+            for cr in con_results:
+                if isinstance(cr, dict):
+                    c = cr.get("contact", {})
+                    contacts.append(f"{c.get('firstName','')} {c.get('lastName','')} <{c.get('email','')}>".strip())
+        except Exception:
+            contacts = []
+
+        for slp in slps:
+            rows.append({
+                "account_name":   acct_name,
+                "account_id":     acc_id,
+                "dealer_id":      slp.get("dealer-id", ""),
+                "dealer_program": slp.get("platform", ""),
+                "slp_status":     slp.get("slp-status-detail", ""),
+                "activated_date": str(slp.get("contractor-activated-date", ""))[:10],
+                "program_name":   slp.get("program-name-1", ""),
+                "oracle_ids":     slp.get("oracle-producer-ids", ""),
+                "assigned_bdr":   slp.get("assigned-bdr", ""),
+                "contacts":       " | ".join(contacts),
+            })
+
+    rows.sort(key=lambda x: x["account_name"].lower())
+    fname = f"search_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return _csv_response(rows, fname)
 
 
 # ═══════════════════════════════════════════════════════════════════════════

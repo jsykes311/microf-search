@@ -662,8 +662,25 @@ select, input { font-family: inherit; }
       <div class="ab-search-wrap">
         <input id="ab-search" class="ab-search" placeholder="Search accounts…"
                oninput="abSearch(this.value)" autocomplete="off"/>
+        <select id="ab-program" onchange="abSearch(document.getElementById('ab-search').value)"
+                style="margin-top:6px;width:100%;padding:5px 8px;font-size:0.76rem;border:1px solid var(--ms-g40);border-radius:2px;background:var(--ms-g10);font-family:inherit;">
+          <option value="">— all dealer programs —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+          <option>SpectrumAC</option>
+          <option>Microf (LTO Only)</option>
+          <option>Microf (Wells Fargo)</option>
+        </select>
       </div>
       <div class="ab-count" id="ab-count">Loading…</div>
+      <div style="padding:6px 10px;border-bottom:1px solid var(--ms-g30);">
+        <button id="ab-export-btn" onclick="abExport()" style="display:none;width:100%;padding:5px 8px;font-size:0.74rem;background:#059669;color:#fff;border:none;border-radius:2px;cursor:pointer;font-family:inherit;">⬇ Export Results (CSV)</button>
+      </div>
       <div class="ab-list" id="ab-list"></div>
     </div>
 
@@ -2819,11 +2836,14 @@ async function abInit() {
 }
 
 async function abLoad(q) {
-  const list  = document.getElementById('ab-list');
-  const count = document.getElementById('ab-count');
+  const list    = document.getElementById('ab-list');
+  const count   = document.getElementById('ab-count');
+  const program = document.getElementById('ab-program').value;
+  const exportBtn = document.getElementById('ab-export-btn');
   list.innerHTML = `<div style="padding:20px;text-align:center;color:#9ca3af;font-size:0.82rem;">Loading…</div>`;
+  exportBtn.style.display = 'none';
 
-  if (!q.trim()) {
+  if (!q.trim() && !program) {
     // No query — show 20 recent accounts
     try {
       const res  = await fetch(`/api/accounts/search?q=&limit=20`);
@@ -2839,7 +2859,9 @@ async function abLoad(q) {
 
   // Global search
   try {
-    const res  = await fetch(`/api/global-search?q=${encodeURIComponent(q)}`);
+    let url = `/api/global-search?q=${encodeURIComponent(q || ' ')}`;
+    if (program) url += `&program=${encodeURIComponent(program)}`;
+    const res  = await fetch(url);
     const data = await res.json();
     ab.results = [];
     for (const a of (data.accounts||[])) {
@@ -2852,11 +2874,20 @@ async function abLoad(q) {
     for (const c of (data.contacts||[])) {
       ab.results.push({ type:'contact', id:c.id, accountId:c.account_id, name:`${c.name||c.email}`, sub:`Contact · ${c.email}` });
     }
-    count.textContent = `${data.total} result${data.total!==1?'s':''} for "${q}"`;
+    count.textContent = `${data.total} result${data.total!==1?'s':''} for "${q}"${program?' · '+program:''}`;
     abRenderList();
+    if (ab.results.length) exportBtn.style.display = 'block';
   } catch(e) {
     list.innerHTML = `<div style="padding:16px;color:#ef4444;font-size:0.82rem;">Search error</div>`;
   }
+}
+
+function abExport() {
+  const q       = document.getElementById('ab-search').value.trim();
+  const program = document.getElementById('ab-program').value;
+  let url = `/api/global-search/export?q=${encodeURIComponent(q || ' ')}`;
+  if (program) url += `&program=${encodeURIComponent(program)}`;
+  window.location.href = url;
 }
 
 function abRenderList() {
