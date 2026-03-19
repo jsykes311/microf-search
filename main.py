@@ -2797,6 +2797,45 @@ async def global_search_export(q: str = Query(default=" "),
     return _csv_response(rows, fname)
 
 
+@app.get("/api/global-search/export-contacts")
+async def global_search_export_contacts(q: str = Query(default=" "),
+                                        program: Optional[str] = Query(None)):
+    """Export all contacts for the matched accounts as CSV."""
+    effective_q = q.strip() or " "
+    search_data = await global_search(q=effective_q, program=program)
+
+    matched_accounts = {str(a["id"]): a for a in search_data.get("accounts", [])}
+    if not matched_accounts:
+        fname = f"contacts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return _csv_response([], fname)
+
+    # Fetch contacts for each matched account in parallel
+    con_tasks = [
+        ac_get("contacts", {"filters[account]": aid, "limit": 100})
+        for aid in matched_accounts
+    ]
+    con_results = await asyncio.gather(*con_tasks, return_exceptions=True)
+
+    rows = []
+    for aid, con_resp in zip(matched_accounts.keys(), con_results):
+        acct = matched_accounts[aid]
+        acct_name = acct.get("name") or _account_to_name.get(aid, "")
+        if isinstance(con_resp, dict):
+            for c in con_resp.get("contacts", []):
+                rows.append({
+                    "account_name": acct_name,
+                    "account_id":   aid,
+                    "first_name":   c.get("firstName", ""),
+                    "last_name":    c.get("lastName", ""),
+                    "email":        c.get("email", ""),
+                    "phone":        c.get("phone", ""),
+                })
+
+    rows.sort(key=lambda x: (x["account_name"].lower(), x["last_name"].lower()))
+    fname = f"contacts_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return _csv_response(rows, fname)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # GROUP-BY / SUMMARY ANALYTICS
 # ═══════════════════════════════════════════════════════════════════════════
