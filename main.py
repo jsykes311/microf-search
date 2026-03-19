@@ -3211,7 +3211,7 @@ async def report_account_program_search(
                 "account_name":    acct_name,
                 "account_id":      acc_id,
                 "dealer_id":       slp["dealer_id"],
-                "platform":        slp["platform"],
+                "dealer_program":  slp["platform"],
                 "slp_status":      slp["slp_status"],
                 "activated_date":  slp["activated_date"],
                 "program_name":    slp["program_name"],
