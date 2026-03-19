@@ -2827,6 +2827,31 @@ async def global_search_export_contacts(q: str = Query(default=" "),
     return _csv_response(rows, fname)
 
 
+@app.get("/api/test-email")
+async def test_email(to: str = Query(...)):
+    """Send a plain test email to verify SMTP config."""
+    if not _SMTP_USER or not _SMTP_PASS:
+        return {"ok": False, "error": "SMTP_USER or SMTP_PASS not set",
+                "smtp_user_set": bool(_SMTP_USER), "smtp_pass_set": bool(_SMTP_PASS)}
+    msg = MIMEMultipart()
+    msg["From"]    = f"Microf Search <{_SMTP_USER}>"
+    msg["To"]      = to
+    msg["Subject"] = "Microf Search — test email"
+    msg.attach(MIMEText("<p>This is a test email from microf-search.</p>", "html"))
+    try:
+        await aiosmtplib.send(
+            msg,
+            hostname="smtp.gmail.com",
+            port=587,
+            start_tls=True,
+            username=_SMTP_USER,
+            password=_SMTP_PASS,
+        )
+        return {"ok": True, "from": _SMTP_USER, "to": to}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @app.post("/api/global-search/email")
 async def global_search_email(
     recipients:  str          = Query(..., description="Comma-separated email addresses"),
