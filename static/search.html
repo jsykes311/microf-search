@@ -303,6 +303,8 @@
       document.body.className = 'idle';
       cards.innerHTML = '';
       status.innerHTML = '';
+      const existingExport = document.getElementById('export-btn');
+      if (existingExport) existingExport.remove();
     }
 
     // ── Search ──────────────────────────────────────────────────────
@@ -336,6 +338,20 @@
 
       status.innerHTML = '';
       cards.innerHTML  = '';
+
+      // Show export button if there are results
+      const existingExport = document.getElementById('export-btn');
+      if (existingExport) existingExport.remove();
+      if (total > 0) {
+        const btn = document.createElement('button');
+        btn.id = 'export-btn';
+        btn.textContent = '⬇ Export CSV';
+        btn.style.cssText = 'display:block;margin:0 0 16px auto;padding:7px 14px;font-size:0.82rem;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;';
+        btn.onclick = () => {
+          window.location.href = `/api/global-search/export?q=${encodeURIComponent(input.value.trim())}`;
+        };
+        cards.appendChild(btn);
+      }
 
       if (total === 0) {
         if (data.index_loading) {
