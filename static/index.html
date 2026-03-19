@@ -2807,7 +2807,7 @@ async function abLoad(q) {
       ab.results.push({ type:'account', id:a.id, accountId:a.id, name:a.name||'(unnamed)', sub });
     }
     for (const s of (data.slps||[])) {
-      ab.results.push({ type:'slp', id:s.record_id, accountId:s.account_id, name:s.dealer_id ? `dealer id ${s.dealer_id}` : s.account_id, sub:`SLP · dealer id ${s.dealer_id}` });
+      ab.results.push({ type:'slp', id:s.record_id, accountId:s.account_id, name:s.dealer_id ? `dealer id ${s.dealer_id}` : s.account_id, sub:`SLP · dealer id ${s.dealer_id}${s.platform ? ' · ' + s.platform : ''}` });
     }
     for (const c of (data.contacts||[])) {
       ab.results.push({ type:'contact', id:c.id, accountId:c.account_id, name:`${c.name||c.email}`, sub:`Contact · ${c.email}` });
@@ -2933,6 +2933,15 @@ function abRenderDetail(d) {
     </div>`;
 
   // ── Right sidebar ─────────────────────────────────────────────
+  const uniquePrograms = [...new Set(d.slps.map(s => s.platform).filter(Boolean))];
+  const dealerProgramsPanel = uniquePrograms.length ? `
+    <div class="acui-panel">
+      <div class="acui-panel-header"><h4>Dealer Programs</h4></div>
+      <div class="acui-panel-body">
+        ${uniquePrograms.map(p => `<div style="padding:3px 0;font-size:0.82rem;font-weight:500;">${esc(p)}</div>`).join('')}
+      </div>
+    </div>` : '';
+
   const contactsPanel = `
     <div class="acui-panel">
       <div class="acui-panel-header">
@@ -2954,7 +2963,26 @@ function abRenderDetail(d) {
       }</div>
     </div>`;
 
-  const sidebar = `<div class="acui-sidebar">${contactsPanel}</div>`;
+  const altContactsPanel = (d.alt_contacts||[]).length ? `
+    <div class="acui-panel">
+      <div class="acui-panel-header">
+        <h4>Alternate Contacts <span class="cnt">(${(d.alt_contacts||[]).length})</span></h4>
+      </div>
+      <div class="acui-panel-body">${(d.alt_contacts||[]).map(c => `
+        <div class="acui-contact-row">
+          <div class="acui-avatar">${esc((c.firstName||'?')[0].toUpperCase())}</div>
+          <div>
+            <div class="acui-contact-name">${esc((c.firstName||'')+' '+(c.lastName||''))}</div>
+            <div class="acui-contact-info">
+              ${c.phone ? `<span>📞 ${esc(c.phone)}</span>` : ''}
+              ${c.contact_status ? `<span style="color:#64748b;">${esc(c.contact_status)}</span>` : ''}
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const sidebar = `<div class="acui-sidebar">${dealerProgramsPanel}${contactsPanel}${altContactsPanel}</div>`;
   const body    = `<div class="acui-body">${aboutCard}${sidebar}</div>`;
 
   document.getElementById('ab-detail').innerHTML = header + body;

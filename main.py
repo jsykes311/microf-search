@@ -449,6 +449,7 @@ SLP_SCHEMA_ID           = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
 LICENSE_SCHEMA_ID       = "4bc17cb1-31be-4c15-a186-853ea85b1d40"
 TRAINING_SCHEMA_ID      = "9368fee4-ccef-407b-a0d3-4b72c346b2af"
 ACCT_ACTIVITY_SCHEMA_ID = "3a11374e-4b3d-47b8-b423-17ebcb7b1f4b"
+ALT_CONTACT_SCHEMA_ID   = "b8259d61-10ba-4b15-8b2e-d1c8045712e0"
 
 # Known account custom field IDs (from field_id_mapping.csv)
 ACCT_FIELD = {
@@ -2393,12 +2394,14 @@ async def account_detail(account_id: str):
                 "cdate": n.get("cdate", ""),
             })
 
-    # Stage 2: SLPs (filtered by dealer ID), contacts (by ID)
-    slp_params = {"filters[fields.dealer-id]": dealer_id, "limit": 100} if dealer_id else {"limit": 0}
-    slp_task   = ac_get(f"customObjects/records/{SLP_SCHEMA_ID}", slp_params)
-    deal_task  = ac_get("deals", {"filters[account]": account_id, "limit": 50})
+    # Stage 2: SLPs (filtered by dealer ID), contacts (by ID), alternate contacts
+    slp_params     = {"filters[fields.dealer-id]": dealer_id, "limit": 100} if dealer_id else {"limit": 0}
+    slp_task       = ac_get(f"customObjects/records/{SLP_SCHEMA_ID}", slp_params)
+    deal_task      = ac_get("deals", {"filters[account]": account_id, "limit": 50})
+    alt_con_task   = ac_get(f"customObjects/records/{ALT_CONTACT_SCHEMA_ID}",
+                            {"filters[relationships.account]": account_id, "limit": 50})
 
-    slp_r, deal_r = await asyncio.gather(slp_task, deal_task, return_exceptions=True)
+    slp_r, deal_r, alt_con_r = await asyncio.gather(slp_task, deal_task, alt_con_task, return_exceptions=True)
 
     def flatten_co(records):
         seen_ids, result = set(), []
@@ -2414,6 +2417,18 @@ async def account_detail(account_id: str):
         return result
 
     slps  = flatten_co((slp_r.get("records", []) if isinstance(slp_r, dict) else []))
+
+    alt_contacts = []
+    if isinstance(alt_con_r, dict):
+        for r in alt_con_r.get("records", []):
+            fmap = {f.get("id"): f.get("value") for f in r.get("fields", [])}
+            alt_contacts.append({
+                "id":            r.get("id"),
+                "firstName":     fmap.get("name", ""),
+                "lastName":      fmap.get("last-name", ""),
+                "phone":         fmap.get("phone-number", ""),
+                "contact_status": fmap.get("contact-status", ""),
+            })
     deals = []
     if isinstance(deal_r, dict):
         for d in deal_r.get("deals", []):
@@ -2453,9 +2468,10 @@ async def account_detail(account_id: str):
             "fields":  named_cfs,
             "ac_url":  ac_account_url(account_id),
         },
-        "slps":      slps,
-        "contacts":  contacts,
-        "deals":     deals,
+        "slps":          slps,
+        "contacts":      contacts,
+        "alt_contacts":  alt_contacts,
+        "deals":         deals,
         "summary": {
             "slp_count":     len(slps),
             "contact_count": len(contacts),
