@@ -2218,24 +2218,36 @@ function saveEmailTo() {
   document.getElementById('email-cred-status').textContent = '✓ Saved for this session';
 }
 
-async function sendEmailReport(type, fromId, toId, resultId) {
-  const el  = document.getElementById(resultId);
-  const p   = new URLSearchParams();
+function sendEmailReport(type, fromId, toId, resultId) {
+  const el      = document.getElementById(resultId);
+  const saved   = sessionStorage.getItem('email_to') || '';
+
+  // Show inline To: input every time so user can change recipient
+  el.innerHTML = `
+    <div style="display:flex;gap:4px;align-items:center;margin-top:4px;">
+      <input id="er-to-${resultId}" type="email" value="${esc(saved)}"
+        placeholder="recipient@example.com"
+        style="flex:1;padding:4px 6px;font-size:0.76rem;border:1px solid #d1d5db;border-radius:3px;font-family:inherit;"
+        onkeydown="if(event.key==='Enter')_doSendReport('${type}','${fromId}','${toId}','${resultId}')">
+      <button onclick="_doSendReport('${type}','${fromId}','${toId}','${resultId}')"
+        style="padding:4px 8px;font-size:0.76rem;background:#7c3aed;color:#fff;border:none;border-radius:3px;cursor:pointer;white-space:nowrap;">Send</button>
+      <button onclick="document.getElementById('${resultId}').innerHTML=''"
+        style="padding:4px 6px;font-size:0.76rem;background:#e5e7eb;color:#374151;border:none;border-radius:3px;cursor:pointer;">✕</button>
+    </div>`;
+  document.getElementById(`er-to-${resultId}`)?.focus();
+}
+
+async function _doSendReport(type, fromId, toId, resultId) {
+  const el    = document.getElementById(resultId);
+  const toVal = document.getElementById(`er-to-${resultId}`)?.value.trim() || '';
+  if (!toVal) { el.querySelector('input')?.focus(); return; }
+  sessionStorage.setItem('email_to', toVal);
+
+  const p = new URLSearchParams();
   const from = fromId && document.getElementById(fromId)?.value;
   const end  = toId   && document.getElementById(toId)?.value;
   if (from) p.set('start_date', from);
   if (end)  p.set('end_date',   end);
-
-  // Ask for recipient if not already saved
-  let toVal = (document.getElementById('email-to')?.value.trim())
-              || sessionStorage.getItem('email_to') || '';
-  if (!toVal) {
-    toVal = (window.prompt('Send report to (email address):') || '').trim();
-    if (!toVal) { el.innerHTML = '<span style="color:#6b7280;font-size:0.82rem;">Cancelled.</span>'; return; }
-    sessionStorage.setItem('email_to', toVal);
-    const globalTo = document.getElementById('email-to');
-    if (globalTo) globalTo.value = toVal;
-  }
   p.set('to', toVal);
 
   el.innerHTML = '<span style="color:#6b7280;font-size:0.82rem;">Sending…</span>';
