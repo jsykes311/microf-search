@@ -1543,26 +1543,6 @@ select, input { font-family: inherit; }
 
 </div><!-- /tools-container -->
 
-</div><!-- /app-main (cmd bar + tabs) -->
-</div><!-- /app-shell -->
-
-<!-- Global Search Overlay (fixed, outside shell) -->
-<div id="gs-overlay" class="gs-overlay" onclick="gsOverlayBgClick(event)">
-  <div class="gs-modal">
-    <div class="gs-modal-input-wrap">
-      <span class="gs-modal-icon">🔍</span>
-      <input id="gs-overlay-input" class="gs-modal-input"
-             placeholder="Search accounts, dealer IDs, emails, SLPs…"
-             oninput="gsOverlaySearch(this.value)"
-             onkeydown="if(event.key==='Escape') closeGlobalSearch()"/>
-      <button class="gs-modal-close" onclick="closeGlobalSearch()">ESC</button>
-    </div>
-    <div id="gs-overlay-results" class="gs-modal-results">
-      <div class="gs-modal-empty">Start typing to search across all of AC</div>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════════════════════════════════════════════════════ -->
 <!-- SCHEDULER TAB (admin only)                                 -->
 <!-- ══════════════════════════════════════════════════════════ -->
@@ -1571,7 +1551,6 @@ select, input { font-family: inherit; }
     <div class="card-title">🕐 Report Scheduler</div>
     <p style="font-size:0.84rem;color:#6b7280;margin-bottom:16px;">Schedule any report to be emailed automatically on a recurring basis.</p>
 
-    <!-- Create form -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
       <div>
         <label style="font-size:0.78rem;font-weight:600;color:#374151;display:block;margin-bottom:4px;">Report</label>
@@ -1629,10 +1608,29 @@ select, input { font-family: inherit; }
     <button onclick="schCreate()" style="padding:7px 18px;font-size:0.82rem;background:#356ae6;color:#fff;border:none;border-radius:4px;cursor:pointer;font-family:inherit;">+ Add Schedule</button>
     <span id="sch-create-status" style="margin-left:10px;font-size:0.8rem;color:#6b7280;"></span>
 
-    <!-- Schedule list -->
     <div style="margin-top:24px;">
       <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em;">Active Schedules</div>
       <div id="sch-list"><span style="font-size:0.82rem;color:#9ca3af;">Loading…</span></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app-main (cmd bar + tabs) -->
+</div><!-- /app-shell -->
+
+<!-- Global Search Overlay (fixed, outside shell) -->
+<div id="gs-overlay" class="gs-overlay" onclick="gsOverlayBgClick(event)">
+  <div class="gs-modal">
+    <div class="gs-modal-input-wrap">
+      <span class="gs-modal-icon">🔍</span>
+      <input id="gs-overlay-input" class="gs-modal-input"
+             placeholder="Search accounts, dealer IDs, emails, SLPs…"
+             oninput="gsOverlaySearch(this.value)"
+             onkeydown="if(event.key==='Escape') closeGlobalSearch()"/>
+      <button class="gs-modal-close" onclick="closeGlobalSearch()">ESC</button>
+    </div>
+    <div id="gs-overlay-results" class="gs-modal-results">
+      <div class="gs-modal-empty">Start typing to search across all of AC</div>
     </div>
   </div>
 </div>
