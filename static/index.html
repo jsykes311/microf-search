@@ -1745,7 +1745,7 @@ select, input { font-family: inherit; }
 </div>
 
 <script>
-// v2026032303
+// v2026032304
 // ── State ──────────────────────────────────────────────────────
 const state = {
   object: null,
@@ -2802,8 +2802,8 @@ function parseQuery(query) {
   // Team / user / who-wrote
   if (/\bwho\s+(wrote|created|added)\b|\bnotes?\s+by\s+(user|team|rep)\b|\bteam\s+(perf|activ|prod|stat)\b|\buser\s+activ\b/i.test(q))
     intent = 'team';
-  // Activations
-  else if (/\bactivat(ion|ed|e)\b|\bcontractor\s+activ\b|\bpartner\s+activ\b/i.test(q))
+  // Activations (activation, activations, activated, activate, partner/contractor activated)
+  else if (/\bactivat(ions?|ed|e|or|ors)?\b|\bnew\s+(partner|contractor|dealer)s?\b|\bcontractor\s+activ|\bpartner\s+activ/i.test(q))
     intent = 'activations';
   // Training
   else if (/\btrain(ing|ed|s)?\b|\bwebinar\b|\bcoach\b/i.test(q))
@@ -2828,16 +2828,22 @@ function parseQuery(query) {
     intent = 'dealer_profile';
 
   // ── Platform extraction ────────────────────────────────────
-  // Match known platforms or "for [Word]" pattern
-  const KNOWN_PLATFORMS = ['OPTIMUS','LTO','MICROF','ACIMA','FLEXSHOPPER','SNAP','KORNERSTONE','GREENSKY','UOWN','WELLS'];
+  // Exact multi-word platforms checked first, then single-word, then "for X" fallback
+  const PLATFORM_MAP = {
+    '360 FINANCE': '360 Finance', '360FINANCE': '360 Finance', '360': '360 Finance',
+    'SPECTRUMAC': 'SpectrumAC', 'SPECTRUM': 'SpectrumAC',
+    'OPTIMUS': 'OPTIMUS', 'LTO': 'LTO', 'MICROF': 'Microf',
+    'ACIMA': 'ACIMA', 'FLEXSHOPPER': 'FlexShopper', 'SNAP': 'Snap',
+    'KORNERSTONE': 'Kornerstone', 'GREENSKY': 'GreenSky', 'UOWN': 'UOWn', 'WELLS': 'Wells',
+  };
   let platform = null;
-  for (const p of KNOWN_PLATFORMS) {
-    if (new RegExp('\\b' + p + '\\b', 'i').test(query)) { platform = p; break; }
+  for (const [key, val] of Object.entries(PLATFORM_MAP)) {
+    if (new RegExp('\\b' + key.replace(' ', '\\s+') + '\\b', 'i').test(query)) { platform = val; break; }
   }
   if (!platform) {
-    const m = query.match(/\bfor\s+([A-Z][A-Za-z]{2,})\b/);
+    const m = query.match(/\bfor\s+([A-Z][A-Za-z0-9]{2,})\b/);
     if (m && !['LAST','THIS','NEXT','THE','ALL','YTD','OUR'].includes(m[1].toUpperCase())) {
-      platform = m[1].toUpperCase();
+      platform = m[1];
     }
   }
 
@@ -2864,10 +2870,15 @@ async function runSmartQuery() {
 
   // Show interpretation chips
   const chips = [];
-  if (intent) chips.push({ label: '📊 ' + intent.replace(/_/g,' '), ok: true });
+  const intentLabels = {
+    activations: 'Activations', training: 'Training', license: 'License Expiration',
+    bdr: 'BDR Summary', team: 'Team Activity', account_activity: 'Account Activity',
+    notes_analytics: 'Notes Analytics', dealer_profile: 'Dealer Profile',
+  };
+  if (intent) chips.push({ label: '📊 ' + (intentLabels[intent] || intent.replace(/_/g,' ')), ok: true });
   else        chips.push({ label: '⚠ Unknown report type', ok: false });
   if (period)   chips.push({ label: '📅 ' + period.replace(/_/g,' '), ok: true });
-  if (platform) chips.push({ label: '🏷 Platform: ' + platform, ok: true });
+  if (platform) chips.push({ label: '🏷 ' + platform, ok: true });
   if (bdr)      chips.push({ label: '👤 BDR: ' + bdr, ok: true });
   if (coldAccounts && intent === 'account_activity') chips.push({ label: '❄ Active accounts only excluded', ok: true });
 
@@ -2927,10 +2938,22 @@ async function runSmartQuery() {
         displayTitle = `Account Activity${period ? ' (' + period.replace(/_/g,' ') + ')' : ''}`;
         break;
       case 'notes_analytics':
-        // Route to analytics for notes grouped by date
         url = `/api/summary?object_type=notes&group_by=cdate`;
         displayTitle = `Notes Overview`;
         break;
+      case 'dealer_profile':
+        // Switch to Dealer Profile tab and pre-fill if a dealer ID is in the query
+        showTab('profile', null);
+        {
+          const dm = query.match(/\b\d{4,6}\b/);
+          if (dm) {
+            const inp = document.getElementById('dealer-id-input');
+            if (inp) { inp.value = dm[0]; }
+            const btn = document.getElementById('dealer-search-btn');
+            if (btn) btn.click();
+          }
+        }
+        return;
       default:
         resultDiv.innerHTML = `<div class="card" style="max-width:800px;"><div class="alert alert-error">Could not map to a report endpoint.</div></div>`;
         return;
