@@ -2610,12 +2610,9 @@ async def create_account_note(account_id: str, note: _NoteIn, request: _Request,
             "relationships": {"account": [int(account_id)]},
         }
     }
-    status, data = await ac_post(
+    data = await ac_post(
         f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", payload
     )
-    if status >= 400:
-        raise HTTPException(status_code=status,
-                            detail=data.get("message", "AC API error"))
     return {"ok": True, "record": data.get("record", {})}
 
 
