@@ -43,7 +43,10 @@ body {
 
 /* ── App Shell ── */
 .app-shell { display: flex; height: 100vh; overflow: hidden; }
-.app-shell.accounts-mode .app-nav { display: none; }
+/* Nav hidden for everyone by default; only admins get it, and never on #accounts */
+.app-nav { display: none; }
+.app-shell.admin-user .app-nav { display: flex; }
+.app-shell.admin-user.accounts-mode .app-nav { display: none; }
 
 .app-nav {
   width: 220px; min-width: 220px;
@@ -1816,7 +1819,7 @@ select, input { font-family: inherit; }
 </div>
 
 <script>
-// v2026032306
+// v2026032307
 // ── State ──────────────────────────────────────────────────────
 const state = {
   object: null,
@@ -2659,6 +2662,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetch('/api/me').then(r=>r.json()).then(d => {
     if (d.is_admin) {
       _isAdmin = true;
+      document.querySelector('.app-shell').classList.add('admin-user');
       document.getElementById('scheduler-nav-btn').style.display = '';
       document.getElementById('scheduler-nav-divider').style.display = '';
       const sc = document.getElementById('admin-card-scheduler');
