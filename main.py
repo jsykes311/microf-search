@@ -1825,6 +1825,7 @@ async def activations_report(
 async def not_activated_report(
     platform:  Optional[str] = Query(None),
     bdr:       Optional[str] = Query(None),
+    status:    Optional[str] = Query(None, description="Filter to a specific non-activated status"),
     format:    str           = Query("json"),
 ):
     """SLP records whose status is NOT 'Contractor Activated', joined to accounts."""
@@ -1838,9 +1839,11 @@ async def not_activated_report(
     candidates  = []
 
     for r in slp_records:
-        fields   = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        status   = str(fields.get("slp-status-detail", "")).strip()
-        if status == "Contractor Activated":
+        fields     = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        status_val = str(fields.get("slp-status-detail", "")).strip()
+        if status_val == "Contractor Activated":
+            continue
+        if status and status_val != status:
             continue
 
         plat      = str(fields.get("platform", "")).strip()
@@ -1880,7 +1883,7 @@ async def not_activated_report(
             "account_id":    aid or "",
             "platform":      f.get("platform", ""),
             "dealer_id":     f.get("dealer-id", ""),
-            "slp_status":    f.get("slp-status-detail", "Not Started"),
+            "slp_status":    f.get("slp-status-detail", "") or "Not Started",
             "assigned_bdr":  c["eff_bdr"],
         })
 
@@ -4989,6 +4992,67 @@ async def _job_last_rpa_date(start_date: Optional[date] = None, end_date: Option
     )
 
 
+# ── Not Activated ────────────────────────────────────────────────────────
+
+async def _job_not_activated(start_date=None, end_date=None,
+                              preset: Optional[str] = None, recipients: list = None):
+    """Email all SLP records that are NOT 'Contractor Activated'."""
+    print("[reports] Not-activated report")
+    slp_records = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+
+    account_ids: set = set()
+    candidates = []
+    for r in slp_records:
+        fields     = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        status_val = str(fields.get("slp-status-detail", "")).strip()
+        if status_val == "Contractor Activated":
+            continue
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if acc_id:
+            account_ids.add(acc_id)
+        candidates.append({"fields": fields, "account_id": acc_id,
+                            "eff_bdr": str(fields.get("assigned-bdr", "")).strip()
+                                       or _account_to_bdr.get(acc_id or "", "")})
+
+    async def _fetch(aid):
+        try:
+            d = await ac_get(f"accounts/{aid}")
+            return aid, d.get("account", {}).get("name", "")
+        except Exception:
+            return aid, ""
+
+    name_map = dict(await asyncio.gather(*[_fetch(a) for a in account_ids]))
+
+    records = []
+    for c in candidates:
+        f = c["fields"]
+        records.append({
+            "Account":  name_map.get(c["account_id"], ""),
+            "Dealer ID": f.get("dealer-id", ""),
+            "Platform":  f.get("platform", ""),
+            "Status":    f.get("slp-status-detail", "") or "Not Started",
+            "BDR":       c["eff_bdr"],
+        })
+    records.sort(key=lambda x: (x.get("Status", ""), x.get("Account", "")))
+
+    cols = [("Account","Account"), ("Dealer ID","Dealer ID"),
+            ("Platform","Platform"), ("Status","Status"), ("BDR","BDR")]
+    html = _HTML_WRAPPER.format(
+        title="Not Activated SLPs",
+        subtitle=f"{len(records)} record{'s' if len(records) != 1 else ''} not yet Contractor Activated",
+        table=_html_table(records, cols),
+        timestamp=datetime.now().strftime("%b %d %Y %H:%M"),
+    )
+    await _send_email(
+        subject=f"Not Activated SLPs ({len(records)} records)",
+        html=html,
+        csv_data=_csv_bytes(records),
+        csv_name=f"not_activated_{datetime.now().strftime('%Y%m%d')}.csv",
+        recipients=recipients,
+    )
+
+
 # ── Manual / GitHub Actions trigger ──────────────────────────────────────
 
 _REPORT_JOBS = {
@@ -5005,6 +5069,7 @@ _REPORT_JOBS = {
     "team-activity":        _job_team_activity,
     "last-app-date":        _job_last_app_date,
     "last-rpa-date":        _job_last_rpa_date,
+    "not-activated":        _job_not_activated,
 }
 
 @app.get("/api/send-report/{report_type}")

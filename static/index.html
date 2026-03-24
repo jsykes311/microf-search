@@ -1062,9 +1062,39 @@ select, input { font-family: inherit; }
       <span class="badge-icon">🔴</span>
       <h3>Not Activated</h3>
       <p>All SLP records whose status is NOT "Contractor Activated" (Not Started, Inactive, etc.).</p>
+      <div class="form-row">
+        <label>Platform (optional)</label>
+        <select id="na-platform">
+          <option value="">— all platforms —</option>
+          <option>OPTIMUS</option>
+          <option>Optimus 2.0</option>
+          <option>360 Finance</option>
+          <option>ComfortConnect</option>
+          <option>Comfort Connect</option>
+          <option>Microf</option>
+          <option>LTO</option>
+          <option>SpectrumAC</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Status (optional)</label>
+        <select id="na-status">
+          <option value="">— all non-activated —</option>
+          <option value="Not Started">Not Started</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Pending">Pending</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Assigned BDR (optional)</label>
+        <select id="na-bdr">
+          <option value="">— all BDRs —</option>
+        </select>
+      </div>
       <div class="btn-row" style="margin-top:auto;">
         <button class="btn btn-primary" onclick="runPrebuilt('not-activated')">▶ Run</button>
         <button class="btn btn-success" onclick="downloadPrebuilt('not-activated')">⬇ CSV</button>
+        <button class="btn btn-email btn-sm" onclick="sendEmailReportPreset('not-activated',null,'na-result')">✉ Email</button>
       </div>
       <div id="na-result" style="margin-top:12px;"></div>
     </div>
@@ -2399,6 +2429,12 @@ function prebuiltParams(type) {
     return { endpoint: 'license-expiration', params: p };
   }
   if (type === 'not-activated') {
+    const plat   = document.getElementById('na-platform')?.value || '';
+    const status = document.getElementById('na-status')?.value   || '';
+    const bdr    = document.getElementById('na-bdr')?.value      || '';
+    if (plat)   p.set('platform', plat);
+    if (status) p.set('status', status);
+    if (bdr)    p.set('bdr', bdr);
     return { endpoint: 'not-activated', params: p };
   }
   if (type === 'activations-last-week') {
@@ -2777,8 +2813,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function populateBdrDropdowns() {
-  // BDR dropdowns: act-bdr, su-bdr, om-bdr
-  const selIds = ['act-bdr', 'su-bdr', 'om-bdr'];
+  // BDR dropdowns: act-bdr, su-bdr, om-bdr, na-bdr
+  const selIds = ['act-bdr', 'su-bdr', 'om-bdr', 'na-bdr'];
   const sels = selIds.map(id => document.getElementById(id)).filter(Boolean);
   if (!sels.length) return;
   try {
