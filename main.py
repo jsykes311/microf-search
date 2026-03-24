@@ -2605,9 +2605,9 @@ async def account_detail(account_id: str):
                 "cdate": n.get("cdate", ""),
             })
 
-    # Stage 2: SLPs (filtered by dealer ID), contacts (by ID), alternate contacts
-    slp_params     = {"filters[fields.dealer-id]": dealer_id, "limit": 100} if dealer_id else {"limit": 0}
-    slp_task       = ac_get(f"customObjects/records/{SLP_SCHEMA_ID}", slp_params)
+    # Stage 2: SLPs (filtered by account relationship), contacts (by ID), alternate contacts
+    slp_task       = ac_get(f"customObjects/records/{SLP_SCHEMA_ID}",
+                            {"filters[relationships.account]": account_id, "limit": 100})
     deal_task      = ac_get("deals", {"filters[account]": account_id, "limit": 50})
     alt_con_task   = ac_get(f"customObjects/records/{ALT_CONTACT_SCHEMA_ID}",
                             {"filters[relationships.account]": account_id, "limit": 50})
