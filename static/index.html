@@ -126,6 +126,8 @@ body {
 .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
+/* All tab panels except accounts manage their own scroll */
+.tab-panel.active:not(#tab-accounts) { flex: 1; min-height: 0; overflow-y: auto; }
 
 /* ── Cards ── */
 .card {
