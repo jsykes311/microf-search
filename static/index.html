@@ -4013,8 +4013,9 @@ async function optimusConfirm(recordIds) {
     });
     const data = await res.json();
     if (!res.ok) { cs.textContent = '✕ ' + (data.detail || 'Error'); return; }
-    const { updated, failed, notes } = data;
-    cs.textContent = `✓ ${updated.length} SLP(s) deactivated · ${notes.length} note(s) logged${failed.length ? ` · ✕ ${failed.length} failed` : ''}`;
+    const { updated, failed, notes, account_status_updated } = data;
+    const acctMsg = (account_status_updated||[]).length ? ` · ${account_status_updated.length} account status set to Deactivated` : '';
+    cs.textContent = `✓ ${updated.length} SLP(s) deactivated${acctMsg} · ${notes.length} note(s) logged${failed.length ? ` · ✕ ${failed.length} failed` : ''}`;
     if (failed.length) console.error('Failed:', failed);
   } catch(e) {
     cs.textContent = '✕ ' + e.message;

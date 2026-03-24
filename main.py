@@ -5559,6 +5559,30 @@ async def optimus_deactivate_confirm(
             if status in (200, 201):
                 results["updated"].append(rec_id)
 
+                # If no remaining Contractor Activated SLPs, set Account Status = Deactivated
+                for acct_id in acct_ids:
+                    try:
+                        all_slps = await ac_get(
+                            f"customObjects/records/{SLP_SCHEMA}",
+                            {"filters[relationships.account]": acct_id},
+                        )
+                        still_active = any(
+                            f.get("value", "") == "Contractor Activated"
+                            for r in all_slps.get("records", [])
+                            for f in r.get("fields", [])
+                            if f.get("id") == "slp-status-detail"
+                        )
+                        if not still_active:
+                            await ac_post(
+                                f"accounts/{acct_id}/accountCustomFieldData",
+                                {"accountCustomFieldData": [
+                                    {"customerAccountFieldId": 19, "fieldValue": "Deactivated"}
+                                ]},
+                            )
+                            results.setdefault("account_status_updated", []).append(acct_id)
+                    except Exception as ae:
+                        print(f"[optimus-deactivate] account status update failed for {acct_id}: {ae}")
+
                 # Post Account Activity note (once per account)
                 if body.email_text:
                     for acct_id in acct_ids:
