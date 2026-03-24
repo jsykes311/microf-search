@@ -1823,7 +1823,7 @@ async def activations_report(
 
 @app.get("/api/report/not-activated")
 async def not_activated_report(
-    from_date:         Optional[str] = Query(None, description="YYYY-MM-DD — filter by SLP created date"),
+    from_date:         Optional[str] = Query(None, description="YYYY-MM-DD — filter by enrollment-request-date"),
     to_date:           Optional[str] = Query(None, description="YYYY-MM-DD"),
     platform:          Optional[str] = Query(None),
     bdr:               Optional[str] = Query(None),
@@ -1875,16 +1875,16 @@ async def not_activated_report(
                 continue
 
         if from_dt or to_dt:
-            created_str = str(r.get("cdate") or r.get("createdTimestamp") or "").strip()
-            if not created_str:
+            enroll_str = str(fields.get("enrollment-request-date") or "").strip()
+            if not enroll_str:
                 continue
             try:
-                created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
-                if created_dt.tzinfo is None:
-                    created_dt = created_dt.replace(tzinfo=timezone.utc)
-                if from_dt and created_dt < from_dt:
+                enroll_dt = datetime.fromisoformat(enroll_str.replace("Z", "+00:00"))
+                if enroll_dt.tzinfo is None:
+                    enroll_dt = enroll_dt.replace(tzinfo=timezone.utc)
+                if from_dt and enroll_dt < from_dt:
                     continue
-                if to_dt and created_dt > to_dt:
+                if to_dt and enroll_dt > to_dt:
                     continue
             except Exception:
                 continue
