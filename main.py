@@ -1880,6 +1880,8 @@ async def not_activated_report(
                 continue
             try:
                 created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                if created_dt.tzinfo is None:
+                    created_dt = created_dt.replace(tzinfo=timezone.utc)
                 if from_dt and created_dt < from_dt:
                     continue
                 if to_dt and created_dt > to_dt:
