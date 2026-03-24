@@ -5465,7 +5465,8 @@ async def smart_query_endpoint(q: str, user=Depends(require_auth)):
 import re as _re
 
 class _DeactivateConfirmIn(_BaseModel):
-    record_ids: list  # SLP record IDs to set Deactivated
+    record_ids: list   # SLP record IDs to set Deactivated
+    email_text: str = ""  # Original email body to log as Account Activity note
 
 @app.post("/api/admin/optimus-deactivate/preview")
 async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_require_admin)):
@@ -5518,13 +5519,21 @@ async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_requ
 
 
 @app.post("/api/admin/optimus-deactivate/confirm")
-async def optimus_deactivate_confirm(body: _DeactivateConfirmIn, admin=Depends(_require_admin)):
+async def optimus_deactivate_confirm(
+    body: _DeactivateConfirmIn,
+    request: _Request,
+    admin=Depends(_require_admin),
+):
     """
     Set slp-status-detail = Deactivated on the given SLP record IDs.
     Fetches each record first to avoid wiping other fields.
+    Also logs an Account Activity note with the original email body.
     """
     SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
-    results = {"updated": [], "failed": []}
+    results = {"updated": [], "failed": [], "notes": []}
+    performed_by = _get_session_email(request) or admin or "Microf Reports"
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    noted_accounts: set = set()  # track which accounts already got a note
 
     for rec_id in body.record_ids:
         try:
@@ -5549,6 +5558,34 @@ async def optimus_deactivate_confirm(body: _DeactivateConfirmIn, admin=Depends(_
             )
             if status in (200, 201):
                 results["updated"].append(rec_id)
+
+                # Post Account Activity note (once per account)
+                if body.email_text:
+                    for acct_id in acct_ids:
+                        if acct_id in noted_accounts:
+                            continue
+                        noted_accounts.add(acct_id)
+                        note_payload = {
+                            "record": {
+                                "fields": [
+                                    {"id": "activity-type",  "value": "Email"},
+                                    {"id": "subject",        "value": "GreenSky OPTIMUS Deactivation Notice"},
+                                    {"id": "body",           "value": body.email_text},
+                                    {"id": "activity-date",  "value": today_str},
+                                    {"id": "performed-by",   "value": performed_by},
+                                    {"id": "source",         "value": "Microf Reports"},
+                                ],
+                                "relationships": {"account": [acct_id]},
+                            }
+                        }
+                        try:
+                            ns, nd = await ac_post(
+                                f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload
+                            )
+                            if ns in (200, 201):
+                                results["notes"].append(acct_id)
+                        except Exception as ne:
+                            print(f"[optimus-deactivate] note failed for acct {acct_id}: {ne}")
             else:
                 results["failed"].append({"id": rec_id, "error": str(data)})
         except Exception as e:

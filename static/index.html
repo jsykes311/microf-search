@@ -4004,16 +4004,17 @@ async function optimusConfirm(recordIds) {
   if (!confirm(`Set ${recordIds.length} OPTIMUS SLP(s) to Deactivated? This cannot be undone here.`)) return;
   const cs = document.getElementById('optimus-confirm-status');
   cs.textContent = 'Updating…';
+  const emailText = document.getElementById('optimus-email-body').value.trim();
   try {
     const res  = await fetch('/api/admin/optimus-deactivate/confirm', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({record_ids: recordIds})
+      body: JSON.stringify({record_ids: recordIds, email_text: emailText})
     });
     const data = await res.json();
     if (!res.ok) { cs.textContent = '✕ ' + (data.detail || 'Error'); return; }
-    const { updated, failed } = data;
-    cs.textContent = `✓ ${updated.length} updated${failed.length ? ` · ✕ ${failed.length} failed` : ''}`;
+    const { updated, failed, notes } = data;
+    cs.textContent = `✓ ${updated.length} SLP(s) deactivated · ${notes.length} note(s) logged${failed.length ? ` · ✕ ${failed.length} failed` : ''}`;
     if (failed.length) console.error('Failed:', failed);
   } catch(e) {
     cs.textContent = '✕ ' + e.message;
