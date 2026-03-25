@@ -5484,14 +5484,31 @@ async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_requ
     not_found = []
 
     for did in dealer_ids:
-        # Use the pre-built dealer ID index (CF18 → account_id)
-        entry = _dealer_id_index.get(did)
-        if not entry:
+        # Phase 1: try CF18 index
+        entry     = _dealer_id_index.get(did)
+        acct_id   = str(entry["id"])   if entry else None
+        acct_name = entry.get("name", "") if entry else ""
+
+        # Phase 2: if not in index, search SLP records by dealer-id field directly
+        if not acct_id:
+            slp_fallback = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
+                                        {"filters[dealer-id]": did, "limit": 10})
+            for r in slp_fallback.get("records", []):
+                rels = r.get("relationships", {})
+                accts = rels.get("account", [])
+                if accts:
+                    acct_id = str(accts[0]) if isinstance(accts[0], int) else str(accts[0].get("id", ""))
+                    # fetch account name
+                    try:
+                        ad = await ac_get(f"accounts/{acct_id}")
+                        acct_name = ad.get("account", {}).get("name", "")
+                    except Exception:
+                        acct_name = ""
+                    break
+
+        if not acct_id:
             not_found.append(did)
             continue
-
-        acct_id   = str(entry["id"])
-        acct_name = entry.get("name", "")
 
         # Fetch OPTIMUS SLPs for this account
         slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
