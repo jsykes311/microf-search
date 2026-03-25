@@ -87,7 +87,11 @@ _SMTP_FROM  = os.getenv("SMTP_FROM_NAME", "Microf Reports")
 _RECIPIENTS = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") if r.strip()]
 
 # ── Admin / Scheduler ─────────────────────────────────────────────────────
-_ADMIN_EMAILS   = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL", "jsykes@microf.com,bsanders@microf.com").split(",") if e.strip()}
+_ADMIN_EMAILS       = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL",       "jsykes@microf.com,bsanders@microf.com").split(",") if e.strip()}
+_ENROLLMENT_EMAILS  = {e.strip().lower() for e in os.getenv("ENROLLMENT_EMAIL",  "").split(",") if e.strip()}
+_ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",   "").split(",") if e.strip()}
+# All groups that can access the Apps tab
+_APPS_EMAILS        = _ADMIN_EMAILS | _ENROLLMENT_EMAILS | _ACCT_MGMT_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
 _SCHEDULES_FILE = os.getenv("SCHEDULES_FILE", os.path.join(os.path.dirname(__file__), "schedules.json"))
 _scheduler      = AsyncIOScheduler()
 _schedules: dict = {}   # job_id → schedule dict
@@ -3246,8 +3250,18 @@ async def global_search_email(
 @app.get("/api/me")
 async def get_me(request: _Request):
     email = _get_session_email(request)
-    is_admin = (not _AZ_CLIENT_ID) or (email and email.lower() in _ADMIN_EMAILS)
-    return {"email": email or "anonymous", "is_admin": bool(is_admin)}
+    em = email.lower() if email else ""
+    if (not _AZ_CLIENT_ID) or em in _ADMIN_EMAILS:
+        group = "admin"
+    elif em in _ENROLLMENT_EMAILS:
+        group = "enrollment"
+    elif em in _ACCT_MGMT_EMAILS:
+        group = "account_management"
+    else:
+        group = "viewer"
+    is_admin     = group == "admin"
+    is_apps_user = group != "viewer"
+    return {"email": email or "anonymous", "is_admin": bool(is_admin), "is_apps_user": bool(is_apps_user), "group": group}
 
 
 @app.get("/api/admin/schedules")

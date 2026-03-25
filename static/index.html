@@ -789,28 +789,37 @@ select, input { font-family: inherit; }
     <h2>Apps</h2>
     <p class="admin-subtitle">Reports, search tools, and scheduler settings.</p>
     <div class="admin-card-grid">
-      <button class="admin-card" onclick="showTab('prebuilt', null)">
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-prebuilt" onclick="showTab('prebuilt', null)">
         <div class="ac-icon">📋</div>
         <div class="ac-title">Pre-Built Reports</div>
         <div class="ac-desc">Run saved reports for activations, ARS, BDR summaries, and more.</div>
       </button>
-      <button class="admin-card" onclick="showTab('builder', null)">
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-builder" onclick="showTab('builder', null)">
         <div class="ac-icon">⚙</div>
         <div class="ac-title">Report Builder</div>
         <div class="ac-desc">Build custom reports by filtering any AC object and field.</div>
       </button>
-
-      <button class="admin-card" onclick="showTab('smartquery', null)">
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-smartquery" onclick="showTab('smartquery', null)">
         <div class="ac-icon">💡</div>
         <div class="ac-title">Smart Search</div>
         <div class="ac-desc">Natural-language search across accounts, SLPs, and contacts.</div>
       </button>
-      <button class="admin-card" id="admin-card-scheduler" style="display:none;" onclick="showTab('scheduler', null)">
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-globalsearch" onclick="showTab('globalsearch', null)">
+        <div class="ac-icon">🌐</div>
+        <div class="ac-title">Global Search</div>
+        <div class="ac-desc">Find any value across all AC objects and fields.</div>
+      </button>
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-move" onclick="showMoveRecords()">
+        <div class="ac-icon">🔀</div>
+        <div class="ac-title">Move Records</div>
+        <div class="ac-desc">Move a Deal, Contact, or SLP to a different account.</div>
+      </button>
+      <button class="admin-card ac-group-admin" id="admin-card-scheduler" onclick="showTab('scheduler', null)">
         <div class="ac-icon">🕐</div>
         <div class="ac-title">Scheduler</div>
         <div class="ac-desc">Schedule automated email reports for your team.</div>
       </button>
-      <button class="admin-card" onclick="showOptimusDeactivator()">
+      <button class="admin-card ac-group-admin ac-group-enrollment" id="admin-card-optimus-deact" onclick="showOptimusDeactivator()">
         <div class="ac-icon" style="display:flex;align-items:center;gap:6px;">
           <img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" style="height:22px;object-fit:contain;" onerror="this.style.display='none'">
           🔴
@@ -818,18 +827,13 @@ select, input { font-family: inherit; }
         <div class="ac-title">OPTIMUS Deactivation</div>
         <div class="ac-desc">Paste EGIA suspension email to bulk-deactivate OPTIMUS SLPs/Accounts.</div>
       </button>
-      <button class="admin-card" onclick="showOptimusReactivator()">
+      <button class="admin-card ac-group-admin ac-group-enrollment" id="admin-card-optimus-react" onclick="showOptimusReactivator()">
         <div class="ac-icon" style="display:flex;align-items:center;gap:6px;">
           <img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" style="height:22px;object-fit:contain;" onerror="this.style.display='none'">
           🟢
         </div>
         <div class="ac-title">OPTIMUS Reactivation</div>
         <div class="ac-desc">Paste EGIA reactivation email to bulk-reactivate OPTIMUS SLPs/Accounts.</div>
-      </button>
-      <button class="admin-card" onclick="showMoveRecords()">
-        <div class="ac-icon">🔀</div>
-        <div class="ac-title">Move Records</div>
-        <div class="ac-desc">Move a Deal, Contact, or SLP to a different account.</div>
       </button>
     </div>
 
@@ -2823,27 +2827,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('email-to');
     if (el) el.value = savedTo;
   }
-  // Show Apps button for apps users; show full nav only for admins
+  // Apply group-based access on load
   fetch('/api/me').then(r=>r.json()).then(d => {
     const shell = document.querySelector('.app-shell');
+    const group = d.group || 'viewer';
+
+    // Hide all group-gated cards first, then reveal only those matching the user's group
+    document.querySelectorAll('.admin-card[class*="ac-group-"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll(`.ac-group-${group}`).forEach(el => el.style.display = '');
+
     if (d.is_apps_user) {
       _isAppsUser = true;
       shell.classList.add('apps-user');
-      const ab = document.getElementById('admin-nav-btn');
-      if (ab) ab.style.display = 'flex';
     }
     if (d.is_admin) {
       _isAdmin = true;
       shell.classList.add('admin-user');
       document.getElementById('scheduler-nav-btn').style.display = '';
       document.getElementById('scheduler-nav-divider').style.display = '';
-      const sc = document.getElementById('admin-card-scheduler');
-      if (sc) sc.style.display = '';
-      // If the page loaded directly on #admin, re-trigger routing now that we know they're allowed
-      if (window.location.hash === '#admin') _navToHash('#admin');
-    } else if (d.is_apps_user && window.location.hash === '#admin') {
-      _navToHash('#admin');
     }
+    if (window.location.hash === '#admin' && d.is_apps_user) _navToHash('#admin');
   }).catch(()=>{});
   populateBdrDropdowns();
 });
