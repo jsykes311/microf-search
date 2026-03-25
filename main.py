@@ -5681,6 +5681,176 @@ async def optimus_deactivate_confirm(
     return results
 
 
+# ── OPTIMUS Reactivation ──────────────────────────────────────────────────────
+
+@app.post("/api/admin/optimus-reactivate/preview")
+async def optimus_reactivate_preview(body: dict = Body(...), admin=Depends(_require_admin)):
+    """Same lookup as deactivation preview but returns all non-activated OPTIMUS SLPs."""
+    text = body.get("text", "")
+    raw_ids = _re.findall(r'\b(\d{4,6})\b', text)
+    dealer_ids = list(dict.fromkeys(raw_ids))
+    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+    rows, not_found = [], []
+
+    for did in dealer_ids:
+        entry   = _dealer_id_index.get(did)
+        acct_id = str(entry["id"]) if entry else None
+        acct_name = entry.get("name", "") if entry else ""
+
+        if not acct_id:
+            slp_fallback = await ac_get(f"customObjects/records/{SLP_SCHEMA}", {"filters[dealer-id]": did, "limit": 10})
+            for r in slp_fallback.get("records", []):
+                accts = r.get("relationships", {}).get("account", [])
+                if accts:
+                    a0 = accts[0]
+                    acct_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
+                    try:
+                        ad = await ac_get(f"accounts/{acct_id}")
+                        acct_name = ad.get("account", {}).get("name", "")
+                    except Exception:
+                        acct_name = ""
+                    break
+
+        if not acct_id:
+            # Scan all SLP records for this dealer-id
+            all_slps = await ac_get_all(f"customObjects/records/{SLP_SCHEMA}", "records", {"limit": 100})
+            for r in all_slps:
+                fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
+                if str(fmap.get("dealer-id", "")).strip() == did:
+                    accts = r.get("relationships", {}).get("account", [])
+                    if accts:
+                        a0 = accts[0]
+                        acct_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
+                        try:
+                            ad = await ac_get(f"accounts/{acct_id}")
+                            acct_name = ad.get("account", {}).get("name", "")
+                        except Exception:
+                            acct_name = ""
+                    break
+
+        if not acct_id:
+            not_found.append(did)
+            continue
+
+        slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}", {"filters[relationships.account]": acct_id, "limit": 50})
+        found_any = False
+        for r in slp_data.get("records", []):
+            fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
+            if (fmap.get("platform") or "").strip().upper() != "OPTIMUS":
+                continue
+            found_any = True
+            rows.append({
+                "record_id":      r["id"],
+                "account_id":     acct_id,
+                "dealer_id":      did,
+                "account_name":   acct_name,
+                "current_status": fmap.get("slp-status-detail", ""),
+                "platform":       fmap.get("platform", ""),
+                "fields":         fmap,
+            })
+        if not found_any:
+            not_found.append(did)
+
+    return {"preview": rows, "not_found": not_found, "dealer_ids_parsed": dealer_ids}
+
+
+@app.post("/api/admin/optimus-reactivate/confirm")
+async def optimus_reactivate_confirm(
+    body: _DeactivateConfirmIn,
+    request: _Request,
+    admin=Depends(_require_admin),
+):
+    """Set each SLP to Contractor Activated, set contractor-activated-date to today,
+    update account status if this was the only SLP, and log an Account Activity note."""
+    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S-05:00")
+    today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    performed_by = _get_session_email(request) or admin or "Microf Reports"
+    results = {"updated": [], "failed": [], "notes": [], "account_status_updated": []}
+
+    for rec_id in body.record_ids:
+        try:
+            rec_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}/{rec_id}")
+            record = rec_data.get("record", {})
+            if not record:
+                results["failed"].append({"id": rec_id, "error": "Not found"})
+                continue
+
+            acct_id = None
+            accts = record.get("relationships", {}).get("account", [])
+            if accts:
+                a0 = accts[0]
+                acct_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
+
+            # Build updated fields
+            existing = {f["id"]: f.get("value", "") for f in record.get("fields", [])}
+            existing["slp-status-detail"] = "Contractor Activated"
+            existing["contractor-activated-date"] = today_iso
+            # Clear deactivation date
+            existing["deactivation-date"] = ""
+
+            new_fields = [{"id": k, "value": v} for k, v in existing.items()]
+            payload = {
+                "record": {
+                    "fields": new_fields,
+                    "relationships": {"account": [int(acct_id)]} if acct_id else {}
+                }
+            }
+            status, data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
+            if status in (200, 201):
+                results["updated"].append(rec_id)
+
+                # Update account status if this is the only active SLP
+                if acct_id:
+                    try:
+                        all_acct_slps = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
+                                                     {"filters[relationships.account]": acct_id, "limit": 50})
+                        other_active = [
+                            r for r in all_acct_slps.get("records", [])
+                            if r["id"] != rec_id and
+                            any(f["id"] == "slp-status-detail" and f.get("value") == "Contractor Activated"
+                                for f in r.get("fields", []))
+                        ]
+                        if not other_active:
+                            await ac_post(
+                                f"accounts/{acct_id}/accountCustomFieldData",
+                                {"accountCustomFieldData": [
+                                    {"customerAccountFieldId": 19, "fieldValue": "Contractor"}
+                                ]},
+                            )
+                            results["account_status_updated"].append(acct_id)
+                    except Exception as ae:
+                        print(f"[optimus-reactivate] account status update failed for {acct_id}: {ae}")
+
+                # Post Account Activity note
+                if body.email_text and acct_id:
+                    try:
+                        note_payload = {
+                            "record": {
+                                "fields": [
+                                    {"id": "activity-type",  "value": "Email"},
+                                    {"id": "subject",        "value": "EGIA OPTIMUS Reactivation Notice"},
+                                    {"id": "body",           "value": body.email_text},
+                                    {"id": "activity-date",  "value": today_date},
+                                    {"id": "performed-by",   "value": performed_by},
+                                    {"id": "source",         "value": "Microf Reports"},
+                                ],
+                                "relationships": {"account": [int(acct_id)]}
+                            }
+                        }
+                        ns, _ = await ac_post(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload)
+                        if ns in (200, 201):
+                            results["notes"].append(acct_id)
+                    except Exception as ne:
+                        print(f"[optimus-reactivate] note failed for acct {acct_id}: {ne}")
+            else:
+                results["failed"].append({"id": rec_id, "error": str(data)})
+        except Exception as e:
+            results["failed"].append({"id": rec_id, "error": str(e)})
+
+    return results
+
+
 # ── Move Records (Deal / Contact / SLP) ───────────────────────────────────────
 
 class _MoveIn(_BaseModel):
