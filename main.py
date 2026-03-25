@@ -5504,7 +5504,8 @@ async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_requ
                     rels  = r.get("relationships", {})
                     accts = rels.get("account", [])
                     if accts:
-                        aid = str(accts[0]) if isinstance(accts[0], int) else str(accts[0].get("id", ""))
+                        a0  = accts[0]
+                        aid = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
                         slp_did_to_acct[slp_did] = aid
                         slp_did_to_rec[slp_did]  = (r, fmap)
             total = int(page.get("meta", {}).get("total", 0))
