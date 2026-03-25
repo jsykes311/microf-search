@@ -660,13 +660,12 @@ select, input { font-family: inherit; }
 
 /* Admin button in cmdbar */
 .admin-nav-btn {
-  display: none; align-items: center; gap: 5px;
+  display: flex; align-items: center; gap: 5px;
   background: none; border: 1px solid var(--ms-g40); border-radius: 4px;
   color: var(--ms-g90); font-size: 0.78rem; font-weight: 600; font-family: inherit;
   padding: 5px 12px; cursor: pointer; transition: all 0.1s; margin-left: 12px;
 }
 .admin-nav-btn:hover { background: var(--ms-g20); color: var(--ms-g130); }
-.accounts-mode .admin-nav-btn { display: flex; }
 
 /* Back-to-admin link shown on tool tabs */
 .back-to-admin {
@@ -721,7 +720,7 @@ select, input { font-family: inherit; }
            autocomplete="off"/>
   </div>
   <div class="ms-cmdbar-actions" style="flex-shrink:0;">
-    <button class="admin-nav-btn" id="admin-nav-btn" style="display:none;" onclick="showTab('admin', null)">⚙ Apps</button>
+    <button class="admin-nav-btn" id="admin-nav-btn" onclick="showTab('admin', null)">⚙ Apps</button>
   </div>
 </div>
 
