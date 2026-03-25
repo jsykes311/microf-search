@@ -5541,7 +5541,7 @@ async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_requ
         found_any = False
         for r in slp_data.get("records", []):
             fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
-            if (fmap.get("platform") or "").strip().upper() != "OPTIMUS":
+            if "optimus" not in (fmap.get("platform") or "").lower():
                 continue
             found_any = True
             rows.append({
