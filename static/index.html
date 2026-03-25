@@ -2054,13 +2054,16 @@ function showTab(id, btn, pushHistory = true) {
   if (id === 'scheduler') schLoad();
   const bc = document.getElementById('ms-page-name');
   if (bc) bc.textContent = _TAB_NAMES[id] || id;
-  // Accounts fills app-main; tools use scrollable container
+  // Accounts fills app-main; builder/prebuilt use scrollable tools container; others are standalone
+  const _TOOLS_TABS = new Set(['builder','prebuilt','globalsearch']);
   const tools = document.getElementById('tools-container');
   if (id === 'accounts') {
     tools.classList.remove('active');
     abInit();
-  } else {
+  } else if (_TOOLS_TABS.has(id)) {
     tools.classList.add('active');
+  } else {
+    tools.classList.remove('active');
   }
 }
 
