@@ -88,7 +88,7 @@ _RECIPIENTS = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") 
 
 # ── Admin / Scheduler ─────────────────────────────────────────────────────
 _ADMIN_EMAILS       = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL",       "jsykes@microf.com,bsanders@microf.com").split(",") if e.strip()}
-_ENROLLMENT_EMAILS  = {e.strip().lower() for e in os.getenv("ENROLLMENT_EMAIL",  "").split(",") if e.strip()}
+_ENROLLMENT_EMAILS  = {e.strip().lower() for e in os.getenv("ENROLLMENT_EMAIL",  "elove@microf.com,cristian.perez@microf.com").split(",") if e.strip()}
 _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",   "").split(",") if e.strip()}
 # All groups that can access the Apps tab
 _APPS_EMAILS        = _ADMIN_EMAILS | _ENROLLMENT_EMAILS | _ACCT_MGMT_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
