@@ -2853,6 +2853,8 @@ async def _build_location_index() -> dict:
             "phone":     _account_to_phone.get(aid, ""),
             "website":   _account_to_website.get(aid, ""),
             "address":   _account_to_address.get(aid, ""),
+            "platform":  _account_to_platform.get(aid, ""),
+            "bdr":       _account_to_bdr.get(aid, ""),
             "approx":    precision != "zip",
         }
 

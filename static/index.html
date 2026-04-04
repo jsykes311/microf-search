@@ -1929,6 +1929,35 @@ select, input { font-family: inherit; }
 </div><!-- /app-main (cmd bar + tabs) -->
 </div><!-- /app-shell -->
 
+<!-- Contractor Card Modal (map pin click) -->
+<div id="mf-card-overlay" class="gs-overlay" onclick="if(event.target===this)closeMfCard()" style="align-items:center;padding-top:0;">
+  <div id="mf-card" style="background:var(--ms-white);border-radius:6px;width:360px;max-width:95vw;box-shadow:var(--ms-sh16);border:1px solid var(--ms-g30);overflow:hidden;">
+    <div style="background:var(--ms-blue);padding:16px 18px 14px;position:relative;">
+      <div id="mf-card-badge" style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:3px;padding:2px 8px;font-size:0.65rem;font-weight:700;color:#fff;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:8px;"></div>
+      <div id="mf-card-name" style="font-size:1rem;font-weight:700;color:#fff;line-height:1.3;padding-right:28px;"></div>
+      <div id="mf-card-id" style="font-size:0.72rem;color:rgba(255,255,255,0.75);margin-top:3px;"></div>
+      <button onclick="closeMfCard()" style="position:absolute;top:12px;right:12px;background:rgba(255,255,255,0.2);border:none;border-radius:3px;color:#fff;font-size:0.75rem;padding:3px 8px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 18px;display:flex;flex-direction:column;gap:9px;">
+      <div id="mf-card-addr" style="font-size:0.82rem;color:var(--ms-g130);display:none;">
+        <span style="color:var(--ms-g90);margin-right:6px;">📍</span><span id="mf-card-addr-text"></span>
+      </div>
+      <div id="mf-card-phone" style="font-size:0.82rem;display:none;">
+        <span style="color:var(--ms-g90);margin-right:6px;">📞</span><a id="mf-card-phone-link" href="#" style="color:var(--ms-blue);text-decoration:none;"></a>
+      </div>
+      <div id="mf-card-web" style="font-size:0.82rem;display:none;">
+        <span style="color:var(--ms-g90);margin-right:6px;">🌐</span><a id="mf-card-web-link" href="#" target="_blank" rel="noopener" style="color:var(--ms-blue);text-decoration:none;"></a>
+      </div>
+      <div id="mf-card-bdr" style="font-size:0.82rem;color:var(--ms-g130);display:none;">
+        <span style="color:var(--ms-g90);margin-right:6px;">👤</span><span id="mf-card-bdr-text"></span>
+      </div>
+      <div id="mf-card-dist" style="font-size:0.75rem;color:var(--ms-g90);display:none;padding-top:2px;border-top:1px solid var(--ms-g30);margin-top:2px;">
+        <span id="mf-card-dist-text"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Global Search Overlay (fixed, outside shell) -->
 <div id="gs-overlay" class="gs-overlay" onclick="gsOverlayBgClick(event)">
   <div class="gs-modal">
@@ -3863,6 +3892,49 @@ function showMicrofMap() {
   if (panel.style.display === 'block') initMicrofMap();
 }
 
+function openMfCard(a) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || ''; };
+  const show = (id, visible) => { const el = document.getElementById(id); if (el) el.style.display = visible ? '' : 'none'; };
+
+  set('mf-card-name', a.name);
+  set('mf-card-badge', a.platform || 'Microf');
+  set('mf-card-id',   a.dealer_id ? `Dealer ID: ${a.dealer_id}` : '');
+
+  const cityLine = [a.city, a.state].filter(Boolean).join(', ');
+  const addrFull = [a.address, cityLine].filter(Boolean).join(', ');
+  set('mf-card-addr-text', addrFull);
+  show('mf-card-addr', !!addrFull);
+
+  if (a.phone) {
+    const pl = document.getElementById('mf-card-phone-link');
+    pl.href = `tel:${a.phone}`; pl.textContent = a.phone;
+    show('mf-card-phone', true);
+  } else { show('mf-card-phone', false); }
+
+  if (a.website) {
+    const wl = document.getElementById('mf-card-web-link');
+    const url = a.website.startsWith('http') ? a.website : 'https://' + a.website;
+    wl.href = url; wl.textContent = a.website.replace(/^https?:\/\//, '');
+    show('mf-card-web', true);
+  } else { show('mf-card-web', false); }
+
+  if (a.bdr) {
+    set('mf-card-bdr-text', `BDR: ${a.bdr}`);
+    show('mf-card-bdr', true);
+  } else { show('mf-card-bdr', false); }
+
+  if (a.distance_miles != null) {
+    set('mf-card-dist-text', `${a.distance_miles} miles away`);
+    show('mf-card-dist', true);
+  } else { show('mf-card-dist', false); }
+
+  document.getElementById('mf-card-overlay').classList.add('open');
+}
+
+function closeMfCard() {
+  document.getElementById('mf-card-overlay').classList.remove('open');
+}
+
 function _mfRenderAccountList(accounts, headerText) {
   const el = document.getElementById('mf-accounts');
   if (!accounts.length) {
@@ -3911,18 +3983,8 @@ function _mfDropPins(accounts, centerLat, centerLon) {
 
   accounts.forEach(a => {
     if (!a.lat || !a.lon) return;
-    const dist    = a.distance_miles != null ? ` · ${a.distance_miles} mi` : '';
-    const cityRow = [a.city, a.state].filter(Boolean).join(', ');
-    const addrRow = a.address ? `<div style="font-size:0.8rem;color:#555;margin-top:2px;">${esc(a.address)}${cityRow ? ', ' + esc(cityRow) : ''}</div>`
-                              : (cityRow ? `<div style="font-size:0.8rem;color:#555;margin-top:2px;">${esc(cityRow)}</div>` : '');
-    const phoneRow = a.phone   ? `<div style="font-size:0.8rem;margin-top:4px;">📞 <a href="tel:${esc(a.phone)}" style="color:#1d4ed8;text-decoration:none;">${esc(a.phone)}</a></div>` : '';
-    const webRow   = a.website ? `<div style="font-size:0.8rem;margin-top:2px;">🌐 <a href="${esc(a.website.startsWith('http') ? a.website : 'https://'+a.website)}" target="_blank" rel="noopener" style="color:#1d4ed8;text-decoration:none;">${esc(a.website.replace(/^https?:\/\//,''))}</a></div>` : '';
-    const distRow  = dist ? `<div style="font-size:0.75rem;color:#6b7280;margin-top:4px;">${dist.replace(' · ','')}</div>` : '';
-    const popup = `<div style="min-width:180px;max-width:240px;font-family:inherit;">
-      <div style="font-weight:700;font-size:0.85rem;margin-bottom:2px;">${esc(a.name)}</div>
-      ${addrRow}${phoneRow}${webRow}${distRow}
-    </div>`;
-    L.marker([a.lat, a.lon], {icon: pinIcon}).addTo(_mfPinLayer).bindPopup(popup);
+    L.marker([a.lat, a.lon], {icon: pinIcon}).addTo(_mfPinLayer)
+      .on('click', () => openMfCard(a));
   });
 
   if (accounts.length) {
