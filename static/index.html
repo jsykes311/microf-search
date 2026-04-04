@@ -1948,9 +1948,6 @@ select, input { font-family: inherit; }
       <div id="mf-card-web" style="font-size:0.82rem;display:none;">
         <span style="color:var(--ms-g90);margin-right:6px;">🌐</span><a id="mf-card-web-link" href="#" target="_blank" rel="noopener" style="color:var(--ms-blue);text-decoration:none;"></a>
       </div>
-      <div id="mf-card-bdr" style="font-size:0.82rem;color:var(--ms-g130);display:none;">
-        <span style="color:var(--ms-g90);margin-right:6px;">👤</span><span id="mf-card-bdr-text"></span>
-      </div>
       <div id="mf-card-dist" style="font-size:0.75rem;color:var(--ms-g90);display:none;padding-top:2px;border-top:1px solid var(--ms-g30);margin-top:2px;">
         <span id="mf-card-dist-text"></span>
       </div>
@@ -3917,11 +3914,6 @@ function openMfCard(a) {
     wl.href = url; wl.textContent = a.website.replace(/^https?:\/\//, '');
     show('mf-card-web', true);
   } else { show('mf-card-web', false); }
-
-  if (a.bdr) {
-    set('mf-card-bdr-text', `BDR: ${a.bdr}`);
-    show('mf-card-bdr', true);
-  } else { show('mf-card-bdr', false); }
 
   if (a.distance_miles != null) {
     set('mf-card-dist-text', `${a.distance_miles} miles away`);
