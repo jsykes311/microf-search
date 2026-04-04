@@ -651,8 +651,17 @@ select, input { font-family: inherit; }
   font-family: inherit; cursor: pointer; padding: 0; margin-bottom: 16px;
 }
 .back-to-admin:hover { text-decoration: underline; }
-#mf-map { height: 420px; border-radius: 6px; border: 1px solid #e5e7eb; }
-#mf-alert { margin-top: 12px; min-height: 36px; padding: 8px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.88rem; line-height: 1.5; }
+#mf-layout { display: flex; gap: 16px; align-items: flex-start; }
+#mf-sidebar { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+#mf-map-wrap { flex: 1; min-width: 0; }
+#mf-map { height: 540px; border-radius: 6px; border: 1px solid #e5e7eb; }
+#mf-alert { padding: 8px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.82rem; line-height: 1.5; }
+#mf-accounts { max-height: 420px; overflow-y: auto; }
+@media (max-width: 640px) {
+  #mf-layout { flex-direction: column-reverse; }
+  #mf-sidebar { width: 100%; }
+  #mf-map { height: 320px; }
+}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -921,18 +930,24 @@ select, input { font-family: inherit; }
         <strong style="font-size:1rem;">🌡 Microf Weather Demand Map</strong>
         <button onclick="document.getElementById('weather-map-panel').style.display='none'" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#6b7280;">✕</button>
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
-        <div style="font-size:0.78rem;color:#6b7280;flex:1;min-width:200px;">Click the map for demand signal + active accounts. Or search for nearest contractors:</div>
-        <div style="display:flex;gap:6px;">
-          <input id="mf-zip-input" type="text" placeholder="Zip or city, state…"
-            style="padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem;width:180px;font-family:inherit;"
-            onkeydown="if(event.key==='Enter') mfFindNearest()"/>
-          <button onclick="mfFindNearest()" style="padding:6px 14px;background:#356ae6;color:#fff;border:none;border-radius:4px;font-size:0.82rem;cursor:pointer;font-family:inherit;">🔍 Find</button>
+      <div id="mf-layout">
+        <!-- Left sidebar: search + results -->
+        <div id="mf-sidebar">
+          <div style="font-size:0.78rem;color:#6b7280;line-height:1.5;">Click the map for demand signal + active accounts, or search for nearest contractors:</div>
+          <div style="display:flex;gap:6px;">
+            <input id="mf-zip-input" type="text" placeholder="Zip or city, state…"
+              style="flex:1;min-width:0;padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem;font-family:inherit;"
+              onkeydown="if(event.key==='Enter') mfFindNearest()"/>
+            <button onclick="mfFindNearest()" style="padding:6px 12px;background:#356ae6;color:#fff;border:none;border-radius:4px;font-size:0.82rem;cursor:pointer;font-family:inherit;">🔍</button>
+          </div>
+          <div id="mf-alert">Click a location on the map to see demand conditions.</div>
+          <div id="mf-accounts"></div>
+        </div>
+        <!-- Right: map -->
+        <div id="mf-map-wrap">
+          <div id="mf-map"></div>
         </div>
       </div>
-      <div id="mf-map"></div>
-      <div id="mf-alert">Click a location on the map to see demand conditions.</div>
-      <div id="mf-accounts"></div>
     </div>
   </div>
 </div>
