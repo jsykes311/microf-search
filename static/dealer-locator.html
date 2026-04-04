@@ -311,10 +311,8 @@ async function mfFindNearest() {
 
   _mfMap.on('click', async function(e) {
     const { lat, lng: lon } = e.latlng;
-    const alertEl    = document.getElementById('mf-alert');
-    const accountsEl = document.getElementById('mf-accounts');
+    const alertEl = document.getElementById('mf-alert');
     alertEl.textContent = 'Loading…';
-    accountsEl.innerHTML = '';
 
     try {
       const [weatherRes, geoRes] = await Promise.all([
@@ -338,16 +336,13 @@ async function mfFindNearest() {
 
       const geo = await geoRes.json();
       const stateCode = (geo.address?.['ISO3166-2-lvl4'] || '').replace(/^US-/, '').trim();
-      if (!stateCode) { accountsEl.innerHTML = ''; return; }
+      if (!stateCode) return;
 
-      accountsEl.innerHTML = `<div style="margin-top:10px;font-size:0.78rem;color:#6b7280;">Loading accounts in ${esc(stateCode)}…</div>`;
-      const acctRes  = await fetch(`/api/accounts/by-state?state=${encodeURIComponent(stateCode)}&limit=10`);
+      // Show state account count in the alert — don't touch the pins
+      const acctRes  = await fetch(`/api/accounts/by-state?state=${encodeURIComponent(stateCode)}&limit=0`);
       const acctData = await acctRes.json();
-      const accounts = acctData.accounts || [];
       const total    = acctData.total || 0;
-
-      _mfDropPins(accounts, null, null);
-      _mfRenderAccountList(accounts, `${stateCode} — ${total} active account${total!==1?'s':''} ${total>10?'(showing 10)':''}`);
+      alertEl.innerHTML += `<br><span style="font-size:0.78rem;color:#374151;">${stateCode}: ${total} active Microf dealer${total!==1?'s':''} — search above to find nearest</span>`;
     } catch(err) {
       alertEl.innerHTML = `<span style="color:#dc2626;">Network error: ${esc(err.message)}</span>`;
     }
