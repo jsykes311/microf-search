@@ -674,7 +674,11 @@ select, input { font-family: inherit; }
   font-family: inherit; cursor: pointer; padding: 0; margin-bottom: 16px;
 }
 .back-to-admin:hover { text-decoration: underline; }
+#mf-map { height: 420px; border-radius: 6px; border: 1px solid #e5e7eb; }
+#mf-alert { margin-top: 12px; min-height: 36px; padding: 8px 14px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.88rem; line-height: 1.5; }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div class="app-shell">
@@ -814,6 +818,11 @@ select, input { font-family: inherit; }
         <div class="ac-title">Move Records</div>
         <div class="ac-desc">Move a Deal, Contact, or SLP to a different account.</div>
       </button>
+      <button class="admin-card ac-group-admin ac-group-account_management" id="admin-card-weather" onclick="showMicrofMap()">
+        <div class="ac-icon">🌡</div>
+        <div class="ac-title">Weather Map</div>
+        <div class="ac-desc">Live temperature map — click any region to see demand signal.</div>
+      </button>
       <button class="admin-card ac-group-admin" id="admin-card-scheduler" onclick="showTab('scheduler', null)">
         <div class="ac-icon">🕐</div>
         <div class="ac-title">Scheduler</div>
@@ -927,6 +936,17 @@ select, input { font-family: inherit; }
         <span id="optimus-react-status" style="font-size:0.8rem;color:#6b7280;"></span>
       </div>
       <div id="optimus-react-preview-area" style="margin-top:16px;"></div>
+    </div>
+
+    <!-- Weather Map Panel -->
+    <div id="weather-map-panel" style="display:none;margin-top:32px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <strong style="font-size:1rem;">🌡 Weather Demand Map</strong>
+        <button onclick="document.getElementById('weather-map-panel').style.display='none'" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      <div style="font-size:0.78rem;color:#6b7280;margin-bottom:10px;">Click anywhere on the map to see temperature and HVAC demand signal for that area.</div>
+      <div id="mf-map"></div>
+      <div id="mf-alert">Click a location on the map to see demand conditions.</div>
     </div>
   </div>
 </div>
@@ -4039,6 +4059,57 @@ function abCoTab(key, btn) {
 init();
 
 // ── Move Records ───────────────────────────────────────────────────────────
+function showMicrofMap() {
+  const panel = document.getElementById('weather-map-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') initMicrofMap();
+}
+
+function initMicrofMap() {
+  if (window.microfMapLoaded) return;
+  window.microfMapLoaded = true;
+
+  const API_KEY = "d3c2c838262d1dd06a372a8dcbd34aec";
+
+  const map = L.map('mf-map').setView([39.5, -98.35], 4);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+  L.tileLayer(
+    `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${API_KEY}`,
+    { opacity: 0.6 }
+  ).addTo(map);
+
+  map.on('click', async function(e) {
+    const lat = e.latlng.lat;
+    const lon = e.latlng.lng;
+    const alert = document.getElementById('mf-alert');
+    alert.innerHTML = 'Loading…';
+    try {
+      const res = await fetch(
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&units=imperial&appid=${API_KEY}`
+      );
+      const data = await res.json();
+      const temp = Math.round(data.main.temp);
+      const city = data.name || "Selected area";
+      let msg, color;
+      if (temp >= 90) {
+        msg = "🔥 HIGH DEMAND — target contractors";
+        color = "#dc2626";
+      } else if (temp <= 40) {
+        msg = "❄️ Heating demand opportunity";
+        color = "#2563eb";
+      } else {
+        msg = "✅ Normal conditions";
+        color = "#059669";
+      }
+      alert.innerHTML = `<strong>${city}</strong>: ${temp}°F<br><span style="color:${color};font-weight:600;">${msg}</span>`;
+    } catch(err) {
+      alert.innerHTML = `<span style="color:#dc2626;">Could not fetch weather data.</span>`;
+    }
+  });
+}
+
 function showMoveRecords() {
   const panel = document.getElementById('move-records-panel');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
