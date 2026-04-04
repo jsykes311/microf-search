@@ -944,7 +944,15 @@ select, input { font-family: inherit; }
         <strong style="font-size:1rem;">🌡 Microf Weather Demand Map</strong>
         <button onclick="document.getElementById('weather-map-panel').style.display='none'" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:#6b7280;">✕</button>
       </div>
-      <div style="font-size:0.78rem;color:#6b7280;margin-bottom:10px;">Click anywhere on the map to see temperature and HVAC demand signal for that area.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+        <div style="font-size:0.78rem;color:#6b7280;flex:1;min-width:200px;">Click the map for demand signal + active accounts. Or search for nearest contractors:</div>
+        <div style="display:flex;gap:6px;">
+          <input id="mf-zip-input" type="text" placeholder="Zip or city, state…"
+            style="padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:0.82rem;width:180px;font-family:inherit;"
+            onkeydown="if(event.key==='Enter') mfFindNearest()"/>
+          <button onclick="mfFindNearest()" style="padding:6px 14px;background:#356ae6;color:#fff;border:none;border-radius:4px;font-size:0.82rem;cursor:pointer;font-family:inherit;">🔍 Find</button>
+        </div>
+      </div>
       <div id="mf-map"></div>
       <div id="mf-alert">Click a location on the map to see demand conditions.</div>
       <div id="mf-accounts"></div>
@@ -4060,10 +4068,96 @@ function abCoTab(key, btn) {
 init();
 
 // ── Move Records ───────────────────────────────────────────────────────────
+let _mfMap = null;
+let _mfPinLayer = null;
+
 function showMicrofMap() {
   const panel = document.getElementById('weather-map-panel');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   if (panel.style.display === 'block') initMicrofMap();
+}
+
+function _mfRenderAccountList(accounts, headerText) {
+  const el = document.getElementById('mf-accounts');
+  if (!accounts.length) {
+    el.innerHTML = `<div style="margin-top:10px;font-size:0.78rem;color:#9ca3af;">${headerText} — no results found.</div>`;
+    return;
+  }
+  const rows = accounts.map(a => {
+    const dist = a.distance_miles != null ? `<span style="font-size:0.72rem;color:#6b7280;white-space:nowrap;">${a.distance_miles} mi</span>` : '';
+    const loc  = [a.city, a.state].filter(Boolean).join(', ');
+    return `<div onclick="showTab('accounts',null);abSelect('${a.id}')"
+      style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px;"
+      onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
+      <div>
+        <div style="font-size:0.82rem;font-weight:500;color:#1e3a5f;">${esc(a.name)}</div>
+        ${loc ? `<div style="font-size:0.72rem;color:#6b7280;">${esc(loc)} · ID ${esc(a.dealer_id||'—')}</div>` : ''}
+      </div>
+      ${dist}
+    </div>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+      <div style="padding:7px 10px;background:#f8fafc;font-size:0.75rem;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb;">${headerText}</div>
+      <div style="max-height:240px;overflow-y:auto;">${rows}</div>
+    </div>`;
+}
+
+function _mfDropPins(accounts, centerLat, centerLon) {
+  if (!_mfMap || !_mfPinLayer) return;
+  _mfPinLayer.clearLayers();
+
+  const pinIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:12px;height:12px;background:#356ae6;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+    iconSize: [12,12], iconAnchor: [6,6]
+  });
+  const searchIcon = L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;background:#dc2626;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+    iconSize: [14,14], iconAnchor: [7,7]
+  });
+
+  if (centerLat && centerLon) {
+    L.marker([centerLat, centerLon], {icon: searchIcon}).addTo(_mfPinLayer)
+      .bindPopup('📍 Search location');
+  }
+
+  accounts.forEach(a => {
+    if (!a.lat || !a.lon) return;
+    const dist = a.distance_miles != null ? ` · ${a.distance_miles} mi` : '';
+    L.marker([a.lat, a.lon], {icon: pinIcon}).addTo(_mfPinLayer)
+      .bindPopup(`<strong>${a.name}</strong><br>${[a.city, a.state].filter(Boolean).join(', ')}${dist}`);
+  });
+
+  if (accounts.length) {
+    const bounds = accounts.filter(a => a.lat && a.lon).map(a => [a.lat, a.lon]);
+    if (centerLat && centerLon) bounds.push([centerLat, centerLon]);
+    if (bounds.length) _mfMap.fitBounds(bounds, {padding: [40, 40], maxZoom: 10});
+  }
+}
+
+async function mfFindNearest() {
+  const input = document.getElementById('mf-zip-input').value.trim();
+  if (!input) return;
+  const alertEl = document.getElementById('mf-alert');
+  const accountsEl = document.getElementById('mf-accounts');
+  alertEl.innerHTML = `Searching for contractors near <strong>${esc(input)}</strong>…`;
+  accountsEl.innerHTML = '';
+  if (_mfPinLayer) _mfPinLayer.clearLayers();
+
+  try {
+    const res  = await fetch(`/api/accounts/nearest?address=${encodeURIComponent(input)}&limit=10`);
+    const data = await res.json();
+    if (data.error) { alertEl.innerHTML = `<span style="color:#dc2626;">${esc(data.error)}</span>`; return; }
+
+    const total = data.total || 0;
+    alertEl.innerHTML = `📍 Nearest Microf contractors to <strong>${esc(data.label||input)}</strong> — ${total} active account${total!==1?'s':''} total`;
+    _mfDropPins(data.accounts, data.lat, data.lon);
+    _mfRenderAccountList(data.accounts, `Nearest ${data.accounts.length} of ${total} contractors`);
+  } catch(err) {
+    alertEl.innerHTML = `<span style="color:#dc2626;">Error: ${err.message}</span>`;
+  }
 }
 
 function initMicrofMap() {
@@ -4072,7 +4166,9 @@ function initMicrofMap() {
 
   const API_KEY = "d3c2c838262d1dd06a372a8dcbd34aec";
 
-  const map = L.map('mf-map').setView([39.5, -98.35], 4);
+  _mfMap = L.map('mf-map').setView([39.5, -98.35], 4);
+  _mfPinLayer = L.layerGroup().addTo(_mfMap);
+  const map = _mfMap;
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
 
@@ -4123,25 +4219,7 @@ function initMicrofMap() {
       const total = acctData.total || 0;
 
       if (!accounts.length) {
-        accountsEl.innerHTML = `<div style="margin-top:10px;font-size:0.78rem;color:#9ca3af;">No active accounts found in ${stateCode}.</div>`;
-        return;
-      }
-
-      const rows = accounts.map(a => `
-        <div onclick="showTab('accounts',null);abSelect('${a.id}')"
-          style="padding:7px 10px;cursor:pointer;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;gap:8px;"
-          onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
-          <span style="font-size:0.82rem;font-weight:500;color:#1e3a5f;">${esc(a.name)}</span>
-          <span style="font-size:0.75rem;color:#6b7280;white-space:nowrap;">ID ${esc(a.dealer_id||'—')}</span>
-        </div>`).join('');
-
-      accountsEl.innerHTML = `
-        <div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
-          <div style="padding:7px 10px;background:#f8fafc;font-size:0.75rem;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb;">
-            ${stateCode} — ${total} active account${total!==1?'s':''} ${total>10?'(showing 10)':''}
-          </div>
-          <div style="max-height:240px;overflow-y:auto;">${rows}</div>
-        </div>`;
+        _mfRenderAccountList(accounts, `${stateCode} — ${total} active account${total!==1?'s':''} ${total>10?'(showing 10)':''}`);
     } catch(err) {
       alertEl.innerHTML = `<span style="color:#dc2626;">Network error: ${err.message}</span>`;
     }

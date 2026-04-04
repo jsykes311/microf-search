@@ -324,6 +324,7 @@ async def _startup():
     asyncio.create_task(_build_dealer_id_index())
     asyncio.create_task(_keep_alive())
     asyncio.create_task(_build_slp_state_index())
+    asyncio.create_task(_build_location_index())
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -409,6 +410,9 @@ _account_to_bdr: dict = {}      # account_id (str) → Assigned BDR (customfield
 _account_to_name: dict = {}     # account_id (str) → account name
 _account_to_owner: dict = {}    # account_id (str) → owner user_id (str)
 _account_to_states: dict = {}   # account_id (str) → "TX,FL,GA" (customfield 22)
+_account_to_zip: dict = {}      # account_id (str) → postal code (customfield 6)
+_account_to_city: dict = {}     # account_id (str) → city (customfield 4)
+_account_to_state_prov: dict = {}  # account_id (str) → state/province (customfield 5)
 _program_to_accounts: dict = {} # lowercase(dealer_program) → set of account_ids
 _dealer_index_ts:  float = 0.0
 _dealer_index_error: str = ""   # last build error message, for /api/dealer-index/status
@@ -460,6 +464,9 @@ async def _build_dealer_id_index() -> None:
     PLATFORM_CF_ID = 29    # customFieldId for "Dealer Program"
     BDR_CF_ID      = 119   # customFieldId for "Assigned BDR"
     STATES_CF_ID   = 22    # customFieldId for "Doing Business in States"
+    ZIP_CF_ID      = 6     # customFieldId for "Postal Code"
+    CITY_CF_ID     = 4     # customFieldId for "City"
+    STATE_PROV_CF  = 5     # customFieldId for "State/Province"
     CF_PAGE        = 1000  # 1000 records/page → ~190 pages instead of ~1900
     CONCURRENCY    = 8     # 8 concurrent requests → index builds in ~10s instead of ~5min
 
@@ -471,10 +478,13 @@ async def _build_dealer_id_index() -> None:
         total_cf   = int(first_page.get("meta", {}).get("total", 0))
         print(f"[dealer-index] {total_cf} CF records total, scanning…")
 
-        acct_to_dealer:   dict = {}
-        acct_to_platform: dict = {}
-        acct_to_bdr:      dict = {}
-        acct_to_states:   dict = {}
+        acct_to_dealer:     dict = {}
+        acct_to_platform:   dict = {}
+        acct_to_bdr:        dict = {}
+        acct_to_states:     dict = {}
+        acct_to_zip:        dict = {}
+        acct_to_city:       dict = {}
+        acct_to_state_prov: dict = {}
 
         def _ingest(items: list) -> None:
             for item in items:
@@ -487,13 +497,19 @@ async def _build_dealer_id_index() -> None:
                 if not (aid and val):
                     continue
                 if cf_id == DEALER_CF_ID:
-                    acct_to_dealer[aid]   = val
+                    acct_to_dealer[aid]     = val
                 elif cf_id == PLATFORM_CF_ID:
-                    acct_to_platform[aid] = val
+                    acct_to_platform[aid]   = val
                 elif cf_id == BDR_CF_ID:
-                    acct_to_bdr[aid]      = val
+                    acct_to_bdr[aid]        = val
                 elif cf_id == STATES_CF_ID:
-                    acct_to_states[aid]   = val
+                    acct_to_states[aid]     = val
+                elif cf_id == ZIP_CF_ID:
+                    acct_to_zip[aid]        = val
+                elif cf_id == CITY_CF_ID:
+                    acct_to_city[aid]       = val
+                elif cf_id == STATE_PROV_CF:
+                    acct_to_state_prov[aid] = val
 
         _ingest(first_page.get("accountCustomFieldData", []))
 
@@ -533,7 +549,10 @@ async def _build_dealer_id_index() -> None:
         _account_to_bdr.clear();     _account_to_bdr.update(acct_to_bdr)
         _account_to_name.clear();    _account_to_name.update(acct_to_name)
         _account_to_owner.clear();   _account_to_owner.update(acct_to_owner)
-        _account_to_states.clear();  _account_to_states.update(acct_to_states)
+        _account_to_states.clear();      _account_to_states.update(acct_to_states)
+        _account_to_zip.clear();         _account_to_zip.update(acct_to_zip)
+        _account_to_city.clear();        _account_to_city.update(acct_to_city)
+        _account_to_state_prov.clear();  _account_to_state_prov.update(acct_to_state_prov)
 
         # Reverse index: lowercase dealer program → set of account IDs
         new_prog: dict = {}
@@ -2659,6 +2678,145 @@ async def accounts_by_state(state: str = "", limit: int = 10):
         key=lambda x: x["name"]
     )
     return {"accounts": results[:limit], "state": state_upper, "total": len(bucket)}
+
+
+# ── Nearest contractor lookup ─────────────────────────────────────────────────
+
+def _haversine(lat1, lon1, lat2, lon2) -> float:
+    """Return distance in miles between two lat/lon points."""
+    import math
+    R = 3958.8
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+_location_index: dict = {}        # account_id → {lat, lon, name, dealer_id, city, state, zip}
+_location_index_ts: float = 0.0
+_LOCATION_TTL = 86400
+
+async def _build_location_index() -> dict:
+    global _location_index, _location_index_ts
+    now = _time.time()
+    if _location_index and (now - _location_index_ts) < _LOCATION_TTL:
+        return _location_index
+
+    try:
+        import pgeocode
+        geo = pgeocode.Nominatim('us')
+    except ImportError:
+        return {}
+
+    # Get qualifying account IDs (Microf/LTO + Contractor Activated)
+    raw = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
+    qualifying: set = set()
+    for r in raw:
+        fields = {f.get("field") or f.get("id"): f.get("value") for f in r.get("fields", [])}
+        if str(fields.get("slp-status-detail", "")).strip() != "Contractor Activated":
+            continue
+        if str(fields.get("platform", "")).strip().lower() not in _MICROF_PROGRAMS:
+            continue
+        rel    = r.get("relationships", {}).get("account", [])
+        a0     = rel[0] if rel else None
+        acc_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", "")) if a0 else None
+        if acc_id:
+            qualifying.add(acc_id)
+
+    # Batch geocode unique zip codes
+    zips = {_account_to_zip.get(aid, "")[:5] for aid in qualifying if _account_to_zip.get(aid)}
+    zips.discard("")
+    zip_coords: dict = {}
+    if zips:
+        result = geo.query_postal_code(list(zips))
+        if hasattr(result, 'iterrows'):
+            for idx, row in result.iterrows():
+                z = str(idx) if not isinstance(idx, str) else idx
+                if not (str(row.get('latitude','')) in ('nan','') or str(row.get('longitude','')) in ('nan','')):
+                    try:
+                        zip_coords[str(idx)] = (float(row['latitude']), float(row['longitude']))
+                    except Exception:
+                        pass
+        else:
+            z = str(result.name) if hasattr(result, 'name') else ""
+            try:
+                zip_coords[z] = (float(result['latitude']), float(result['longitude']))
+            except Exception:
+                pass
+
+    index: dict = {}
+    for aid in qualifying:
+        z = (_account_to_zip.get(aid, "") or "")[:5]
+        if z not in zip_coords:
+            continue
+        lat, lon = zip_coords[z]
+        index[aid] = {
+            "lat":       lat,
+            "lon":       lon,
+            "name":      _account_to_name.get(aid, ""),
+            "dealer_id": _account_to_dealer.get(aid, ""),
+            "city":      _account_to_city.get(aid, ""),
+            "state":     _account_to_state_prov.get(aid, ""),
+            "zip":       z,
+        }
+
+    _location_index    = index
+    _location_index_ts = now
+    print(f"[location-index] Built with {len(index)} geocoded accounts")
+    return index
+
+
+@app.get("/api/accounts/nearest")
+async def accounts_nearest(address: str = "", limit: int = 10):
+    if not address:
+        return {"accounts": [], "lat": None, "lon": None}
+    try:
+        import pgeocode
+        geo = pgeocode.Nominatim('us')
+    except ImportError:
+        return {"error": "pgeocode not installed"}
+
+    # Geocode the search input — try as zip first, fall back to Nominatim
+    search_lat, search_lon, search_label = None, None, address
+    zip_clean = address.strip()[:5]
+    if zip_clean.isdigit():
+        r = geo.query_postal_code(zip_clean)
+        try:
+            search_lat = float(r['latitude'])
+            search_lon = float(r['longitude'])
+            search_label = f"{r.get('place_name', zip_clean)}, {r.get('state_code', '')}"
+        except Exception:
+            pass
+
+    if search_lat is None:
+        # Fall back to Nominatim for city/address strings
+        import httpx
+        async with httpx.AsyncClient(timeout=10) as client:
+            nr = await client.get("https://nominatim.openstreetmap.org/search",
+                params={"q": address, "countrycodes": "us", "limit": 1, "format": "json"},
+                headers={"Accept-Language": "en"})
+            results = nr.json()
+            if results:
+                search_lat = float(results[0]["lat"])
+                search_lon = float(results[0]["lon"])
+                search_label = results[0].get("display_name", address).split(",")[0]
+
+    if search_lat is None:
+        return {"error": f"Could not geocode: {address}"}
+
+    loc_index = await _build_location_index()
+    distances = []
+    for aid, info in loc_index.items():
+        d = _haversine(search_lat, search_lon, info["lat"], info["lon"])
+        distances.append({**info, "id": aid, "distance_miles": round(d, 1)})
+
+    distances.sort(key=lambda x: x["distance_miles"])
+    return {
+        "accounts": distances[:limit],
+        "lat": search_lat,
+        "lon": search_lon,
+        "label": search_label,
+        "total": len(distances),
+    }
 
 
 @app.get("/api/accounts/{account_id}/detail")
