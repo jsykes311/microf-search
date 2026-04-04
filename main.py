@@ -323,6 +323,7 @@ async def _startup():
     """Kick off the dealer ID index build in the background so it doesn't block startup."""
     asyncio.create_task(_build_dealer_id_index())
     asyncio.create_task(_keep_alive())
+    asyncio.create_task(_build_slp_state_index())
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
