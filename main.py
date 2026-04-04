@@ -2682,6 +2682,35 @@ async def accounts_by_state(state: str = "", limit: int = 10):
 
 # ── Nearest contractor lookup ─────────────────────────────────────────────────
 
+# Approximate geographic center of each US state (lat, lon)
+_STATE_CENTROIDS: dict = {
+    "AL": (32.806671, -86.791130), "AK": (61.370716, -152.404419),
+    "AZ": (33.729759, -111.431221), "AR": (34.969704, -92.373123),
+    "CA": (36.116203, -119.681564), "CO": (39.059811, -105.311104),
+    "CT": (41.597782, -72.755371), "DE": (39.318523, -75.507141),
+    "FL": (27.766279, -81.686783), "GA": (33.040619, -83.643074),
+    "HI": (21.094318, -157.498337), "ID": (44.240459, -114.478828),
+    "IL": (40.349457, -88.986137), "IN": (39.849426, -86.258278),
+    "IA": (42.011539, -93.210526), "KS": (38.526600, -96.726486),
+    "KY": (37.668140, -84.670067), "LA": (31.169960, -91.867805),
+    "ME": (44.693947, -69.381927), "MD": (39.063946, -76.802101),
+    "MA": (42.230171, -71.530106), "MI": (43.326618, -84.536095),
+    "MN": (45.694454, -93.900192), "MS": (32.741646, -89.678696),
+    "MO": (38.456085, -92.288368), "MT": (46.921925, -110.454353),
+    "NE": (41.125370, -98.268082), "NV": (38.313515, -117.055374),
+    "NH": (43.452492, -71.563896), "NJ": (40.298904, -74.521011),
+    "NM": (34.840515, -106.248482), "NY": (42.165726, -74.948051),
+    "NC": (35.630066, -79.806419), "ND": (47.528912, -99.784012),
+    "OH": (40.388783, -82.764915), "OK": (35.565342, -96.928917),
+    "OR": (44.572021, -122.070938), "PA": (40.590752, -77.209755),
+    "RI": (41.680893, -71.511780), "SC": (33.856892, -80.945007),
+    "SD": (44.299782, -99.438828), "TN": (35.747845, -86.692345),
+    "TX": (31.054487, -97.563461), "UT": (40.150032, -111.862434),
+    "VT": (44.045876, -72.710686), "VA": (37.769337, -78.169968),
+    "WA": (47.400902, -121.490494), "WV": (38.491226, -80.954453),
+    "WI": (44.268543, -89.616508), "WY": (42.755966, -107.302490),
+}
+
 def _haversine(lat1, lon1, lat2, lon2) -> float:
     """Return distance in miles between two lat/lon points."""
     import math
@@ -2701,12 +2730,6 @@ async def _build_location_index() -> dict:
     if _location_index and (now - _location_index_ts) < _LOCATION_TTL:
         return _location_index
 
-    try:
-        import pgeocode
-        geo = pgeocode.Nominatim('us')
-    except ImportError:
-        return {}
-
     # Get qualifying account IDs (Microf/LTO + Contractor Activated)
     raw = await ac_get_all(f"customObjects/records/{SLP_SCHEMA_ID}", "records", {})
     qualifying: set = set()
@@ -2722,46 +2745,71 @@ async def _build_location_index() -> dict:
         if acc_id:
             qualifying.add(acc_id)
 
-    # Batch geocode unique zip codes
-    zips = {_account_to_zip.get(aid, "")[:5] for aid in qualifying if _account_to_zip.get(aid)}
-    zips.discard("")
+    # Try pgeocode for accounts that have a zip code; fall back to state centroid
     zip_coords: dict = {}
-    if zips:
-        result = geo.query_postal_code(list(zips))
-        if hasattr(result, 'iterrows'):
-            for idx, row in result.iterrows():
-                z = str(idx) if not isinstance(idx, str) else idx
-                if not (str(row.get('latitude','')) in ('nan','') or str(row.get('longitude','')) in ('nan','')):
+    try:
+        import pgeocode
+        geo = pgeocode.Nominatim('us')
+        zips = {(_account_to_zip.get(aid, "") or "")[:5] for aid in qualifying
+                if (_account_to_zip.get(aid, "") or "")[:5].isdigit()}
+        zips.discard("")
+        if zips:
+            result = geo.query_postal_code(list(zips))
+            if hasattr(result, 'iterrows'):
+                for idx, row in result.iterrows():
                     try:
-                        zip_coords[str(idx)] = (float(row['latitude']), float(row['longitude']))
+                        lat, lon = float(row['latitude']), float(row['longitude'])
+                        import math
+                        if not (math.isnan(lat) or math.isnan(lon)):
+                            zip_coords[str(idx)] = (lat, lon)
                     except Exception:
                         pass
-        else:
-            z = str(result.name) if hasattr(result, 'name') else ""
-            try:
-                zip_coords[z] = (float(result['latitude']), float(result['longitude']))
-            except Exception:
-                pass
+            else:
+                try:
+                    import math
+                    lat, lon = float(result['latitude']), float(result['longitude'])
+                    if not (math.isnan(lat) or math.isnan(lon)):
+                        z = str(result.name) if hasattr(result, 'name') else ""
+                        if z:
+                            zip_coords[z] = (lat, lon)
+                except Exception:
+                    pass
+    except Exception:
+        pass
 
+    import random, math as _math
     index: dict = {}
     for aid in qualifying:
-        z = (_account_to_zip.get(aid, "") or "")[:5]
-        if z not in zip_coords:
-            continue
-        lat, lon = zip_coords[z]
+        z    = (_account_to_zip.get(aid, "") or "")[:5]
+        city = _account_to_city.get(aid, "")
+        st   = (_account_to_state_prov.get(aid, "") or "").strip().upper()[:2]
+
+        if z in zip_coords:
+            lat, lon = zip_coords[z]
+        elif st in _STATE_CENTROIDS:
+            # Spread pins ~1° randomly around state centroid so they don't all stack
+            clat, clon = _STATE_CENTROIDS[st]
+            lat = clat + random.uniform(-1.0, 1.0)
+            lon = clon + random.uniform(-1.5, 1.5)
+        else:
+            continue  # no location data at all
+
         index[aid] = {
-            "lat":       lat,
-            "lon":       lon,
+            "lat":       round(lat, 5),
+            "lon":       round(lon, 5),
             "name":      _account_to_name.get(aid, ""),
             "dealer_id": _account_to_dealer.get(aid, ""),
-            "city":      _account_to_city.get(aid, ""),
-            "state":     _account_to_state_prov.get(aid, ""),
+            "city":      city,
+            "state":     st,
             "zip":       z,
+            "approx":    z not in zip_coords,  # flag for UI
         }
 
     _location_index    = index
     _location_index_ts = now
-    print(f"[location-index] Built with {len(index)} geocoded accounts")
+    exact  = sum(1 for v in index.values() if not v.get("approx"))
+    approx = len(index) - exact
+    print(f"[location-index] Built with {len(index)} accounts ({exact} exact zip, {approx} state-centroid approx)")
     return index
 
 
