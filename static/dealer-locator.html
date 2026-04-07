@@ -183,7 +183,7 @@ let _mfPinLayer = null;
 // ── Contractor card ────────────────────────────────────────────────────────
 function openMfCard(a) {
   const set  = (id, val)  => { const el = document.getElementById(id); if (el) el.textContent = val || ''; };
-  const show = (id, vis)  => { const el = document.getElementById(id); if (el) el.style.display = vis ? '' : 'none'; };
+  const show = (id, vis)  => { const el = document.getElementById(id); if (el) el.style.display = vis ? 'flex' : 'none'; };
 
   set('mf-card-badge', a.platform || 'Microf');
   set('mf-card-name',  a.name);
