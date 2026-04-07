@@ -2803,12 +2803,6 @@ async def _build_location_index() -> dict:
         return _location_index
 
     _location_index_building = True
-
-    # Ensure the dealer index is ready — it populates _account_to_phone /
-    # _account_to_website / _account_to_address which we copy into each entry.
-    # Has its own TTL check so this is a no-op if already built.
-    await _build_dealer_id_index()
-
     # Reuse the shared qualifying-accounts cache (avoids a duplicate SLP fetch)
     qualifying = await _get_qualifying_microf_accounts()
 
@@ -2866,11 +2860,7 @@ async def _build_location_index() -> dict:
             "city":      city,
             "state":     st,
             "zip":       z,
-            "phone":     _account_to_phone.get(aid, ""),
-            "website":   _account_to_website.get(aid, ""),
-            "address":   _account_to_address.get(aid, ""),
             "platform":  _account_to_platform.get(aid, ""),
-            "bdr":       _account_to_bdr.get(aid, ""),
             "approx":    precision != "zip",
         }
 
@@ -2939,7 +2929,14 @@ async def accounts_nearest(address: str = "", limit: int = 10):
     distances = []
     for aid, info in loc_index.items():
         d = _haversine(search_lat, search_lon, info["lat"], info["lon"])
-        distances.append({**info, "id": aid, "distance_miles": round(d, 1)})
+        distances.append({
+            **info,
+            "id":           aid,
+            "distance_miles": round(d, 1),
+            "phone":        _account_to_phone.get(aid, ""),
+            "website":      _account_to_website.get(aid, ""),
+            "address":      _account_to_address.get(aid, ""),
+        })
 
     distances.sort(key=lambda x: x["distance_miles"])
     return {
