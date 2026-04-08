@@ -552,17 +552,6 @@ async def _build_dealer_id_index() -> None:
                 if not isinstance(page, Exception):
                     _ingest(page.get("accountCustomFieldData", []))
 
-        # ── Phase 1b: fetch Last Application Date (CF37) via dedicated scan ─
-        # CF37 data lives at high offsets in the bulk endpoint and is missed
-        # by the parallel scan; _fetch_acct_cf_map pages reliably through all records.
-        print("[dealer-index] Fetching Last Application Date (CF37)…")
-        cf37_map = await _fetch_acct_cf_map({"37"})
-        for aid, fields in cf37_map.items():
-            val = fields.get("37", "")
-            if val:
-                acct_to_last_app[aid] = val[:10]
-        print(f"[dealer-index] {len(acct_to_last_app)} last app dates loaded")
-
         print(f"[dealer-index] {len(acct_to_dealer)} dealer IDs, "
               f"{len(acct_to_platform)} platforms, {len(acct_to_bdr)} BDRs indexed; "
               f"fetching account names…")
