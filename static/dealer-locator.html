@@ -338,6 +338,13 @@ async function mfFindNearest(retryCount = 0) {
     const total = data.total || 0;
     alertEl.innerHTML = `📍 Nearest Microf contractors to <strong>${esc(data.label||input)}</strong> — ${total} active account${total!==1?'s':''} total`;
     const ranked = assignTiers(data.accounts);
+    const tierOrder = {[TIERS[0].label]: 0, [TIERS[1].label]: 1, [TIERS[2].label]: 2};
+    ranked.sort((a, b) => {
+      const ta = tierOrder[(a._tier || TIERS[2]).label] ?? 2;
+      const tb = tierOrder[(b._tier || TIERS[2]).label] ?? 2;
+      if (ta !== tb) return ta - tb;
+      return (a.distance_miles || 0) - (b.distance_miles || 0);
+    });
     _mfDropPins(ranked, data.lat, data.lon);
     _mfRenderAccountList(ranked, `Nearest ${ranked.length} of ${total} contractors`);
   } catch(err) {
