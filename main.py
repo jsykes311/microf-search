@@ -1800,7 +1800,6 @@ async def activations_report(
     print("\nActivations report...")
     slp_records = await ac_get_all(
         f"customObjects/records/{SLP_SCHEMA_ID}", "records",
-        {"filters[fields.slp-status-detail]": "Contractor Activated"},
     )
     exclude_set = {p.strip() for p in exclude_platforms.split(",")} if exclude_platforms else set()
 
@@ -1809,6 +1808,9 @@ async def activations_report(
 
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+
+        if fields.get("slp-status-detail") != "Contractor Activated":
+            continue
 
         plat      = str(fields.get("platform", "")).strip()
         plat_norm = _normalize_platform(plat)
