@@ -6458,12 +6458,16 @@ async def _ensure_sp_ids():
 
     if not _SP_DRIVE_ID:
         drives = await _graph_get(f"/sites/{_SP_SITE_ID}/drives")
+        # Match by webUrl path containing /DRR (URL path may differ from display name)
         for d in drives.get("value", []):
-            if d.get("name", "").upper() == "DRR":
+            web_url = d.get("webUrl", "")
+            name = d.get("name", "")
+            if name.upper() == "DRR" or web_url.rstrip("/").upper().endswith("/DRR"):
                 _SP_DRIVE_ID = d["id"]
                 break
         if not _SP_DRIVE_ID:
-            raise RuntimeError(f"DRR document library not found. Available: {[d.get('name') for d in drives.get('value', [])]}")
+            detail = [(d.get("name"), d.get("webUrl")) for d in drives.get("value", [])]
+            raise RuntimeError(f"DRR library not found. Available (name, webUrl): {detail}")
 
     if not _SP_FILE_ID:
         try:
