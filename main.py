@@ -6737,6 +6737,8 @@ async def _fetch_full_deal(deal_id: str) -> dict:
 async def _process_deal_to_sharepoint(deal_id: str):
     """Background task: fetch full deal from AC and write row to SharePoint."""
     try:
+        # Wait for AC automations to finish populating custom fields
+        await asyncio.sleep(30)
         d = await _fetch_full_deal(deal_id)
         row_date = datetime.utcnow().strftime("%Y-%m-%d")
         row = [
