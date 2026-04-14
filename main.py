@@ -6547,22 +6547,39 @@ async def _append_deal_row(row: list):
     wb.save(buf)
     new_bytes = buf.getvalue()
 
-    # Re-upload with retry for 423 Locked (SharePoint file lock)
-    for attempt in range(6):
-        try:
-            await _graph_put(
-                f"/drives/{_SP_DRIVE_ID}/items/{file_id}/content",
-                new_bytes,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    # Try checkout to clear any co-authoring lock, then upload, then checkin
+    token = await _get_graph_token()
+    base = f"https://graph.microsoft.com/v1.0/drives/{_SP_DRIVE_ID}/items/{file_id}"
+    async with httpx.AsyncClient() as client:
+        # Attempt checkout (ignore errors — file may not support it)
+        await client.post(f"{base}/checkout",
+                          headers={"Authorization": f"Bearer {token}"}, timeout=15)
+
+        # Upload with retry for residual 423 locks
+        for attempt in range(6):
+            r = await client.put(
+                f"{base}/content",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                },
+                content=new_bytes,
+                timeout=60,
             )
-            return  # success
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 423 and attempt < 5:
-                wait = 10 * (attempt + 1)  # 10s, 20s, 30s, 40s, 50s
+            if r.status_code == 423 and attempt < 5:
+                wait = 15 * (attempt + 1)
                 print(f"[webhook] file locked, retrying in {wait}s (attempt {attempt+1}/5)")
                 await asyncio.sleep(wait)
-            else:
-                raise
+                continue
+            r.raise_for_status()
+            break
+
+        # Checkin so the file is visible/unlocked
+        await client.post(f"{base}/checkin",
+                          headers={"Authorization": f"Bearer {token}",
+                                   "Content-Type": "application/json"},
+                          json={"checkInComment": "Deal Tracker row added", "checkInType": "1"},
+                          timeout=15)
 
 
 def _parse_bracket_form(raw_body: bytes) -> dict:
