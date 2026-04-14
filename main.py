@@ -6437,6 +6437,16 @@ async def _graph_post(path: str, body: dict) -> dict:
         return r.json()
 
 
+async def _graph_patch(path: str, body: dict) -> dict:
+    token = await _get_graph_token()
+    async with httpx.AsyncClient() as client:
+        r = await client.patch(f"https://graph.microsoft.com/v1.0{path}",
+                               headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                               json=body, timeout=30)
+        r.raise_for_status()
+        return r.json()
+
+
 _SP_SITE_ID: str = ""
 _SP_DRIVE_ID: str = ""
 _SP_FILE_ID: str = ""
@@ -6531,7 +6541,7 @@ async def _append_deal_row(row: list):
     end_col = chr(ord('A') + col_count - 1)
     cell_range = f"A{next_row}:{end_col}{next_row}"
 
-    await _graph_post(
+    await _graph_patch(
         f"/drives/{_SP_DRIVE_ID}/items/{file_id}/workbook/worksheets('Deals')/range(address='{cell_range}')",
         {"values": [row]}
     )
