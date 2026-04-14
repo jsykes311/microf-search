@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Depends, Body
+from fastapi import FastAPI, HTTPException, Query, Depends, Body, BackgroundTasks
 from pydantic import BaseModel as _BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -6734,25 +6734,10 @@ async def _fetch_full_deal(deal_id: str) -> dict:
     }
 
 
-@app.post("/webhook/deal-created")
-async def webhook_deal_created(request: _Request):
-    """
-    Receives ActiveCampaign deal-created webhook (form-encoded).
-    Fetches full deal from AC API and appends row to Deal Tracker.xlsx in SharePoint.
-    """
+async def _process_deal_to_sharepoint(deal_id: str):
+    """Background task: fetch full deal from AC and write row to SharePoint."""
     try:
-        body = await request.body()
-        data = _parse_bracket_form(body)
-        deal_payload = data.get("deal", {})
-        deal_id = deal_payload.get("id", "")
-
-        if not deal_id:
-            print(f"[webhook/deal-created] no deal id in payload: {body[:500]}")
-            return {"ok": False, "error": "no deal id"}
-
-        # Fetch full deal details from AC API
         d = await _fetch_full_deal(deal_id)
-
         row_date = datetime.utcnow().strftime("%Y-%m-%d")
         row = [
             row_date,
@@ -6772,9 +6757,29 @@ async def webhook_deal_created(request: _Request):
             d["contact_phone"],
             d["contact_email"],
         ]
-
         await _append_deal_row(row)
-        print(f"[webhook/deal-created] ✓ deal={deal_id} acct={d['account_name']} dealer={d['dealer_id']} program={d['dealer_program']}")
+        print(f"[deal-tracker] ✓ deal={deal_id} acct={d['account_name']} dealer={d['dealer_id']} program={d['dealer_program']}")
+    except Exception as e:
+        import traceback as _tb
+        print(f"[deal-tracker] ✗ deal={deal_id} {e}\n{_tb.format_exc()}")
+
+
+@app.post("/webhook/deal-created")
+async def webhook_deal_created(request: _Request, background_tasks: BackgroundTasks):
+    """
+    Receives ActiveCampaign deal-created webhook. Returns immediately,
+    processes the SharePoint write in the background.
+    """
+    try:
+        body = await request.body()
+        data = _parse_bracket_form(body)
+        deal_id = data.get("deal", {}).get("id", "")
+
+        if not deal_id:
+            print(f"[webhook/deal-created] no deal id in payload: {body[:300]}")
+            return {"ok": False, "error": "no deal id"}
+
+        background_tasks.add_task(_process_deal_to_sharepoint, deal_id)
         return {"ok": True, "deal_id": deal_id}
 
     except Exception as e:
