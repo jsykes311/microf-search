@@ -208,7 +208,7 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
                "/api/dealer-index/status", "/dealer-locator-beta",
                "/api/accounts/nearest", "/api/accounts/by-state",
-               "/webhook/deal-created"}
+               "/webhook/deal-created", "/webhook/debug-sp"}
 
     async def dispatch(self, request: _Request, call_next):
         path = request.url.path
