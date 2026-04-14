@@ -207,7 +207,8 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
     """Block unauthenticated requests. Redirects pages → /login, 401s for APIs."""
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
                "/api/dealer-index/status", "/dealer-locator-beta",
-               "/api/accounts/nearest", "/api/accounts/by-state"}
+               "/api/accounts/nearest", "/api/accounts/by-state",
+               "/webhook/deal-created"}
 
     async def dispatch(self, request: _Request, call_next):
         path = request.url.path
