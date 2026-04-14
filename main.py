@@ -6547,12 +6547,22 @@ async def _append_deal_row(row: list):
     wb.save(buf)
     new_bytes = buf.getvalue()
 
-    # Re-upload
-    await _graph_put(
-        f"/drives/{_SP_DRIVE_ID}/items/{file_id}/content",
-        new_bytes,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    # Re-upload with retry for 423 Locked (SharePoint file lock)
+    for attempt in range(6):
+        try:
+            await _graph_put(
+                f"/drives/{_SP_DRIVE_ID}/items/{file_id}/content",
+                new_bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            return  # success
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 423 and attempt < 5:
+                wait = 10 * (attempt + 1)  # 10s, 20s, 30s, 40s, 50s
+                print(f"[webhook] file locked, retrying in {wait}s (attempt {attempt+1}/5)")
+                await asyncio.sleep(wait)
+            else:
+                raise
 
 
 def _parse_bracket_form(raw_body: bytes) -> dict:
