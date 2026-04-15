@@ -6790,6 +6790,161 @@ async def webhook_deal_created(request: _Request, background_tasks: BackgroundTa
         return JSONResponse(status_code=200, content={"ok": False, "error": str(e)})
 
 
+@app.get("/reports/slp-health")
+async def slp_health_report(
+    region: str = None,
+    program: str = None,
+    issue: str = None,
+    user=Depends(require_auth),
+):
+    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+
+    # 4-pass dedup
+    seen = {}
+    for pass_num in range(4):
+        offset = 0
+        while True:
+            page = await ac_get(
+                f"customObjects/records/{SLP_SCHEMA}",
+                {"limit": 100, "offset": offset}
+            )
+            records = page.get("records", [])
+            if not records:
+                break
+            for r in records:
+                seen[r["id"]] = r
+            if len(records) < 100:
+                break
+            offset += 100
+
+    all_slps = list(seen.values())
+
+    # Helper to get field value by slug
+    def get_field(slp, slug):
+        for f in slp.get("fields", []):
+            if f.get("slug") == slug:
+                return f.get("value") or f.get("values")
+        return None
+
+    # Collect unique account IDs for CF18 lookup
+    account_ids = list({
+        slp.get("relationships", {}).get("account", [None])[0]
+        for slp in all_slps
+        if slp.get("relationships", {}).get("account")
+    })
+
+    # Fetch CF18 (dealer ID) for each account in parallel
+    async def fetch_cf18(account_id):
+        try:
+            data = await ac_get(f"accounts/{account_id}/accountCustomFieldData")
+            for f in data.get("customerAccountCustomFieldData", []):
+                if str(f.get("custom_field_id")) == "18":
+                    return account_id, f.get("fieldValue")
+        except Exception:
+            pass
+        return account_id, None
+
+    cf18_results = await asyncio.gather(*[fetch_cf18(aid) for aid in account_ids])
+    cf18_map = dict(cf18_results)
+
+    # Fetch account names + regions in parallel
+    async def fetch_account_meta(account_id):
+        try:
+            data = await ac_get(f"accounts/{account_id}")
+            account = data.get("account", {})
+            name = account.get("name", "")
+            fields = data.get("accountCustomFieldData", [])
+            region = None
+            for f in fields:
+                if str(f.get("custom_field_id")) == "23":
+                    region = f.get("fieldValue")
+            return account_id, name, region
+        except Exception:
+            pass
+        return account_id, None, None
+
+    meta_results = await asyncio.gather(*[fetch_account_meta(aid) for aid in account_ids])
+    account_name_map = {r[0]: r[1] for r in meta_results}
+    account_region_map = {r[0]: r[2] for r in meta_results}
+
+    # Build issue records
+    issues = []
+    issue_counts = {
+        "no_dealer_id": 0,
+        "no_status": 0,
+        "no_platform": 0,
+        "no_date": 0,
+        "id_mismatch": 0,
+    }
+    region_counts = {}
+    program_counts = {}
+
+    for slp in all_slps:
+        account_id = (slp.get("relationships", {}).get("account") or [None])[0]
+        slp_dealer_id = get_field(slp, "dealer-id")
+        slp_platform = get_field(slp, "platform")
+        slp_status = get_field(slp, "slp-status-detail")
+        slp_date = get_field(slp, "contractor-activated-date")
+        slp_region = account_region_map.get(account_id)
+        slp_name = account_name_map.get(account_id, "Unknown")
+        cf18 = cf18_map.get(account_id)
+
+        slp_issues = []
+        if not slp_dealer_id:
+            slp_issues.append("no_dealer_id")
+            issue_counts["no_dealer_id"] += 1
+        if not slp_status:
+            slp_issues.append("no_status")
+            issue_counts["no_status"] += 1
+        if not slp_platform:
+            slp_issues.append("no_platform")
+            issue_counts["no_platform"] += 1
+        if not slp_date:
+            slp_issues.append("no_date")
+            issue_counts["no_date"] += 1
+        if slp_dealer_id and cf18 and slp_dealer_id != cf18:
+            slp_issues.append("id_mismatch")
+            issue_counts["id_mismatch"] += 1
+
+        if not slp_issues:
+            continue
+
+        # Apply filters
+        if region and slp_region != region:
+            continue
+        if program and slp_platform != program:
+            continue
+        if issue and issue not in slp_issues:
+            continue
+
+        if slp_region:
+            region_counts[slp_region] = region_counts.get(slp_region, 0) + 1
+        if slp_platform:
+            program_counts[slp_platform] = program_counts.get(slp_platform, 0) + 1
+
+        issues.append({
+            "slp_id": slp["id"],
+            "account_id": account_id,
+            "account_name": slp_name,
+            "program": slp_platform,
+            "region": slp_region,
+            "dealer_id": slp_dealer_id,
+            "cf18": cf18,
+            "status_detail": slp_status,
+            "activation_date": slp_date,
+            "issues": slp_issues,
+        })
+
+    return {
+        "total_slps": len(all_slps),
+        "total_with_issues": len(issues),
+        "issue_counts": issue_counts,
+        "region_counts": dict(sorted(region_counts.items(), key=lambda x: -x[1])),
+        "program_counts": dict(sorted(program_counts.items(), key=lambda x: -x[1])),
+        "records": sorted(issues, key=lambda x: len(x["issues"]), reverse=True),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
