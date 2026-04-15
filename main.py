@@ -6528,7 +6528,7 @@ async def _ensure_workbook() -> str:
 
 
 async def _append_deal_row(row: list):
-    """Append one row by downloading the xlsx, modifying with openpyxl, and re-uploading."""
+    """Upsert one row: if the deal ID already exists, overwrite it if the new data is more complete; otherwise append."""
     import openpyxl
     file_id = await _ensure_workbook()
     token = await _get_graph_token()
@@ -6544,7 +6544,7 @@ async def _append_deal_row(row: list):
         r.raise_for_status()
         file_bytes = r.content
 
-    # Load, ensure headers, append row, save
+    # Load, ensure headers, upsert row
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes))
     ws = wb["Deals"] if "Deals" in wb.sheetnames else wb.active
     # Update header row if it's missing or outdated
@@ -6552,7 +6552,36 @@ async def _append_deal_row(row: list):
     if current_headers != _DEAL_TRACKER_HEADERS:
         for c, h in enumerate(_DEAL_TRACKER_HEADERS, 1):
             ws.cell(1, c).value = h
-    ws.append(row)
+
+    # Deal ID is column B (index 1 in row list, column 2 in sheet)
+    new_deal_id = str(row[1]) if len(row) > 1 else None
+    new_populated = sum(1 for v in row if v)
+
+    existing_row_num = None
+    if new_deal_id:
+        for r_idx in range(2, ws.max_row + 1):
+            cell_val = ws.cell(r_idx, 2).value
+            if cell_val is not None and str(cell_val) == new_deal_id:
+                # Count populated cells in existing row
+                existing_populated = sum(
+                    1 for c in range(1, len(_DEAL_TRACKER_HEADERS) + 1)
+                    if ws.cell(r_idx, c).value not in (None, "")
+                )
+                if new_populated > existing_populated:
+                    # Overwrite with more complete data
+                    existing_row_num = r_idx
+                else:
+                    # Existing row is equally or more complete — skip
+                    print(f"[deal-tracker] ⏭ deal={new_deal_id} already exists with {existing_populated} fields, skipping duplicate")
+                    return
+                break
+
+    if existing_row_num:
+        for c_idx, val in enumerate(row, 1):
+            ws.cell(existing_row_num, c_idx).value = val
+        print(f"[deal-tracker] ↺ deal={new_deal_id} overwriting row {existing_row_num} with more complete data")
+    else:
+        ws.append(row)
     buf = io.BytesIO()
     wb.save(buf)
     new_bytes = buf.getvalue()
@@ -6738,8 +6767,13 @@ async def _process_deal_to_sharepoint(deal_id: str):
     """Background task: fetch full deal from AC and write row to SharePoint."""
     try:
         # Wait for AC automations to finish populating custom fields
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
         d = await _fetch_full_deal(deal_id)
+        # If key fields still empty, wait another 60s and retry once
+        if not d.get("dealer_id") and not d.get("lead_source"):
+            print(f"[deal-tracker] deal={deal_id} key fields empty, retrying in 60s")
+            await asyncio.sleep(60)
+            d = await _fetch_full_deal(deal_id)
         row_date = datetime.utcnow().strftime("%Y-%m-%d")
         row = [
             row_date,
