@@ -7006,23 +7006,28 @@ async def slp_health_report(
                 return f.get("value") or f.get("values")
         return None
 
-    # 4-pass dedup
+    # Single-pass fetch with dedup by ID
     seen = {}
-    for _ in range(4):
-        offset = 0
-        while True:
+    offset = 0
+    while True:
+        try:
             page = await ac_get(
                 f"customObjects/records/{SLP_SCHEMA}",
                 {"limit": 100, "offset": offset}
             )
-            records = page.get("records", [])
-            if not records:
-                break
-            for r in records:
-                seen[r["id"]] = r
-            if len(records) < 100:
-                break
-            offset += 100
+        except Exception:
+            break
+        records = page.get("records", [])
+        if not records:
+            break
+        for r in records:
+            seen[r["id"]] = r
+        total = int(page.get("meta", {}).get("total") or 0)
+        offset += len(records)
+        if total and offset >= total:
+            break
+        if len(records) < 100:
+            break
 
     all_slps = list(seen.values())
 
