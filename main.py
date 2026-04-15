@@ -6826,46 +6826,39 @@ async def slp_health_report(
                 return f.get("value") or f.get("values")
         return None
 
-    # Collect unique account IDs for CF18 lookup
+    # Collect unique account IDs
     account_ids = list({
         slp.get("relationships", {}).get("account", [None])[0]
         for slp in all_slps
         if slp.get("relationships", {}).get("account")
     })
 
-    # Fetch CF18 (dealer ID) for each account in parallel
-    async def fetch_cf18(account_id):
-        try:
-            data = await ac_get(f"accounts/{account_id}/accountCustomFieldData")
-            for f in data.get("customerAccountCustomFieldData", []):
-                if str(f.get("custom_field_id")) == "18":
-                    return account_id, f.get("fieldValue")
-        except Exception:
-            pass
-        return account_id, None
+    # Single request per account — name, CF18 (dealer ID), CF23 (region)
+    sem = asyncio.Semaphore(10)
 
-    cf18_results = await asyncio.gather(*[fetch_cf18(aid) for aid in account_ids])
-    cf18_map = dict(cf18_results)
-
-    # Fetch account names + regions in parallel
     async def fetch_account_meta(account_id):
-        try:
-            data = await ac_get(f"accounts/{account_id}")
-            account = data.get("account", {})
-            name = account.get("name", "")
-            fields = data.get("accountCustomFieldData", [])
-            region = None
-            for f in fields:
-                if str(f.get("custom_field_id")) == "23":
-                    region = f.get("fieldValue")
-            return account_id, name, region
-        except Exception:
-            pass
-        return account_id, None, None
+        async with sem:
+            try:
+                data = await ac_get(f"accounts/{account_id}")
+                account = data.get("account", {})
+                name = account.get("name", "")
+                cf18 = None
+                region = None
+                for f in data.get("accountCustomFieldData", []):
+                    fid = str(f.get("custom_field_id"))
+                    if fid == "18":
+                        cf18 = f.get("fieldValue")
+                    if fid == "23":
+                        region = f.get("fieldValue")
+                return account_id, name, region, cf18
+            except Exception:
+                pass
+            return account_id, None, None, None
 
     meta_results = await asyncio.gather(*[fetch_account_meta(aid) for aid in account_ids])
     account_name_map = {r[0]: r[1] for r in meta_results}
     account_region_map = {r[0]: r[2] for r in meta_results}
+    cf18_map = {r[0]: r[3] for r in meta_results}
 
     # Build issue records
     issues = []
