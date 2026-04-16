@@ -7465,6 +7465,448 @@ async def contractor_states_report(
     }
 
 
+# ── Account + SLP Parent-Child Report ────────────────────────────────────────
+
+@app.get("/reports/account-slp", response_class=HTMLResponse)
+async def account_slp_page(user=Depends(require_auth)):
+    return HTMLResponse("""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Account / SLP Report</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6fa; color: #222; }
+  header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
+  .filters { background: #fff; border-radius: 8px; padding: 18px 20px; display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px; }
+  .filter-group { display: flex; flex-direction: column; gap: 5px; }
+  label { font-size: 11px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: .5px; }
+  select, input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; min-width: 150px; }
+  input[type=text] { min-width: 220px; }
+  button { padding: 9px 18px; background: #4f46e5; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  button:hover { background: #4338ca; }
+  button:disabled { background: #a5b4fc; cursor: not-allowed; }
+  .btn-csv { background: #059669; }
+  .btn-csv:hover { background: #047857; }
+  .summary { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 8px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.08); min-width: 130px; }
+  .stat-value { font-size: 26px; font-weight: 700; color: #4f46e5; }
+  .stat-label { font-size: 11px; color: #888; margin-top: 3px; }
+  .results { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #f0f1f5; text-align: left; padding: 9px 12px; font-size: 11px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: .4px; border-bottom: 2px solid #ddd; white-space: nowrap; }
+
+  /* Account header rows */
+  tr.acct-row td { background: #e8eaf6; font-weight: 700; font-size: 12px; padding: 9px 12px; border-top: 2px solid #c5cae9; border-bottom: 1px solid #c5cae9; color: #1a237e; }
+  tr.acct-row td:first-child { padding-left: 14px; }
+
+  /* SLP child rows */
+  tr.slp-row td { padding: 7px 12px; border-bottom: 1px solid #f0f1f5; color: #333; }
+  tr.slp-row:hover td { background: #fafafa; }
+  tr.slp-row td:first-child { padding-left: 28px; color: #888; font-size: 11px; }
+
+  /* SLP count badge on account row */
+  .slp-count { display: inline-block; background: #4f46e5; color: #fff; border-radius: 10px; padding: 1px 7px; font-size: 10px; font-weight: 700; margin-left: 6px; vertical-align: middle; }
+  .slp-count.zero { background: #9e9e9e; }
+
+  /* Status badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .badge-green  { background: #d1fae5; color: #065f46; }
+  .badge-red    { background: #fee2e2; color: #991b1b; }
+  .badge-yellow { background: #fef3c7; color: #92400e; }
+  .badge-gray   { background: #f3f4f6; color: #6b7280; }
+  .badge-blue   { background: #dbeafe; color: #1e40af; }
+
+  /* Account type chip */
+  .type-chip { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; background: #ede9fe; color: #5b21b6; }
+
+  .loading { text-align: center; padding: 60px; color: #888; font-size: 15px; }
+  .no-results { text-align: center; padding: 40px; color: #aaa; }
+  .err { text-align: center; padding: 40px; color: #c00; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="6" fill="#4f46e5"/><text x="5" y="20" font-size="16" fill="#fff" font-family="sans-serif" font-weight="bold">M</text></svg>
+  <h1>Account / SLP Report</h1>
+</header>
+<div class="container">
+  <div class="filters">
+    <div class="filter-group">
+      <label>Search</label>
+      <input type="text" id="search" placeholder="Account name or Dealer ID…" oninput="onFilterChange()">
+    </div>
+    <div class="filter-group">
+      <label>Account Type</label>
+      <select id="acct-type" onchange="onFilterChange()">
+        <option value="">All Types</option>
+        <option>Contractor</option>
+        <option>Dealer</option>
+        <option>Strategic Partner</option>
+        <option>Distributor</option>
+        <option>Manufacturer</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Sales Region</label>
+      <select id="region" onchange="onFilterChange()">
+        <option value="">All Regions</option>
+        <option>Mid-West</option>
+        <option>Southeast</option>
+        <option>Northeast</option>
+        <option>Northwest</option>
+        <option>Southwest</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Program</label>
+      <select id="program" onchange="onFilterChange()">
+        <option value="">All Programs</option>
+        <option>360 Finance</option>
+        <option>OPTIMUS</option>
+        <option>LTO</option>
+        <option>Microf</option>
+        <option>SpectrumAC</option>
+        <option>SpectrumAC (Wells Fargo)</option>
+        <option>ComfortConnect</option>
+        <option>GoodLeap</option>
+        <option>Microf (LTO Only)</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>SLP Status</label>
+      <select id="slp-status" onchange="onFilterChange()">
+        <option value="">All Statuses</option>
+        <option>Contractor Activated</option>
+        <option>Deactivated</option>
+        <option>Not Started</option>
+        <option>Not Active</option>
+        <option>Account on Hold (Suspended)</option>
+        <option>Deactivated for Dormancy</option>
+        <option>Pending - Training Not Completed</option>
+        <option>In Progress – Other</option>
+        <option>In Progress – Signed Contract Needed</option>
+        <option>Waiting_on_BDR_Approval</option>
+        <option>Declined by Onboarding</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Account State</label>
+      <select id="acct-state" onchange="onFilterChange()">
+        <option value="">All States</option>
+      </select>
+    </div>
+    <div class="filter-group" style="justify-content: flex-end;">
+      <label>&nbsp;</label>
+      <div style="display:flex;gap:8px;">
+        <button id="run-btn" onclick="loadReport()">Run Report</button>
+        <button class="btn-csv" onclick="exportCsv()">Export CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary" style="display:none">
+    <div class="stat"><div class="stat-value" id="s-accounts">—</div><div class="stat-label">Accounts</div></div>
+    <div class="stat"><div class="stat-value" id="s-slps">—</div><div class="stat-label">SLPs</div></div>
+    <div class="stat"><div class="stat-value" id="s-activated">—</div><div class="stat-label">Activated</div></div>
+    <div class="stat"><div class="stat-value" id="s-deactivated">—</div><div class="stat-label">Deactivated</div></div>
+    <div class="stat"><div class="stat-value" id="s-pending">—</div><div class="stat-label">Pending / In Progress</div></div>
+  </div>
+
+  <div class="results">
+    <div class="loading" id="loading" style="display:none">Loading…</div>
+    <div id="table-wrap">
+      <div class="no-results">Use the filters above and click <strong>Run Report</strong>.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let _raw = null;   // full API response
+let _filtered = null;
+
+function statusBadge(s) {
+  if (!s) return '<span class="badge badge-gray">—</span>';
+  if (s.includes('Activated') && !s.includes('Not')) return `<span class="badge badge-green">${s}</span>`;
+  if (s.includes('Deactivated') || s.includes('Declined')) return `<span class="badge badge-red">${s}</span>`;
+  if (s.includes('Pending') || s.includes('Progress') || s.includes('Waiting') || s.includes('Hold') || s.includes('Indefinite')) return `<span class="badge badge-yellow">${s}</span>`;
+  if (s.includes('Not Started') || s.includes('Not Active')) return `<span class="badge badge-gray">${s}</span>`;
+  return `<span class="badge badge-blue">${s}</span>`;
+}
+
+function typeBadge(t) {
+  if (!t) return '';
+  return `<span class="type-chip">${t}</span>`;
+}
+
+function onFilterChange() {
+  if (_raw) renderFiltered();
+}
+
+function applyFilters(data) {
+  const search    = document.getElementById('search').value.trim().toLowerCase();
+  const acctType  = document.getElementById('acct-type').value;
+  const region    = document.getElementById('region').value;
+  const program   = document.getElementById('program').value;
+  const slpStatus = document.getElementById('slp-status').value;
+  const acctState = document.getElementById('acct-state').value;
+
+  return data.accounts.filter(acct => {
+    if (acctType  && acct.type   !== acctType)  return false;
+    if (region    && acct.region !== region)    return false;
+    if (acctState && acct.state  !== acctState) return false;
+    if (search) {
+      const hay = (acct.name + acct.dealer_id).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    // Filter SLPs
+    const slps = acct.slps.filter(s => {
+      if (program   && s.program !== program)     return false;
+      if (slpStatus && s.status  !== slpStatus)   return false;
+      return true;
+    });
+    acct._filtered_slps = slps;
+    return slps.length > 0 || (!program && !slpStatus);
+  });
+}
+
+function renderFiltered() {
+  if (!_raw) return;
+  _filtered = applyFilters(JSON.parse(JSON.stringify(_raw)));
+
+  // Stats
+  const totalSlps    = _filtered.reduce((a,x) => a + (x._filtered_slps || x.slps).length, 0);
+  const allSlps      = _filtered.flatMap(x => x._filtered_slps || x.slps);
+  const activated    = allSlps.filter(s => s.status && s.status.includes('Activated') && !s.status.includes('Not')).length;
+  const deactivated  = allSlps.filter(s => s.status && (s.status.includes('Deactivated') || s.status.includes('Declined'))).length;
+  const pending      = allSlps.filter(s => s.status && (s.status.includes('Pending') || s.status.includes('Progress') || s.status.includes('Waiting') || s.status.includes('Hold'))).length;
+
+  document.getElementById('s-accounts').textContent   = _filtered.length.toLocaleString();
+  document.getElementById('s-slps').textContent       = totalSlps.toLocaleString();
+  document.getElementById('s-activated').textContent  = activated.toLocaleString();
+  document.getElementById('s-deactivated').textContent= deactivated.toLocaleString();
+  document.getElementById('s-pending').textContent    = pending.toLocaleString();
+  document.getElementById('summary').style.display    = 'flex';
+
+  if (_filtered.length === 0) {
+    document.getElementById('table-wrap').innerHTML = '<div class="no-results">No results match your filters.</div>';
+    return;
+  }
+
+  let rows = `<table>
+    <thead><tr>
+      <th style="width:30px">#</th>
+      <th>Account Name</th>
+      <th>Type</th>
+      <th>State</th>
+      <th>Region</th>
+      <th>Dealer ID</th>
+      <th>Program</th>
+      <th>Status</th>
+      <th>Activation Date</th>
+      <th>Oracle IDs</th>
+      <th>BDR</th>
+      <th>Doing Business In</th>
+    </tr></thead><tbody>`;
+
+  _filtered.forEach((acct, idx) => {
+    const slps = acct._filtered_slps || acct.slps;
+    const cnt = slps.length;
+    const badge = cnt > 0
+      ? `<span class="slp-count">${cnt}</span>`
+      : `<span class="slp-count zero">0</span>`;
+    rows += `<tr class="acct-row">
+      <td style="color:#7c83d1;font-weight:700;font-size:11px">${idx+1}</td>
+      <td colspan="3">${escHtml(acct.name)}${badge}</td>
+      <td>${escHtml(acct.region)}</td>
+      <td>${escHtml(acct.dealer_id)}</td>
+      <td colspan="6">${typeBadge(acct.type)}&nbsp;&nbsp;<span style="font-size:10px;color:#555;font-weight:500">${escHtml(acct.state)}</span></td>
+    </tr>`;
+    slps.forEach(slp => {
+      rows += `<tr class="slp-row">
+        <td>↳</td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td></td>
+        <td>${escHtml(slp.program)}</td>
+        <td>${statusBadge(slp.status)}</td>
+        <td>${escHtml(slp.activation_date ? slp.activation_date.split('T')[0] : '')}</td>
+        <td style="font-family:monospace;font-size:11px">${escHtml(slp.oracle_ids)}</td>
+        <td>${escHtml(slp.bdr)}</td>
+        <td style="font-family:monospace;font-size:11px">${escHtml(slp.doing_business_in)}</td>
+      </tr>`;
+    });
+  });
+
+  rows += '</tbody></table>';
+  document.getElementById('table-wrap').innerHTML = rows;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function loadReport() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true; btn.textContent = 'Loading…';
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('table-wrap').innerHTML = '';
+  document.getElementById('summary').style.display = 'none';
+  try {
+    const r = await fetch('/api/reports/account-slp');
+    if (!r.ok) throw new Error(await r.text());
+    _raw = await r.json();
+
+    // Populate state dropdown
+    const states = [...new Set(_raw.accounts.map(a => a.state).filter(Boolean))].sort();
+    const stateEl = document.getElementById('acct-state');
+    stateEl.innerHTML = '<option value="">All States</option>' + states.map(s => `<option>${s}</option>`).join('');
+
+    renderFiltered();
+  } catch(e) {
+    document.getElementById('table-wrap').innerHTML = `<div class="err">Error: ${e.message}</div>`;
+  } finally {
+    document.getElementById('loading').style.display = 'none';
+    btn.disabled = false; btn.textContent = 'Run Report';
+  }
+}
+
+function exportCsv() {
+  if (!_filtered) { alert('Run the report first.'); return; }
+  const rows = [['Account Name','Account Type','Account State','Region','Dealer ID','Program','SLP Status','Activation Date','Oracle IDs','BDR','Doing Business In']];
+  _filtered.forEach(acct => {
+    const slps = acct._filtered_slps || acct.slps;
+    if (slps.length === 0) {
+      rows.push([acct.name, acct.type, acct.state, acct.region, acct.dealer_id, '', '', '', '', '', '']);
+    } else {
+      slps.forEach(slp => {
+        rows.push([acct.name, acct.type, acct.state, acct.region, acct.dealer_id,
+          slp.program, slp.status, slp.activation_date ? slp.activation_date.split('T')[0] : '',
+          slp.oracle_ids, slp.bdr, slp.doing_business_in]);
+      });
+    }
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(',')).join('\\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `account_slp_report_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>""")
+
+
+@app.get("/api/reports/account-slp")
+async def account_slp_report(user=Depends(require_auth)):
+    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+
+    def get_field(slp, fid):
+        for f in slp.get("fields", []):
+            if f.get("id") == fid:
+                return f.get("value") or ""
+        return ""
+
+    # ── 1. Fetch all SLP records ────────────────────────────────────────────
+    seen = {}
+    offset = 0
+    while True:
+        try:
+            page = await ac_get(f"customObjects/records/{SLP_SCHEMA}", {"limit": 100, "offset": offset})
+        except Exception:
+            break
+        records = page.get("records", [])
+        if not records:
+            break
+        for r in records:
+            seen[r["id"]] = r
+        total = int(page.get("meta", {}).get("total") or 0)
+        offset += len(records)
+        if total and offset >= total:
+            break
+        if len(records) < 100:
+            break
+
+    all_slps = list(seen.values())
+
+    # ── 2. Group SLPs by account_id ─────────────────────────────────────────
+    slps_by_account: dict = defaultdict(list)
+    for slp in all_slps:
+        aid = (slp.get("relationships", {}).get("account") or [None])[0]
+        if aid:
+            slps_by_account[aid].append(slp)
+
+    account_ids = list(slps_by_account.keys())
+
+    # ── 3. Fetch account details concurrently ───────────────────────────────
+    sem = asyncio.Semaphore(10)
+
+    async def fetch_acct(aid):
+        async with sem:
+            try:
+                acct_resp = await ac_get(f"accounts/{aid}")
+                name = acct_resp.get("account", {}).get("name", "")
+                cf_resp = await ac_get(f"accounts/{aid}/accountCustomFieldData")
+                state = acct_type = region = dealer_id = ""
+                for cf in cf_resp.get("customerAccountCustomFieldData", []):
+                    fid = str(cf.get("custom_field_id", ""))
+                    val = cf.get("custom_field_text_value", "") or ""
+                    if fid == "5":   state     = val
+                    if fid == "76":  acct_type = val
+                    if fid == "23":  region    = val
+                    if fid == "18":  dealer_id = val
+                return aid, name, state, acct_type, region, dealer_id
+            except Exception:
+                return aid, "", "", "", "", ""
+
+    results = await asyncio.gather(*[fetch_acct(aid) for aid in account_ids])
+    acct_map = {
+        r[0]: {"name": r[1], "state": r[2], "type": r[3], "region": r[4], "dealer_id": r[5]}
+        for r in results
+    }
+
+    # ── 4. Build parent-child structure ─────────────────────────────────────
+    accounts_out = []
+    for aid, acct in acct_map.items():
+        slp_list = []
+        for slp in slps_by_account.get(aid, []):
+            slp_list.append({
+                "slp_id":          slp["id"],
+                "program":         get_field(slp, "platform"),
+                "status":          get_field(slp, "slp-status-detail"),
+                "activation_date": get_field(slp, "contractor-activated-date"),
+                "oracle_ids":      get_field(slp, "oracle-producer-ids"),
+                "bdr":             get_field(slp, "assigned-bdr"),
+                "doing_business_in": get_field(slp, "doing-business-in-states"),
+                "dealer_id":       get_field(slp, "dealer-id"),
+            })
+        slp_list.sort(key=lambda x: x["program"])
+        accounts_out.append({
+            "account_id": aid,
+            "name":       acct["name"],
+            "type":       acct["type"],
+            "state":      acct["state"],
+            "region":     acct["region"],
+            "dealer_id":  acct["dealer_id"],
+            "slps":       slp_list,
+        })
+
+    accounts_out.sort(key=lambda x: x["name"].upper())
+
+    return {
+        "total_accounts": len(accounts_out),
+        "total_slps":     len(all_slps),
+        "accounts":       accounts_out,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
