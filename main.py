@@ -467,23 +467,30 @@ def norm_id(x) -> str:
     return str(x or "").strip().lstrip("0")
 
 def get_account_id(slp) -> str | None:
-    """Extract account ID from an SLP record, checking all known locations."""
-    rel = slp.get("relationships", {}) or {}
+    """Extract account ID from an SLP record, handling all known AC relationship formats."""
+    rel = slp.get("relationships") or {}
 
-    # Primary: relationships.account
-    if rel.get("account"):
+    # Case 1: simple list  {"account": ["123", ...]}
+    if isinstance(rel.get("account"), list) and rel["account"]:
         return str(rel["account"][0])
 
-    # Alternate key some AC responses use
-    if rel.get("accounts"):
+    # Case 2: plural key   {"accounts": ["123", ...]}
+    if isinstance(rel.get("accounts"), list) and rel["accounts"]:
         return str(rel["accounts"][0])
 
-    # Fallback: occasionally stored as a field value
-    for f in slp.get("fields", []):
-        if f.get("id") in ("account", "account_id"):
-            val = f.get("value")
-            if val:
-                return str(val)
+    # Case 3: nested dict  {"account": {"data": [{"id": "123"}, ...]}}
+    acct = rel.get("account")
+    if isinstance(acct, dict):
+        data = acct.get("data")
+        if isinstance(data, list) and data:
+            return str(data[0].get("id"))
+
+    # Case 4: nested plural {"accounts": {"data": [{"id": "123"}, ...]}}
+    accts = rel.get("accounts")
+    if isinstance(accts, dict):
+        data = accts.get("data")
+        if isinstance(data, list) and data:
+            return str(data[0].get("id"))
 
     return None
 
@@ -7210,10 +7217,9 @@ async def parent_child_report(
 
     for slp in all_slps:
         # PRIMARY: robust relationship extraction
-        if not (slp.get("relationships", {}) or {}).get("account"):
-            missing_relationships += 1
-
         aid = get_account_id(slp)
+        if not aid:
+            missing_relationships += 1
         if aid:
             slps_by_account[aid].append(slp)
             continue
