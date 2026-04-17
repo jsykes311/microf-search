@@ -466,6 +466,27 @@ def norm_id(x) -> str:
     """Normalize a dealer ID: strip whitespace and leading zeros."""
     return str(x or "").strip().lstrip("0")
 
+def get_account_id(slp) -> str | None:
+    """Extract account ID from an SLP record, checking all known locations."""
+    rel = slp.get("relationships", {}) or {}
+
+    # Primary: relationships.account
+    if rel.get("account"):
+        return str(rel["account"][0])
+
+    # Alternate key some AC responses use
+    if rel.get("accounts"):
+        return str(rel["accounts"][0])
+
+    # Fallback: occasionally stored as a field value
+    for f in slp.get("fields", []):
+        if f.get("id") in ("account", "account_id"):
+            val = f.get("value")
+            if val:
+                return str(val)
+
+    return None
+
 
 def _extract_cf_value(cf: dict) -> str:
     """Read the first non-empty value across all custom field value types."""
@@ -7181,16 +7202,20 @@ async def parent_child_report(
     all_slps   = list(await get_slp_cache())
     cache_age  = round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None
 
-    slps_by_account: dict = defaultdict(list)
-    fallback_used  = 0
-    unlinked_slps  = 0
-    failed_matches = 0
+    slps_by_account: dict  = defaultdict(list)
+    fallback_used          = 0
+    unlinked_slps          = 0
+    failed_matches         = 0
+    missing_relationships  = 0
 
     for slp in all_slps:
-        # PRIMARY: relationship
-        aid = (slp.get("relationships", {}).get("account") or [None])[0]
+        # PRIMARY: robust relationship extraction
+        if not (slp.get("relationships", {}) or {}).get("account"):
+            missing_relationships += 1
+
+        aid = get_account_id(slp)
         if aid:
-            slps_by_account[str(aid)].append(slp)
+            slps_by_account[aid].append(slp)
             continue
 
         # FALLBACK: dealer-id → _dealer_id_index (normalized matching)
@@ -7223,8 +7248,8 @@ async def parent_child_report(
             failed_matches += 1
         unlinked_slps += 1
 
-    print(f"[PARENT-CHILD] total={len(all_slps)} fallback_used={fallback_used} "
-          f"unlinked={unlinked_slps} failed_dealer_matches={failed_matches}")
+    print(f"[PARENT-CHILD] total={len(all_slps)} missing_relationships={missing_relationships} "
+          f"fallback_used={fallback_used} unlinked={unlinked_slps} failed_dealer_matches={failed_matches}")
 
     def _build_slp_list(raw_slps):
         slp_list = []
