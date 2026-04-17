@@ -221,6 +221,7 @@ function renderFiltered() {
       <th>Type</th>
       <th>State</th>
       <th>Region</th>
+      <th>Owner</th>
       <th>Dealer ID</th>
       <th>Program</th>
       <th>Status</th>
@@ -240,13 +241,14 @@ function renderFiltered() {
       <td style="color:#7c83d1;font-weight:700;font-size:11px">${idx+1}</td>
       <td colspan="3">${escHtml(acct.name)}${badge}</td>
       <td>${escHtml(acct.region)}</td>
+      <td>${escHtml(acct.owner)}</td>
       <td>${escHtml(acct.dealer_id)}</td>
-      <td colspan="6">${typeBadge(acct.type)}&nbsp;&nbsp;<span style="font-size:10px;color:#555;font-weight:500">${escHtml(acct.state)}</span></td>
+      <td colspan="5">${typeBadge(acct.type)}&nbsp;&nbsp;<span style="font-size:10px;color:#555;font-weight:500">${escHtml(acct.state)}</span></td>
     </tr>`;
     slps.forEach(slp => {
       rows += `<tr class="slp-row">
         <td>↳</td>
-        <td></td><td></td><td></td><td></td><td></td>
+        <td></td><td></td><td></td><td></td><td></td><td></td>
         <td>${escHtml(slp.program)}</td>
         <td>${statusBadge(slp.status)}</td>
         <td>${escHtml(slp.activation_date ? slp.activation_date.split('T')[0] : '')}</td>
@@ -303,14 +305,14 @@ async function loadReport() {
 
 function exportCsv() {
   if (!_filtered) { alert('Run the report first.'); return; }
-  const rows = [['Account Name','Account Type','Account State','Region','Dealer ID','Program','SLP Status','Activation Date','Oracle IDs','BDR','Doing Business In']];
+  const rows = [['Account Name','Account Type','Account State','Region','Owner','Dealer ID','Program','SLP Status','Activation Date','Oracle IDs','BDR','Doing Business In']];
   _filtered.forEach(acct => {
     const slps = acct._filtered_slps || acct.slps;
     if (slps.length === 0) {
-      rows.push([acct.name, acct.type, acct.state, acct.region, acct.dealer_id, '', '', '', '', '', '']);
+      rows.push([acct.name, acct.type, acct.state, acct.region, acct.owner, acct.dealer_id, '', '', '', '', '', '']);
     } else {
       slps.forEach(slp => {
-        rows.push([acct.name, acct.type, acct.state, acct.region, acct.dealer_id,
+        rows.push([acct.name, acct.type, acct.state, acct.region, acct.owner, acct.dealer_id,
           slp.program, slp.status, slp.activation_date ? slp.activation_date.split('T')[0] : '',
           slp.oracle_ids, slp.bdr, slp.doing_business_in]);
       });

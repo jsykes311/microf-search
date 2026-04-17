@@ -427,6 +427,7 @@ _account_to_address: dict = {}  # account_id (str) → address 1 (customfield 2)
 _account_to_last_app: dict = {} # account_id (str) → last app date (customfield 140)
 _account_to_type: dict = {}     # account_id (str) → account type (customfield 76)
 _account_to_region: dict = {}   # account_id (str) → sales region (customfield 23)
+_user_id_to_name: dict = {}     # AC user_id (str) → "First Last"
 _program_to_accounts: dict = {} # lowercase(dealer_program) → set of account_ids
 _dealer_index_ts:  float = 0.0
 _dealer_index_error: str = ""   # last build error message, for /api/dealer-index/status
@@ -568,11 +569,25 @@ async def _build_dealer_id_index() -> None:
               f"{len(acct_to_platform)} platforms, {len(acct_to_bdr)} BDRs indexed; "
               f"fetching account names…")
 
-        # ── Phase 2: paginate accounts for names ──────────────────────────
+        # ── Phase 2: paginate accounts for names + fetch AC users ────────
         all_accounts = await ac_get_all("accounts", "accounts", {})
         acct_to_name  = {str(a.get("id", "")): a.get("name", "")              for a in all_accounts}
         acct_to_owner = {str(a.get("id", "")): str(a.get("owner", "") or "")  for a in all_accounts}
         print(f"[dealer-index] {len(all_accounts)} account names loaded")
+
+        # ── Phase 3: fetch AC users for owner name lookup ─────────────────
+        try:
+            users_resp = await ac_get("users", {"limit": 100})
+            new_user_map: dict = {}
+            for u in users_resp.get("users", []):
+                uid  = str(u.get("id", ""))
+                name = f"{u.get('firstName', '')} {u.get('lastName', '')}".strip()
+                if uid:
+                    new_user_map[uid] = name or u.get("email", uid)
+            _user_id_to_name.clear(); _user_id_to_name.update(new_user_map)
+            print(f"[dealer-index] {len(new_user_map)} AC users loaded")
+        except Exception as _ue:
+            print(f"[dealer-index] user fetch failed: {_ue}")
 
         # ── Publish index from bulk scan immediately so app is usable ─────
         new_did: dict = {}
@@ -7067,8 +7082,11 @@ async def account_slp_report(user=Depends(require_auth)):
             slps_by_account[str(aid)].append(slp)
 
     # ── 3. Build parent-child structure — all account data from index ────────
+    index_ready = _dealer_index_ts > 0
     accounts_out = []
     for aid_str, slps in slps_by_account.items():
+        owner_uid  = _account_to_owner.get(aid_str, "")
+        owner_name = _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else ""
         slp_list = []
         for slp in slps:
             slp_list.append({
@@ -7089,15 +7107,24 @@ async def account_slp_report(user=Depends(require_auth)):
             "state":      _account_to_state_prov.get(aid_str, ""),
             "region":     _account_to_region.get(aid_str, ""),
             "dealer_id":  _account_to_dealer.get(aid_str, ""),
+            "owner":      owner_name,
             "slps":       slp_list,
         })
 
     accounts_out.sort(key=lambda x: x["name"].upper())
 
+    # Sample IDs for debugging key-format issues
+    sample_slp_ids  = list(slps_by_account.keys())[:3]
+    sample_idx_ids  = list(_account_to_name.keys())[:3]
+
     return {
         "total_accounts":    len(accounts_out),
         "total_slps":        len(all_slps),
         "cache_age_seconds": cache_age,
+        "index_ready":       index_ready,
+        "index_size":        len(_account_to_name),
+        "_debug_slp_ids":    sample_slp_ids,
+        "_debug_idx_ids":    sample_idx_ids,
         "accounts":          accounts_out,
     }
 
