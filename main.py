@@ -730,7 +730,7 @@ async def _refresh_slp_cache() -> None:
         seen_ids: set  = set()
         offset = 0
         limit  = 100
-        total  = None   # populated after first page
+        total  = 0
 
         while True:
             try:
@@ -744,28 +744,25 @@ async def _refresh_slp_cache() -> None:
 
             batch = resp.get("records", [])
             meta  = resp.get("meta", {})
-
-            if total is None:
-                total = int(meta.get("total") or 0)
+            total = int(meta.get("total", 0))
 
             if not batch:
                 break
 
             for r in batch:
-                rid = r.get("id")
-                if rid and rid not in seen_ids:
+                rid = str(r.get("id"))
+                if rid not in seen_ids:
                     seen_ids.add(rid)
                     records.append(r)
 
             offset += len(batch)
 
-            if total and len(records) >= total:
+            print(f"[SLP CACHE] fetched={len(records)} / total={total}")
+
+            if len(records) >= total:
                 break
 
-            if len(batch) < limit:
-                break
-
-        print(f"[SLP CACHE] loaded={len(records)} expected={total}")
+        print(f"[SLP CACHE FINAL] loaded={len(records)} expected={total}")
         _slp_cache_records = records
         _slp_cache_ts      = _time.time()
 
