@@ -327,13 +327,12 @@ async def dealer_locator_page():
 
 @app.on_event("startup")
 async def _startup():
-    """Kick off background tasks. SLP cache loads immediately so reports are ready fast."""
+    """Kick off background tasks. Index builders run first; SLP cache follows via loop."""
     asyncio.create_task(_build_dealer_id_index())
     asyncio.create_task(_keep_alive())
     asyncio.create_task(_build_slp_state_index())
     asyncio.create_task(_build_location_index())
-    asyncio.create_task(_refresh_slp_cache())   # immediate first load
-    asyncio.create_task(_slp_cache_loop())       # then keep refreshing every 5 min
+    asyncio.create_task(_slp_cache_loop())  # waits 60s then fetches, avoiding rate-limit race
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -768,10 +767,13 @@ async def _refresh_slp_cache() -> None:
                 if len(temp_records) >= total:
                     break
 
-            # Atomic swap — _slp_cache_records is NEVER written until all pages are done
+            # Atomic swap — only write if we actually got records
             print(f"[SLP CACHE FINAL] loaded={len(temp_records)} expected={total}")
-            _slp_cache_records = temp_records
-            _slp_cache_ts      = _time.time()
+            if temp_records:
+                _slp_cache_records = temp_records
+                _slp_cache_ts      = _time.time()
+            else:
+                print("[SLP CACHE] WARNING: 0 records returned — keeping existing cache, will retry")
         finally:
             _slp_refreshing = False
 
