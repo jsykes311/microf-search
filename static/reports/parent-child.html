@@ -35,6 +35,16 @@
 
   .cache-note { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
 
+  /* Not-ready banner */
+  .not-ready-banner { display:none; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
+    padding:14px 18px; margin-bottom:16px; display:flex; align-items:flex-start; gap:12px; }
+  .not-ready-banner .icon { font-size:22px; line-height:1; flex-shrink:0; }
+  .not-ready-banner .body { flex:1; }
+  .not-ready-banner .title { font-weight:700; color:#9a3412; font-size:14px; margin-bottom:4px; }
+  .not-ready-banner .sub   { font-size:13px; color:#c2410c; }
+  .not-ready-banner .close { background:none; border:none; font-size:18px; color:#9a3412;
+    cursor:pointer; padding:0; line-height:1; align-self:flex-start; }
+
   /* Table */
   .results-wrap { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -77,6 +87,16 @@
   <h1>🔗 Parent-Child Report</h1>
 </header>
 <div class="container">
+
+  <!-- Not-ready warning banner -->
+  <div class="not-ready-banner" id="not-ready-banner">
+    <div class="icon">⏳</div>
+    <div class="body">
+      <div class="title">Index not ready — data may be incomplete</div>
+      <div class="sub">The server just restarted and is still loading account and SLP data. Wait about 2–3 minutes and run the report again for accurate results.</div>
+    </div>
+    <button class="close" onclick="document.getElementById('not-ready-banner').style.display='none'">✕</button>
+  </div>
 
   <div class="filters">
     <div class="filter-group">
@@ -331,6 +351,10 @@ async function loadReport() {
     const r = await fetch('/api/reports/parent-child');
     if (!r.ok) throw new Error(await r.text());
     _raw = await r.json();
+
+    // Show warning if cache/index hasn't loaded yet
+    const notReady = !_raw.total_slps || _raw.total_slps < 100;
+    document.getElementById('not-ready-banner').style.display = notReady ? 'flex' : 'none';
 
     if (_raw.cache_age_seconds !== undefined) {
       const age  = _raw.cache_age_seconds;
