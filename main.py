@@ -7207,52 +7207,60 @@ async def parent_child_report(
     cache_age  = round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None
 
     slps_by_account: dict  = defaultdict(list)
+    slps_by_account["UNASSIGNED"] = []   # guaranteed bucket for truly orphaned SLPs
     fallback_used          = 0
     unlinked_slps          = 0
     failed_matches         = 0
     missing_relationships  = 0
 
     for slp in all_slps:
+        assigned = False
+
         # PRIMARY: robust relationship extraction
         aid = get_account_id(slp)
         if not aid:
             missing_relationships += 1
         if aid:
             slps_by_account[aid].append(slp)
-            continue
+            assigned = True
 
         # FALLBACK: dealer-id → _dealer_id_index (normalized matching)
-        dealer_id      = get_field(slp, "dealer-id")
-        dealer_id_norm = norm_id(dealer_id)
-        acct_id        = None
+        if not assigned:
+            dealer_id      = get_field(slp, "dealer-id")
+            dealer_id_norm = norm_id(dealer_id)
+            acct_id        = None
 
-        # 1) Exact match
-        if dealer_id:
-            acct_id = _dealer_id_index.get(dealer_id)
+            # 1) Exact match
+            if dealer_id:
+                acct_id = _dealer_id_index.get(dealer_id)
 
-        # 2) Normalized match (strip leading zeros from SLP dealer-id)
-        if not acct_id and dealer_id_norm:
-            acct_id = _dealer_id_index.get(dealer_id_norm)
+            # 2) Normalized match (strip leading zeros from SLP dealer-id)
+            if not acct_id and dealer_id_norm:
+                acct_id = _dealer_id_index.get(dealer_id_norm)
 
-        # 3) Reverse-normalize index keys (strip leading zeros from stored keys)
-        if not acct_id and dealer_id_norm:
-            for k, v in _dealer_id_index.items():
-                if norm_id(k) == dealer_id_norm:
-                    acct_id = v
-                    break
+            # 3) Reverse-normalize index keys (strip leading zeros from stored keys)
+            if not acct_id and dealer_id_norm:
+                for k, v in _dealer_id_index.items():
+                    if norm_id(k) == dealer_id_norm:
+                        acct_id = v
+                        break
 
-        if acct_id:
-            slps_by_account[str(acct_id)].append(slp)
-            fallback_used += 1
-            continue
+            if acct_id:
+                slps_by_account[str(acct_id)].append(slp)
+                fallback_used += 1
+                assigned = True
+            else:
+                if dealer_id:
+                    failed_matches += 1
+                unlinked_slps += 1
 
-        # STILL UNLINKED
-        if dealer_id:
-            failed_matches += 1
-        unlinked_slps += 1
+        # FINAL FALLBACK: bucket all truly unresolvable SLPs
+        if not assigned:
+            slps_by_account["UNASSIGNED"].append(slp)
 
     print(f"[PARENT-CHILD] total={len(all_slps)} missing_relationships={missing_relationships} "
-          f"fallback_used={fallback_used} unlinked={unlinked_slps} failed_dealer_matches={failed_matches}")
+          f"fallback_used={fallback_used} unlinked={unlinked_slps} failed_dealer_matches={failed_matches} "
+          f"unassigned_slps={len(slps_by_account['UNASSIGNED'])}")
 
     def _build_slp_list(raw_slps):
         slp_list = []
@@ -7282,6 +7290,27 @@ async def parent_child_report(
     accounts_out = []
 
     for aid in ALL_ACCOUNT_IDS:
+        # UNASSIGNED bucket — skip account filters, always include if it has SLPs
+        if aid == "UNASSIGNED":
+            raw_slps = slps_by_account.get("UNASSIGNED", [])
+            if not raw_slps:
+                continue
+            slp_list = _build_slp_list(raw_slps)
+            if has_slps is False:
+                continue
+            accounts_out.append({
+                "account_id": "UNASSIGNED",
+                "name":       "⚠️ Unassigned SLPs",
+                "type":       "",
+                "state":      "",
+                "region":     "",
+                "dealer_id":  "",
+                "owner":      "",
+                "slp_count":  len(raw_slps),
+                "slps":       slp_list,
+            })
+            continue
+
         row_name   = _account_to_name.get(aid, f"Unknown Account ({aid})")
         row_type   = _account_to_type.get(aid, "")
         row_state  = _account_to_state_prov.get(aid, "")
