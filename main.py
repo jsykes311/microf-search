@@ -425,6 +425,8 @@ _account_to_phone: dict = {}    # account_id (str) → phone number (customfield
 _account_to_website: dict = {}  # account_id (str) → website (customfield 39)
 _account_to_address: dict = {}  # account_id (str) → address 1 (customfield 2)
 _account_to_last_app: dict = {} # account_id (str) → last app date (customfield 140)
+_account_to_type: dict = {}     # account_id (str) → account type (customfield 76)
+_account_to_region: dict = {}   # account_id (str) → sales region (customfield 23)
 _program_to_accounts: dict = {} # lowercase(dealer_program) → set of account_ids
 _dealer_index_ts:  float = 0.0
 _dealer_index_error: str = ""   # last build error message, for /api/dealer-index/status
@@ -483,6 +485,8 @@ async def _build_dealer_id_index() -> None:
     WEBSITE_CF_ID  = 39    # customFieldId for "Website"
     ADDRESS_CF_ID  = 2     # customFieldId for "Address 1"
     LAST_APP_CF_ID = 37    # customFieldId for "Last Application Date" (CF140 is unpopulated)
+    ACCT_TYPE_CF   = 76    # customFieldId for "Account Type"
+    REGION_CF_ID   = 23    # customFieldId for "Sales Region"
     CF_PAGE        = 1000  # 1000 records/page → ~190 pages instead of ~1900
     CONCURRENCY    = 8     # 8 concurrent requests → index builds in ~10s instead of ~5min
 
@@ -505,6 +509,8 @@ async def _build_dealer_id_index() -> None:
         acct_to_website:    dict = {}
         acct_to_address:    dict = {}
         acct_to_last_app:   dict = {}
+        acct_to_type:       dict = {}
+        acct_to_region:     dict = {}
 
         def _ingest(items: list) -> None:
             for item in items:
@@ -538,6 +544,10 @@ async def _build_dealer_id_index() -> None:
                     acct_to_address[aid]    = val
                 elif cf_id == LAST_APP_CF_ID:
                     acct_to_last_app[aid]   = val[:10] if val else ""
+                elif cf_id == ACCT_TYPE_CF:
+                    acct_to_type[aid]       = val
+                elif cf_id == REGION_CF_ID:
+                    acct_to_region[aid]     = val
 
         _ingest(first_page.get("accountCustomFieldData", []))
 
@@ -585,6 +595,8 @@ async def _build_dealer_id_index() -> None:
         _account_to_website.clear();     _account_to_website.update(acct_to_website)
         _account_to_address.clear();     _account_to_address.update(acct_to_address)
         _account_to_last_app.clear();    _account_to_last_app.update(acct_to_last_app)
+        _account_to_type.clear();        _account_to_type.update(acct_to_type)
+        _account_to_region.clear();      _account_to_region.update(acct_to_region)
 
         # Reverse index: lowercase dealer program → set of account IDs
         new_prog: dict = {}
@@ -6913,7 +6925,7 @@ async def slp_health_report(
                 return f.get("value") or f.get("values")
         return None
 
-    # Use shared SLP cache instead of fetching fresh each time
+    # Use shared SLP cache — no AC calls needed
     all_slps = await get_slp_cache()
 
     # Filter in-memory first — only keep SLPs matching the issue
@@ -6921,60 +6933,27 @@ async def slp_health_report(
         slug = SLUG_MAP[issue]
         val = get_field(slp, slug)
         if issue == "id_mismatch":
-            return bool(val)  # has a dealer-id — mismatch checked after account fetch
+            return bool(val)  # has a dealer-id — mismatch checked below
         return not val
 
     candidates = [s for s in all_slps if has_issue(s)]
 
-    # Optional program filter (no account fetch needed)
+    # Optional program filter
     if program:
         candidates = [s for s in candidates if get_field(s, "platform") == program]
 
-    # Collect account IDs from filtered set only
-    account_ids = list({
-        (s.get("relationships", {}).get("account") or [None])[0]
-        for s in candidates
-        if (s.get("relationships", {}).get("account") or [None])[0]
-    })
-
-    # Fetch account meta for filtered set only
-    sem = asyncio.Semaphore(10)
-
-    async def fetch_account_meta(account_id):
-        async with sem:
-            try:
-                data = await ac_get(f"accounts/{account_id}")
-                account = data.get("account", {})
-                name = account.get("name", "")
-                cf18 = None
-                acct_region = None
-                for f in data.get("accountCustomFieldData", []):
-                    fid = str(f.get("custom_field_id"))
-                    if fid == "18":
-                        cf18 = f.get("fieldValue")
-                    if fid == "23":
-                        acct_region = f.get("fieldValue")
-                return account_id, name, acct_region, cf18
-            except Exception:
-                pass
-        return account_id, None, None, None
-
-    meta_results = await asyncio.gather(*[fetch_account_meta(aid) for aid in account_ids])
-    account_name_map = {r[0]: r[1] for r in meta_results}
-    account_region_map = {r[0]: r[2] for r in meta_results}
-    cf18_map = {r[0]: r[3] for r in meta_results}
-
-    # Build results
+    # Build results — all account data from in-memory index (no AC calls)
     records = []
     for slp in candidates:
         account_id = (slp.get("relationships", {}).get("account") or [None])[0]
-        slp_region = account_region_map.get(account_id)
+        acct_region   = _account_to_region.get(str(account_id), "") if account_id else ""
+        acct_name     = _account_to_name.get(str(account_id), "Unknown") if account_id else "Unknown"
+        cf18          = _account_to_dealer.get(str(account_id), "") if account_id else ""
 
-        if region and slp_region != region:
+        if region and acct_region != region:
             continue
 
         slp_dealer_id = get_field(slp, "dealer-id")
-        cf18 = cf18_map.get(account_id)
 
         # For id_mismatch, skip if they actually match
         if issue == "id_mismatch" and slp_dealer_id == cf18:
@@ -6983,9 +6962,9 @@ async def slp_health_report(
         records.append({
             "slp_id": slp["id"],
             "account_id": account_id,
-            "account_name": account_name_map.get(account_id, "Unknown"),
+            "account_name": acct_name,
             "program": get_field(slp, "platform"),
-            "region": slp_region,
+            "region": acct_region,
             "dealer_id": slp_dealer_id,
             "cf18": cf18,
             "status_detail": get_field(slp, "slp-status-detail"),
@@ -7018,64 +6997,34 @@ async def contractor_states_report(
                 return f.get("value") or ""
         return ""
 
-    # Use shared SLP cache instead of fetching fresh each time
+    # Use shared SLP cache — no AC calls needed
     all_slps = list(await get_slp_cache())
 
-    # Optional program filter before account fetches
     if program:
         all_slps = [s for s in all_slps if get_field(s, "platform") == program]
 
-    # Collect unique account IDs
-    account_ids = list({
-        (s.get("relationships", {}).get("account") or [None])[0]
-        for s in all_slps
-        if (s.get("relationships", {}).get("account") or [None])[0]
-    })
-
-    # Fetch account name, state, type concurrently
-    sem = asyncio.Semaphore(10)
-
-    async def fetch_acct(aid):
-        async with sem:
-            try:
-                acct_resp = await ac_get(f"accounts/{aid}")
-                name = acct_resp.get("account", {}).get("name", "")
-                cf_resp = await ac_get(f"accounts/{aid}/accountCustomFieldData")
-                state = acct_type = ""
-                for cf in cf_resp.get("customerAccountCustomFieldData", []):
-                    fid = str(cf.get("custom_field_id", ""))
-                    val = cf.get("custom_field_text_value", "") or ""
-                    if fid == "5":  state = val
-                    if fid == "76": acct_type = val
-                return aid, name, state, acct_type
-            except Exception:
-                return aid, "", "", ""
-
-    results = await asyncio.gather(*[fetch_acct(aid) for aid in account_ids])
-    acct_map = {r[0]: {"name": r[1], "state": r[2], "type": r[3]} for r in results}
-
-    # Build records — only Contractor accounts
+    # Build records — all account data from in-memory index
     records = []
     for slp in all_slps:
         aid = (slp.get("relationships", {}).get("account") or [None])[0]
         if not aid:
             continue
-        acct = acct_map.get(aid, {})
-        if (acct.get("type") or "").strip().lower() != "contractor":
+        aid_str   = str(aid)
+        acct_type = _account_to_type.get(aid_str, "")
+        if acct_type.strip().lower() != "contractor":
+            continue
+        acct_state_val = _account_to_state_prov.get(aid_str, "")
+        if acct_state and acct_state_val.upper() != acct_state.upper():
             continue
         dbi = get_field(slp, "doing-business-in-states")
-        # Filter by account state
-        if acct_state and acct.get("state", "").upper() != acct_state.upper():
-            continue
-        # Filter by doing-business-in state
         if biz_state:
             states_in = [s.strip().upper() for s in (dbi or "").replace(";", ",").split(",") if s.strip()]
             if biz_state.upper() not in states_in:
                 continue
         records.append({
             "account_id":               aid,
-            "account_name":             acct.get("name", ""),
-            "account_state":            acct.get("state", ""),
+            "account_name":             _account_to_name.get(aid_str, ""),
+            "account_state":            acct_state_val,
             "dealer_id":                get_field(slp, "dealer-id"),
             "program":                  get_field(slp, "platform"),
             "doing_business_in_states": dbi,
@@ -7115,60 +7064,31 @@ async def account_slp_report(user=Depends(require_auth)):
     for slp in all_slps:
         aid = (slp.get("relationships", {}).get("account") or [None])[0]
         if aid:
-            slps_by_account[aid].append(slp)
+            slps_by_account[str(aid)].append(slp)
 
-    account_ids = list(slps_by_account.keys())
-
-    # ── 3. Fetch account details concurrently ───────────────────────────────
-    sem = asyncio.Semaphore(10)
-
-    async def fetch_acct(aid):
-        async with sem:
-            try:
-                acct_resp = await ac_get(f"accounts/{aid}")
-                name = acct_resp.get("account", {}).get("name", "")
-                cf_resp = await ac_get(f"accounts/{aid}/accountCustomFieldData")
-                state = acct_type = region = dealer_id = ""
-                for cf in cf_resp.get("customerAccountCustomFieldData", []):
-                    fid = str(cf.get("custom_field_id", ""))
-                    val = cf.get("custom_field_text_value", "") or ""
-                    if fid == "5":   state     = val
-                    if fid == "76":  acct_type = val
-                    if fid == "23":  region    = val
-                    if fid == "18":  dealer_id = val
-                return aid, name, state, acct_type, region, dealer_id
-            except Exception:
-                return aid, "", "", "", "", ""
-
-    results = await asyncio.gather(*[fetch_acct(aid) for aid in account_ids])
-    acct_map = {
-        r[0]: {"name": r[1], "state": r[2], "type": r[3], "region": r[4], "dealer_id": r[5]}
-        for r in results
-    }
-
-    # ── 4. Build parent-child structure ─────────────────────────────────────
+    # ── 3. Build parent-child structure — all account data from index ────────
     accounts_out = []
-    for aid, acct in acct_map.items():
+    for aid_str, slps in slps_by_account.items():
         slp_list = []
-        for slp in slps_by_account.get(aid, []):
+        for slp in slps:
             slp_list.append({
-                "slp_id":          slp["id"],
-                "program":         get_field(slp, "platform"),
-                "status":          get_field(slp, "slp-status-detail"),
-                "activation_date": get_field(slp, "contractor-activated-date"),
-                "oracle_ids":      get_field(slp, "oracle-producer-ids"),
-                "bdr":             get_field(slp, "assigned-bdr"),
+                "slp_id":            slp["id"],
+                "program":           get_field(slp, "platform"),
+                "status":            get_field(slp, "slp-status-detail"),
+                "activation_date":   get_field(slp, "contractor-activated-date"),
+                "oracle_ids":        get_field(slp, "oracle-producer-ids"),
+                "bdr":               get_field(slp, "assigned-bdr"),
                 "doing_business_in": get_field(slp, "doing-business-in-states"),
-                "dealer_id":       get_field(slp, "dealer-id"),
+                "dealer_id":         get_field(slp, "dealer-id"),
             })
         slp_list.sort(key=lambda x: x["program"])
         accounts_out.append({
-            "account_id": aid,
-            "name":       acct["name"],
-            "type":       acct["type"],
-            "state":      acct["state"],
-            "region":     acct["region"],
-            "dealer_id":  acct["dealer_id"],
+            "account_id": aid_str,
+            "name":       _account_to_name.get(aid_str, ""),
+            "type":       _account_to_type.get(aid_str, ""),
+            "state":      _account_to_state_prov.get(aid_str, ""),
+            "region":     _account_to_region.get(aid_str, ""),
+            "dealer_id":  _account_to_dealer.get(aid_str, ""),
             "slps":       slp_list,
         })
 
