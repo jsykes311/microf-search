@@ -458,6 +458,11 @@ def _normalize_platform(val: str) -> str:
     return val.strip()
 
 
+def norm(x) -> str:
+    """Normalize a string for case/whitespace-insensitive comparisons."""
+    return (x or "").strip().lower()
+
+
 def _extract_cf_value(cf: dict) -> str:
     """Read the first non-empty value across all custom field value types."""
     for key in ("custom_field_text_value", "custom_field_date_value",
@@ -3533,6 +3538,7 @@ async def global_search(q: str = Query(..., min_length=1),
         matched_contacts = [c for c in matched_contacts if str(c.get("account_id","")) in prog_account_ids]
 
     total = len(matched_accounts) + len(matched_contacts) + len(matched_slps)
+    print(f"[GLOBAL SEARCH] query={q} results={total}")
     return {
         "query":         q,
         "total":         total,
@@ -6965,7 +6971,7 @@ async def slp_health_report(
         acct_name     = _account_to_name.get(str(account_id), "Unknown") if account_id else "Unknown"
         cf18          = _account_to_dealer.get(str(account_id), "") if account_id else ""
 
-        if region and acct_region != region:
+        if region and norm(acct_region) != norm(region):
             continue
 
         slp_dealer_id = get_field(slp, "dealer-id")
@@ -7026,10 +7032,10 @@ async def contractor_states_report(
             continue
         aid_str   = str(aid)
         acct_type = _account_to_type.get(aid_str, "")
-        if acct_type.strip().lower() != "contractor":
+        if norm(acct_type) != "contractor":
             continue
         acct_state_val = _account_to_state_prov.get(aid_str, "")
-        if acct_state and acct_state_val.upper() != acct_state.upper():
+        if acct_state and norm(acct_state_val) != norm(acct_state):
             continue
         dbi = get_field(slp, "doing-business-in-states")
         if biz_state:
@@ -7167,11 +7173,11 @@ async def parent_child_report(
             continue
 
         # Account-level filters
-        if acct_type  and _account_to_type.get(aid_str, "")          != acct_type:
+        if acct_type  and norm(_account_to_type.get(aid_str, ""))      != norm(acct_type):
             continue
-        if region     and _account_to_region.get(aid_str, "")        != region:
+        if region     and norm(_account_to_region.get(aid_str, ""))    != norm(region):
             continue
-        if acct_state and _account_to_state_prov.get(aid_str, "").upper() != acct_state.upper():
+        if acct_state and norm(_account_to_state_prov.get(aid_str, "")) != norm(acct_state):
             continue
 
         raw_slps = slps_by_account.get(aid_str, [])
@@ -7181,8 +7187,8 @@ async def parent_child_report(
         for slp in raw_slps:
             p = get_field(slp, "platform")
             s = get_field(slp, "slp-status-detail")
-            if program    and p != program:    continue
-            if slp_status and s != slp_status: continue
+            if program    and norm(p) != norm(program):    continue
+            if slp_status and norm(s) != norm(slp_status): continue
             slp_list.append({
                 "slp_id":            slp["id"],
                 "program":           p,
@@ -7226,6 +7232,96 @@ async def parent_child_report(
         "total_slps":            total_slps_r,
         "cache_age_seconds":     cache_age,
         "accounts":              accounts_out,
+    }
+
+
+# ── Health Check ─────────────────────────────────────────────────────────────
+
+@app.get("/api/health")
+async def health_check():
+    cache_age = round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None
+    return {
+        "status":               "ok",
+        "accounts_indexed":     len(_account_to_name),
+        "slp_cache_count":      len(_slp_cache_records),
+        "slp_cache_age_seconds": cache_age,
+    }
+
+
+# ── SLP Cache Refresh ─────────────────────────────────────────────────────────
+
+@app.get("/api/slp-cache/refresh")
+async def slp_cache_refresh(user=Depends(require_auth)):
+    await _refresh_slp_cache()
+    return {
+        "slp_cache_count":      len(_slp_cache_records),
+        "slp_cache_age_seconds": round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None,
+    }
+
+
+# ── Data Integrity Report ─────────────────────────────────────────────────────
+
+@app.get("/api/reports/data-integrity")
+async def data_integrity_report(user=Depends(require_auth)):
+    def get_field(slp, fid):
+        for f in slp.get("fields", []):
+            if f.get("id") == fid:
+                return f.get("value") or ""
+        return ""
+
+    all_slps  = list(await get_slp_cache())
+    cache_age = round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None
+
+    # ── SLP checks ────────────────────────────────────────────────────────────
+    seen_ids:           set  = set()
+    duplicate_ids:      list = []
+    missing_dealer_id:  int  = 0
+    missing_platform:   int  = 0
+    missing_status:     int  = 0
+    missing_account_rel: int = 0
+
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            duplicate_ids.append(sid)
+        else:
+            seen_ids.add(sid)
+
+        if not get_field(slp, "dealer-id"):
+            missing_dealer_id += 1
+        if not get_field(slp, "platform"):
+            missing_platform += 1
+        if not get_field(slp, "slp-status-detail"):
+            missing_status += 1
+
+        rel = slp.get("relationships", {}).get("account") or []
+        if not rel:
+            missing_account_rel += 1
+
+    # ── Account checks ────────────────────────────────────────────────────────
+    total_accounts      = len(_account_to_name)
+    missing_acct_type   = sum(1 for v in _account_to_type.values()       if not v.strip())
+    missing_acct_state  = sum(1 for v in _account_to_state_prov.values() if not v.strip())
+
+    # Accounts in the index with no type set at all (not in dict)
+    missing_acct_type  += total_accounts - len(_account_to_type)
+    missing_acct_state += total_accounts - len(_account_to_state_prov)
+
+    return {
+        "slp_cache_age_seconds": cache_age,
+        "slps": {
+            "total":                len(all_slps),
+            "duplicate_ids":        duplicate_ids,
+            "missing_dealer_id":    missing_dealer_id,
+            "missing_platform":     missing_platform,
+            "missing_status":       missing_status,
+            "missing_account_rel":  missing_account_rel,
+        },
+        "accounts": {
+            "total":               total_accounts,
+            "missing_type_cf76":   missing_acct_type,
+            "missing_state_cf5":   missing_acct_state,
+        },
     }
 
 
