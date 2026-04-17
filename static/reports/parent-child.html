@@ -338,6 +338,25 @@ function renderFiltered() {
     </div>`;
 }
 
+// ── Ready poller — auto-reloads report once cache is populated ────────────────
+let _readyPollTimer = null;
+function startReadyPoller() {
+  if (_readyPollTimer) return;           // already polling
+  _readyPollTimer = setInterval(async () => {
+    try {
+      const h = await fetch('/api/health');
+      if (!h.ok) return;
+      const { slp_cache_count, accounts_indexed } = await h.json();
+      if (slp_cache_count >= 100 && accounts_indexed >= 100) {
+        clearInterval(_readyPollTimer);
+        _readyPollTimer = null;
+        document.getElementById('not-ready-banner').style.display = 'none';
+        loadReport();   // silently reload with real data
+      }
+    } catch(_) {}
+  }, 15000);  // check every 15 seconds
+}
+
 // ── Load from API ─────────────────────────────────────────────────────────────
 async function loadReport() {
   const btn = document.getElementById('run-btn');
@@ -352,9 +371,10 @@ async function loadReport() {
     if (!r.ok) throw new Error(await r.text());
     _raw = await r.json();
 
-    // Show warning if cache/index hasn't loaded yet
+    // Show warning if cache/index hasn't loaded yet; auto-reload when ready
     const notReady = !_raw.total_slps || _raw.total_slps < 100;
     document.getElementById('not-ready-banner').style.display = notReady ? 'flex' : 'none';
+    if (notReady) startReadyPoller();
 
     if (_raw.cache_age_seconds !== undefined) {
       const age  = _raw.cache_age_seconds;
