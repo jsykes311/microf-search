@@ -45,14 +45,13 @@
   .no-results { text-align: center; padding: 40px; color: #aaa; }
   .err { text-align: center; padding: 40px; color: #c00; }
   .cache-note { font-size: 11px; color: #888; margin-bottom: 14px; }
-  .not-ready-banner { display:none; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px;
-    padding:14px 18px; margin-bottom:16px; align-items:flex-start; gap:12px; }
-  .not-ready-banner .icon { font-size:22px; line-height:1; flex-shrink:0; }
-  .not-ready-banner .body { flex:1; }
-  .not-ready-banner .title { font-weight:700; color:#9a3412; font-size:14px; margin-bottom:4px; }
-  .not-ready-banner .sub   { font-size:13px; color:#c2410c; }
-  .not-ready-banner .close { background:none; border:none; font-size:18px; color:#9a3412;
-    cursor:pointer; padding:0; line-height:1; align-self:flex-start; }
+  .status-pill { display:none; align-items:center; gap:10px; padding:10px 16px;
+    border-radius:8px; margin-bottom:14px; font-size:13px; font-weight:500; }
+  .status-pill.warming { background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; }
+  .status-pill.ready   { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .spinner { width:15px; height:15px; border:2px solid #bfdbfe; border-top-color:#3b82f6;
+    border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }
 </style>
 </head>
 <body>
@@ -62,13 +61,9 @@
 </header>
 <div class="container">
 
-  <div class="not-ready-banner" id="not-ready-banner">
-    <div class="icon">⏳</div>
-    <div class="body">
-      <div class="title">Index not ready — data may be incomplete</div>
-      <div class="sub">The server just restarted and is still loading account and SLP data. Wait about 2–3 minutes and run the report again for accurate results.</div>
-    </div>
-    <button class="close" onclick="document.getElementById('not-ready-banner').style.display='none'">✕</button>
+  <div class="status-pill" id="status-pill">
+    <div class="spinner" id="status-spinner"></div>
+    <span id="status-text">Warming up — loading account and SLP data…</span>
   </div>
 
   <div class="filters">
@@ -287,22 +282,46 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
+function showWarmingPill() {
+  const pill = document.getElementById('status-pill');
+  pill.className = 'status-pill warming';
+  pill.style.display = 'flex';
+  document.getElementById('status-spinner').style.display = 'block';
+  document.getElementById('status-text').textContent = 'Warming up — loading account and SLP data…';
+}
+function hidePill() {
+  const pill = document.getElementById('status-pill');
+  pill.className = 'status-pill ready';
+  document.getElementById('status-spinner').style.display = 'none';
+  document.getElementById('status-text').textContent = '✓ Ready';
+  setTimeout(() => { pill.style.display = 'none'; }, 2000);
+}
+
 let _readyPollTimer = null;
-function startReadyPoller() {
-  if (_readyPollTimer) return;
-  _readyPollTimer = setInterval(async () => {
-    try {
-      const h = await fetch('/api/health');
-      if (!h.ok) return;
-      const { slp_cache_count, accounts_indexed } = await h.json();
-      if (slp_cache_count >= 100 && accounts_indexed >= 100) {
-        clearInterval(_readyPollTimer);
-        _readyPollTimer = null;
-        document.getElementById('not-ready-banner').style.display = 'none';
-        loadReport();
+async function checkAndRun() {
+  try {
+    const h = await fetch('/api/health');
+    if (!h.ok) return;
+    const { slp_cache_count, accounts_indexed } = await h.json();
+    if (slp_cache_count >= 100 && accounts_indexed >= 100) {
+      loadReport();
+    } else {
+      showWarmingPill();
+      if (!_readyPollTimer) {
+        _readyPollTimer = setInterval(async () => {
+          try {
+            const h2 = await fetch('/api/health');
+            if (!h2.ok) return;
+            const d = await h2.json();
+            if (d.slp_cache_count >= 100 && d.accounts_indexed >= 100) {
+              clearInterval(_readyPollTimer); _readyPollTimer = null;
+              loadReport();
+            }
+          } catch(_) {}
+        }, 15000);
       }
-    } catch(_) {}
-  }, 15000);
+    }
+  } catch(_) { loadReport(); }
 }
 
 async function loadReport() {
@@ -317,10 +336,7 @@ async function loadReport() {
     if (!r.ok) throw new Error(await r.text());
     _raw = await r.json();
 
-    // Show warning if index/cache not ready; auto-reload when ready
-    const notReady = !_raw.total_slps || _raw.total_slps < 100;
-    document.getElementById('not-ready-banner').style.display = notReady ? 'flex' : 'none';
-    if (notReady) startReadyPoller();
+    if (_raw.total_slps >= 100) hidePill();
 
     // Show cache age
     if (_raw.cache_age_seconds !== undefined) {
@@ -367,6 +383,8 @@ function exportCsv() {
   a.download = `account_slp_report_${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
 }
+
+checkAndRun();
 </script>
 </body>
 </html>
