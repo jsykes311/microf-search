@@ -179,9 +179,12 @@
         <button id="run-btn" onclick="loadReport()">Run Report</button>
         <button class="btn-csv" onclick="exportCsv()" id="csv-btn" style="display:none">⬇ CSV</button>
       </div>
-      <div class="toggle-row" style="margin-top:8px">
-        <input type="checkbox" id="has-slps" checked onchange="onFilterChange()">
-        <label for="has-slps" style="text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer">Only accounts with SLPs</label>
+      <div style="margin-top:8px">
+        <select id="has-slps" onchange="onFilterChange()" style="font-size:13px;min-width:190px;">
+          <option value="with">With SLPs only</option>
+          <option value="all">All accounts</option>
+          <option value="without">Without SLPs only</option>
+        </select>
       </div>
     </div>
   </div>
@@ -231,7 +234,7 @@ function applyFilters(data) {
   const acctState  = document.getElementById('acct-state').value;
   const program    = document.getElementById('program').value;
   const slpStatus  = document.getElementById('slp-status').value;
-  const hasSlps    = document.getElementById('has-slps').checked;
+  const slpMode    = document.getElementById('has-slps').value; // 'with' | 'all' | 'without'
 
   return data.accounts
     .map(acct => {
@@ -250,8 +253,9 @@ function applyFilters(data) {
       if (program)   filteredSlps = filteredSlps.filter(s => s.program   === program);
       if (slpStatus) filteredSlps = filteredSlps.filter(s => s.status    === slpStatus);
 
-      // has-slps toggle
-      if (hasSlps && filteredSlps.length === 0 && acct.slp_count === 0) return null;
+      // SLP presence filter
+      if (slpMode === 'with'    && acct.slp_count === 0)  return null;
+      if (slpMode === 'without' && acct.slp_count > 0)    return null;
 
       return { ...acct, _filtered_slps: filteredSlps };
     })
