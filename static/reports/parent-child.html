@@ -8,7 +8,9 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6fa; color: #222; }
   header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 18px; font-weight: 600; }
+  header h1 { font-size: 18px; font-weight: 600; flex: 1; }
+  .apps-btn { margin-left: auto; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .apps-btn:hover { background: rgba(255,255,255,0.2); }
   .container { max-width: 1400px; margin: 24px auto; padding: 0 20px; }
 
   /* Filters */
@@ -95,6 +97,7 @@
 <body>
 <header>
   <h1>🔗 Parent-Child Report</h1>
+  <a class="apps-btn" href="/">⬡ Apps</a>
 </header>
 <div class="container">
 
@@ -185,6 +188,18 @@
       </select>
     </div>
     <div class="filter-group">
+      <label>Account Owner</label>
+      <select id="owner" onchange="onFilterChange()">
+        <option value="">All Owners</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Assigned BDR</label>
+      <select id="bdr" onchange="onFilterChange()">
+        <option value="">All BDRs</option>
+      </select>
+    </div>
+    <div class="filter-group">
       <label>&nbsp;</label>
       <div style="display:flex;gap:8px;">
         <button id="run-btn" onclick="loadReport()">Run Report</button>
@@ -242,6 +257,13 @@ function esc(s) {
 // ── Filter change ─────────────────────────────────────────────────────────────
 function onFilterChange() { if (_raw) renderFiltered(); }
 
+function populateSelect(id, values, placeholder) {
+  const el = document.getElementById(id);
+  const cur = el.value;
+  el.innerHTML = `<option value="">${placeholder}</option>` +
+    values.map(v => `<option${v === cur ? ' selected' : ''}>${esc(v)}</option>`).join('');
+}
+
 function applyFilters(data) {
   const search     = document.getElementById('search').value.trim().toLowerCase();
   const acctType   = document.getElementById('acct-type').value;
@@ -249,14 +271,17 @@ function applyFilters(data) {
   const acctState  = document.getElementById('acct-state').value;
   const program    = document.getElementById('program').value;
   const slpStatus  = document.getElementById('slp-status').value;
+  const owner      = document.getElementById('owner').value;
+  const bdr        = document.getElementById('bdr').value;
   const slpMode    = document.getElementById('has-slps').value; // 'with' | 'all' | 'without'
 
   return data.accounts
     .map(acct => {
       // Account-level filters
-      if (acctType  && acct.type   !== acctType)  return null;
-      if (region    && acct.region !== region)    return null;
-      if (acctState && acct.state  !== acctState) return null;
+      if (acctType && acct.type   !== acctType)  return null;
+      if (region   && acct.region !== region)    return null;
+      if (acctState && acct.state !== acctState) return null;
+      if (owner    && acct.owner  !== owner)     return null;
       if (search) {
         const hay = (acct.name + ' ' + acct.dealer_id + ' ' +
           acct.slps.map(s => s.dealer_id).join(' ')).toLowerCase();
@@ -265,8 +290,12 @@ function applyFilters(data) {
 
       // Filter SLP children
       let filteredSlps = acct.slps;
-      if (program)   filteredSlps = filteredSlps.filter(s => s.program   === program);
-      if (slpStatus) filteredSlps = filteredSlps.filter(s => s.status    === slpStatus);
+      if (program)   filteredSlps = filteredSlps.filter(s => s.program === program);
+      if (slpStatus) filteredSlps = filteredSlps.filter(s => s.status  === slpStatus);
+      if (bdr)       filteredSlps = filteredSlps.filter(s => s.bdr     === bdr);
+
+      // If BDR filter is active and no matching SLPs, hide account
+      if (bdr && filteredSlps.length === 0) return null;
 
       // SLP presence filter
       if (slpMode === 'with'    && acct.slp_count === 0)  return null;
@@ -447,6 +476,11 @@ async function loadReport() {
 
     // Hide status pill once we have real data
     if (_raw.total_slps >= 100) hidePill();
+
+    // Populate Owner and BDR dropdowns from live data
+    populateSelect('owner', [...new Set(_raw.accounts.map(a => a.owner).filter(Boolean))].sort(), 'All Owners');
+    const allBdrs = _raw.accounts.flatMap(a => a.slps.map(s => s.bdr)).filter(Boolean);
+    populateSelect('bdr', [...new Set(allBdrs)].sort(), 'All BDRs');
 
     if (_raw.cache_age_seconds !== undefined) {
       const age  = _raw.cache_age_seconds;

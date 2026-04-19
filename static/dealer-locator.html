@@ -17,6 +17,8 @@
       box-shadow: 0 2px 6px rgba(0,0,0,.15);
     }
     header h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.2px; }
+    .apps-btn { margin-left: auto; background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+    .apps-btn:hover { background: rgba(255,255,255,0.25); }
     header p  { font-size: 0.78rem; opacity: 0.85; margin-top: 2px; }
 
     /* ── Main layout ── */
@@ -126,10 +128,11 @@
 <body>
 
 <header>
-  <div>
+  <div style="flex:1">
     <h1>🗺 Microf Dealer Locator</h1>
     <p>Find active Microf contractors near any location</p>
   </div>
+  <a class="apps-btn" href="/">⬡ Apps</a>
 </header>
 
 <main>

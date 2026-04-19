@@ -8,7 +8,9 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f6fa; color: #222; }
   header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
-  header h1 { font-size: 18px; font-weight: 600; }
+  header h1 { font-size: 18px; font-weight: 600; flex: 1; }
+  .apps-btn { margin-left: auto; background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .apps-btn:hover { background: rgba(255,255,255,0.2); }
   .container { max-width: 1300px; margin: 24px auto; padding: 0 20px; }
   .filters { background: #fff; border-radius: 8px; padding: 20px; display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; box-shadow: 0 1px 4px rgba(0,0,0,.08); margin-bottom: 20px; }
   .filter-group { display: flex; flex-direction: column; gap: 6px; }
@@ -43,6 +45,7 @@
 <body>
 <header>
   <h1>🗺 Contractor States Report</h1>
+  <a class="apps-btn" href="/">⬡ Apps</a>
 </header>
 <div class="container">
   <div class="filters">
