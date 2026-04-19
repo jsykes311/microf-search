@@ -35,6 +35,17 @@
 
   .cache-note { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
 
+  /* Breakdown panel */
+  .breakdown { background:#fff; border-radius:8px; box-shadow:0 1px 4px rgba(0,0,0,.08);
+    padding:14px 18px; margin-bottom:16px; display:none; }
+  .breakdown-title { font-size:12px; font-weight:700; color:#475569; text-transform:uppercase;
+    letter-spacing:.5px; margin-bottom:10px; }
+  .breakdown-grid { display:flex; gap:8px; flex-wrap:wrap; }
+  .breakdown-chip { background:#f1f5f9; border-radius:6px; padding:6px 12px; font-size:13px;
+    display:flex; gap:8px; align-items:center; }
+  .breakdown-chip .bc-label { color:#475569; font-weight:500; }
+  .breakdown-chip .bc-count { font-weight:700; color:#4f46e5; }
+
   /* Status pill */
   .status-pill { display:none; align-items:center; gap:10px; padding:10px 16px;
     border-radius:8px; margin-bottom:14px; font-size:13px; font-weight:500; }
@@ -196,6 +207,10 @@
     <div class="stat"><div class="stat-value slate" id="s-slps">—</div><div class="stat-label">Total SLPs (filtered)</div></div>
   </div>
   <div class="cache-note" id="cache-note" style="display:none"></div>
+  <div class="breakdown" id="breakdown">
+    <div class="breakdown-title" id="breakdown-title">Breakdown by Region</div>
+    <div class="breakdown-grid" id="breakdown-grid"></div>
+  </div>
 
   <div id="table-wrap">
     <div class="empty">Use the filters above and click <strong>Run Report</strong>.</div>
@@ -262,6 +277,34 @@ function applyFilters(data) {
     .filter(Boolean);
 }
 
+// ── Breakdown panel ───────────────────────────────────────────────────────────
+function renderBreakdown(filtered) {
+  const regionFilter = document.getElementById('region').value;
+  const stateFilter  = document.getElementById('acct-state').value;
+
+  // Pick the most useful grouping key given active filters
+  const groupKey = regionFilter ? 'state' : 'region';
+  const title    = regionFilter ? 'Breakdown by State' : 'Breakdown by Region';
+
+  const counts = {};
+  filtered.forEach(a => {
+    const key = a[groupKey] || '—';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const panel = document.getElementById('breakdown');
+
+  if (entries.length <= 1) { panel.style.display = 'none'; return; }
+
+  document.getElementById('breakdown-title').textContent = title;
+  document.getElementById('breakdown-grid').innerHTML = entries
+    .map(([label, n]) =>
+      `<div class="breakdown-chip"><span class="bc-label">${esc(label)}</span><span class="bc-count">${n.toLocaleString()}</span></div>`)
+    .join('');
+  panel.style.display = 'block';
+}
+
 // ── Render ───────────────────────────────────────────────────────────────────
 function renderFiltered() {
   _filtered = applyFilters(_raw);
@@ -276,6 +319,9 @@ function renderFiltered() {
   document.getElementById('s-slps').textContent    = totalSlps.toLocaleString();
   document.getElementById('summary').style.display = 'flex';
   document.getElementById('csv-btn').style.display = 'inline-block';
+
+  // Breakdown by region (and state if no region filter active)
+  renderBreakdown(_filtered);
 
   if (!_filtered.length) {
     document.getElementById('table-wrap').innerHTML = '<div class="empty">No accounts match the selected filters.</div>';
