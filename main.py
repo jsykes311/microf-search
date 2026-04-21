@@ -7027,6 +7027,7 @@ async def am_activity_page(user=Depends(require_auth)):
 async def am_activity_report(
     owner: Optional[str] = Query(None, description="Filter by AC owner user ID"),
     acct_type: Optional[str] = Query("Contractor", description="Filter by Account Type; empty = all"),
+    bdr: Optional[str] = Query(None, description="Filter by Assigned BDR name"),
     user=Depends(require_auth),
 ):
     """
@@ -7078,6 +7079,10 @@ async def am_activity_report(
         if owner and owner_id != owner:
             continue
 
+        assigned_bdr = _account_to_bdr.get(aid, "")
+        if bdr and assigned_bdr.lower() != bdr.lower():
+            continue
+
         last_app   = clean_date(_account_to_last_app.get(aid, ""))
         last_rpa   = clean_date(_account_to_last_rpa.get(aid, ""))
         dealer_id  = _account_to_dealer.get(aid, "")
@@ -7092,6 +7097,7 @@ async def am_activity_report(
             "name":          name,
             "owner_id":      owner_id,
             "owner_name":    owner_name,
+            "bdr":           assigned_bdr,
             "dealer_id":     dealer_id,
             "region":        region,
             "last_app_date": last_app,
@@ -7108,12 +7114,16 @@ async def am_activity_report(
 
     accounts.sort(key=_sort_key)
 
-    # Build managers list from ALL accounts (not filtered set) so dropdown is complete
+    # Build managers + BDR lists from ALL accounts so dropdowns are always complete
     mgrs: dict = {}
+    bdrs: set  = set()
     for aid in _account_to_name:
         uid = _account_to_owner.get(aid, "")
         if uid and uid not in mgrs:
             mgrs[uid] = _user_id_to_name.get(uid, uid)
+        b = _account_to_bdr.get(aid, "")
+        if b:
+            bdrs.add(b)
 
     managers = sorted(
         [{"id": k, "name": v} for k, v in mgrs.items()],
@@ -7124,6 +7134,7 @@ async def am_activity_report(
         "accounts":  accounts,
         "total":     len(accounts),
         "managers":  managers,
+        "bdrs":      sorted(bdrs),
     }
 
 

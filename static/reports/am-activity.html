@@ -159,6 +159,12 @@
       </select>
     </div>
     <div class="filter-group">
+      <label>Assigned BDR</label>
+      <select id="f-bdr">
+        <option value="">— All BDRs —</option>
+      </select>
+    </div>
+    <div class="filter-group">
       <label>Region</label>
       <select id="f-region">
         <option value="">— All Regions —</option>
@@ -235,8 +241,10 @@ let _lcLoaded = false;     // whether the async fetch has completed
 async function load() {
   const ownerEl   = document.getElementById('f-owner');
   const typeEl    = document.getElementById('f-type');
+  const bdrEl     = document.getElementById('f-bdr');
   const owner     = ownerEl.value;
   const acctType  = typeEl.value;
+  const bdr       = bdrEl.value;
 
   const wrap  = document.getElementById('table-wrap');
   const stats = document.getElementById('stats');
@@ -246,6 +254,7 @@ async function load() {
   const params = new URLSearchParams();
   if (owner)    params.set('owner', owner);
   if (acctType) params.set('acct_type', acctType);
+  if (bdr)      params.set('bdr', bdr);
 
   try {
     const res  = await fetch(`/api/reports/am-activity?${params}`);
@@ -257,6 +266,14 @@ async function load() {
         const o = document.createElement('option');
         o.value = m.id; o.textContent = m.name;
         ownerEl.appendChild(o);
+      });
+    }
+    // Populate BDR dropdown from first load if empty
+    if (bdrEl.options.length <= 1 && data.bdrs?.length) {
+      data.bdrs.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b; o.textContent = b;
+        bdrEl.appendChild(o);
       });
     }
 
@@ -499,6 +516,14 @@ function exportCsv() {
         const o = document.createElement('option');
         o.value = m.id; o.textContent = m.name;
         sel.appendChild(o);
+      });
+    }
+    const bdrSel = document.getElementById('f-bdr');
+    if (data.bdrs?.length && bdrSel.options.length <= 1) {
+      data.bdrs.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b; o.textContent = b;
+        bdrSel.appendChild(o);
       });
     }
     _data = data.accounts || [];
