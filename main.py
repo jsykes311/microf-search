@@ -7036,6 +7036,18 @@ async def am_activity_report(
     """
     today = date.today()
 
+    def clean_date(date_str: str) -> str:
+        """Return the date string only if it's a plausible calendar date (year 2000+)."""
+        if not date_str:
+            return ""
+        try:
+            d = date.fromisoformat(str(date_str)[:10])
+            if d.year < 2000 or d.year > today.year + 1:
+                return ""  # garbage value — treat as missing
+            return str(date_str)[:10]
+        except Exception:
+            return ""
+
     def days_since(date_str: str) -> Optional[int]:
         if not date_str:
             return None
@@ -7055,8 +7067,8 @@ async def am_activity_report(
         if owner and owner_id != owner:
             continue
 
-        last_app   = _account_to_last_app.get(aid, "")
-        last_rpa   = _account_to_last_rpa.get(aid, "")
+        last_app   = clean_date(_account_to_last_app.get(aid, ""))
+        last_rpa   = clean_date(_account_to_last_rpa.get(aid, ""))
         dealer_id  = _account_to_dealer.get(aid, "")
         region     = _account_to_region.get(aid, "")
         owner_name = _user_id_to_name.get(owner_id, owner_id or "—")
