@@ -7239,14 +7239,14 @@ async def _verdata_report(status_filter: str, format: str):
                 return (f.get("value") or "").strip()
         return ""
 
-    # RTO = rent-to-own / LTO-family programs
-    RTO_PLATFORMS = {"LTO", "Microf", "Microf (LTO Only)"}
-
-    rto_dates: dict = {}   # account_id -> earliest RTO activation date str
+    # Build activation-date index keyed by dealer_id (the join key).
+    # Take the earliest contractor-activated-date across all SLPs for that dealer,
+    # regardless of platform or status.
+    act_dates: dict = {}   # dealer_id -> earliest activation date str
 
     for slp in slp_records:
-        platform = _slp_field(slp, "platform")
-        if platform not in RTO_PLATFORMS:
+        dealer_id = _slp_field(slp, "dealer-id")
+        if not dealer_id:
             continue
         act_date = _slp_field(slp, "contractor-activated-date")
         if not act_date:
@@ -7254,17 +7254,8 @@ async def _verdata_report(status_filter: str, format: str):
         act_str = str(act_date)[:10]
         if len(act_str) < 10:
             continue
-
-        rels = slp.get("relationships", {})
-        account_rel = rels.get("account")
-        aids = account_rel if isinstance(account_rel, list) else ([account_rel] if account_rel else [])
-
-        for aid in aids:
-            if not aid:
-                continue
-            aid = str(aid)
-            if aid not in rto_dates or act_str < rto_dates[aid]:
-                rto_dates[aid] = act_str
+        if dealer_id not in act_dates or act_str < act_dates[dealer_id]:
+            act_dates[dealer_id] = act_str
 
     records = []
     for account_id, status in _account_to_status.items():
@@ -7285,7 +7276,7 @@ async def _verdata_report(status_filter: str, format: str):
             "Dealer ID":          dealer_id,
             "Account Name":       acct_name,
             "DBA Name":           dba_name,
-            "RTO Activation Date": rto_dates.get(account_id, ""),
+            "RTO Activation Date": act_dates.get(dealer_id, ""),
             "Account Status":     status,
             "Vendor Tax-ID":      tax_id,
             "Website":            website,
