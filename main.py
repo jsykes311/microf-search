@@ -7218,7 +7218,19 @@ async def verdata_active_report(
     format: str = Query("json"),
     user=Depends(require_auth),
 ):
-    """Active accounts with SLP activation dates — Verdata feed (fully in-memory)."""
+    return await _verdata_report(status_filter="active", format=format)
+
+
+@app.get("/api/report/verdata-inactive")
+async def verdata_inactive_report(
+    format: str = Query("json"),
+    user=Depends(require_auth),
+):
+    return await _verdata_report(status_filter="inactive", format=format)
+
+
+async def _verdata_report(status_filter: str, format: str):
+    """Verdata report filtered by account status — fully in-memory."""
     slp_records = await get_slp_cache()
 
     def _slp_field(slp, fid):
@@ -7256,7 +7268,7 @@ async def verdata_active_report(
 
     records = []
     for account_id, status in _account_to_status.items():
-        if status.strip().lower() != "active":
+        if status.strip().lower() != status_filter.lower():
             continue
 
         dealer_id = _account_to_dealer.get(account_id, "")
@@ -7294,7 +7306,7 @@ async def verdata_active_report(
         return StreamingResponse(
             io.BytesIO(output.getvalue().encode("utf-8")),
             media_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="verdata_active.csv"'},
+            headers={"Content-Disposition": f'attachment; filename="verdata_{status_filter}.csv"'},
         )
 
     return {"count": len(records), "records": records}
