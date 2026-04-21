@@ -7037,14 +7037,25 @@ async def am_activity_report(
     today = date.today()
 
     def clean_date(date_str: str) -> str:
-        """Return the date string only if it's a plausible calendar date (year 2000+)."""
+        """
+        Normalize AC date values to YYYY-MM-DD.
+        AC sometimes stores MM-DD-YY input (e.g. '01-01-22') by treating
+        the 2-digit year as the 4-digit year, producing '0001-01-22'.
+        When year < 13 we reverse that: stored-year=month, stored-month=day,
+        stored-day=2-digit-year → reconstruct the real date.
+        """
         if not date_str:
             return ""
         try:
             d = date.fromisoformat(str(date_str)[:10])
-            if d.year < 2000 or d.year > today.year + 1:
-                return ""  # garbage value — treat as missing
-            return str(date_str)[:10]
+            if d.year >= 2000:
+                return "" if d.year > today.year + 1 else str(date_str)[:10]
+            if 1 <= d.year <= 12:
+                # Mangled MM-DD-YY: year slot = real month, month slot = real day,
+                # day slot = real 2-digit year
+                reconstructed = date(2000 + d.day, d.year, d.month)
+                return reconstructed.isoformat() if reconstructed <= today else ""
+            return ""  # garbage year (13–1999)
         except Exception:
             return ""
 
