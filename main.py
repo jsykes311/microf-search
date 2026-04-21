@@ -7230,11 +7230,12 @@ async def verdata_active_report(
     # RTO = rent-to-own / LTO-family programs
     RTO_PLATFORMS = {"LTO", "Microf", "Microf (LTO Only)"}
 
-    rto_dates:    dict = {}   # account_id -> earliest RTO activation date str
-    custom_dates: dict = {}   # account_id -> earliest Custom Fin activation date str
+    rto_dates: dict = {}   # account_id -> earliest RTO activation date str
 
     for slp in slp_records:
         platform = _slp_field(slp, "platform")
+        if platform not in RTO_PLATFORMS:
+            continue
         act_date = _slp_field(slp, "contractor-activated-date")
         if not act_date:
             continue
@@ -7250,12 +7251,8 @@ async def verdata_active_report(
             if not aid:
                 continue
             aid = str(aid)
-            if platform in RTO_PLATFORMS:
-                if aid not in rto_dates or act_str < rto_dates[aid]:
-                    rto_dates[aid] = act_str
-            else:
-                if aid not in custom_dates or act_str < custom_dates[aid]:
-                    custom_dates[aid] = act_str
+            if aid not in rto_dates or act_str < rto_dates[aid]:
+                rto_dates[aid] = act_str
 
     records = []
     for account_id, status in _account_to_status.items():
@@ -7273,18 +7270,17 @@ async def verdata_active_report(
         zip_code  = _account_to_zip.get(account_id, "")
 
         records.append({
-            "Dealer ID":                  dealer_id,
-            "Account Name":               acct_name,
-            "DBA Name":                   dba_name,
-            "RTO Activation Date":        rto_dates.get(account_id, ""),
-            "Custom Fin Activation Date": custom_dates.get(account_id, ""),
-            "Account Status":             status,
-            "Vendor Tax-ID":              tax_id,
-            "Website":                    website,
-            "Physical Address":           address,
-            "Physical City":              city,
-            "Physical State":             state,
-            "Physical Zip":               zip_code,
+            "Dealer ID":          dealer_id,
+            "Account Name":       acct_name,
+            "DBA Name":           dba_name,
+            "RTO Activation Date": rto_dates.get(account_id, ""),
+            "Account Status":     status,
+            "Vendor Tax-ID":      tax_id,
+            "Website":            website,
+            "Physical Address":   address,
+            "Physical City":      city,
+            "Physical State":     state,
+            "Physical Zip":       zip_code,
         })
 
     records.sort(key=lambda r: (r["Account Name"] or "").lower())
