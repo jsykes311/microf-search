@@ -4485,6 +4485,29 @@ def _csv_bytes(records: list) -> bytes:
     return buf.getvalue().encode()
 
 
+def _enrich_record(record: dict, account_id: str) -> dict:
+    """Append standard account fields from in-memory globals to a record dict.
+    Uses setdefault so existing values are never overwritten.
+    Called by email job functions to ensure CSV attachments match download endpoints."""
+    if not account_id:
+        return record
+    record.setdefault("DBA Name",          _account_to_dba.get(account_id, ""))
+    record.setdefault("Account Status",    _account_to_status.get(account_id, ""))
+    record.setdefault("Account Type",      _account_to_type.get(account_id, ""))
+    record.setdefault("Sales Region",      _account_to_region.get(account_id, ""))
+    record.setdefault("Doing Business In", _account_to_states.get(account_id, ""))
+    record.setdefault("Last App Date",     _account_to_last_app.get(account_id, ""))
+    record.setdefault("Last RPA Date",     _account_to_last_rpa.get(account_id, ""))
+    record.setdefault("Vendor Tax-ID",     _account_to_tax_id.get(account_id, ""))
+    record.setdefault("Website",           _account_to_website.get(account_id, ""))
+    record.setdefault("Phone",             _account_to_phone.get(account_id, ""))
+    record.setdefault("Address",           _account_to_address.get(account_id, ""))
+    record.setdefault("City",              _account_to_city.get(account_id, ""))
+    record.setdefault("State/Prov",        _account_to_state_prov.get(account_id, ""))
+    record.setdefault("Zip",               _account_to_zip.get(account_id, ""))
+    return record
+
+
 async def _send_email(subject: str, html: str,
                       csv_data: bytes = None, csv_name: str = None,
                       recipients: list = None):
@@ -4669,13 +4692,22 @@ async def _job_activations(start_date: Optional[date] = None, end_date: Optional
     for c in candidates:
         f    = c["fields"]
         acct = acct_cache.get(c["account_id"]) or {}
-        records.append({
-            "Account":   acct.get("name") or f.get("name", ""),
-            "Dealer ID": f.get("dealer-id") or acct.get("dealer_id", ""),
-            "Platform":  f.get("platform") or acct.get("platform", ""),
-            "BDR":       f.get("assigned-bdr") or acct.get("bdr", ""),
-            "Activated": str(f.get("contractor-activated-date", "") or "")[:10],
-        })
+        aid  = c["account_id"] or ""
+        rec  = {
+            "Account":                   acct.get("name") or f.get("name", ""),
+            "Dealer ID":                 f.get("dealer-id") or acct.get("dealer_id", ""),
+            "Platform":                  f.get("platform") or acct.get("platform", ""),
+            "BDR":                       f.get("assigned-bdr") or acct.get("bdr", ""),
+            "Activated":                 str(f.get("contractor-activated-date", "") or "")[:10],
+            "SLP Status":                f.get("slp-status-detail", ""),
+            "Oracle Producer IDs":       f.get("oracle-producer-ids", ""),
+            "Doing Business In States":  f.get("doing-business-in-states", ""),
+            "EIN":                       f.get("ein", ""),
+            "Contractor Reactivation":   f.get("contractor-reactivation", ""),
+            "Original Owner":            f.get("original-owner", ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: x["Activated"], reverse=True)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"),
@@ -4752,14 +4784,22 @@ async def _job_license_expiration(start_date: Optional[date] = None, end_date: O
     records = []
     for c in sorted(candidates, key=lambda x: x["days_until"]):
         status = "EXPIRED" if c["is_expired"] else f"In {c['days_until']}d"
-        f = c["fields"]
-        records.append({
-            "Account":    acct_cache.get(c["account_id"], ""),
-            "Expiration": c["exp_str"],
-            "Status":     status,
-            "License #":  f.get("license-number", f.get("license_number", "")),
-            "State":      f.get("state", f.get("license-state", "")),
-        })
+        f   = c["fields"]
+        aid = c["account_id"] or ""
+        rec = {
+            "Account":      acct_cache.get(aid, ""),
+            "Expiration":   c["exp_str"],
+            "Status":       status,
+            "Days Until":   c["days_until"],
+            "License #":    f.get("license-number", f.get("license_number", "")),
+            "License Type": f.get("license-type", f.get("license_type", "")),
+            "State":        f.get("state", f.get("license-state", "")),
+            "Dealer ID":    _account_to_dealer.get(aid, ""),
+            "Platform":     _account_to_platform.get(aid, ""),
+            "BDR":          _account_to_bdr.get(aid, ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
 
     cols = [("Account","Account"), ("Expiration","Expiration"),
             ("Status","Status"), ("License #","License #"), ("State","State")]
@@ -4931,15 +4971,19 @@ async def _job_training_activity(start_date: Optional[date] = None, end_date: Op
     for c in candidates:
         f   = c["fields"]
         aid = c["account_id"] or ""
-        records.append({
+        rec = {
             "Account":       acct_cache.get(aid, ""),
             "Dealer ID":     _account_to_dealer.get(aid, ""),
+            "Platform":      _account_to_platform.get(aid, ""),
+            "BDR":           _account_to_bdr.get(aid, ""),
             "Trained By":    f.get("trained-by", ""),
             "Training Type": f.get("training-type", ""),
             "Agenda":        f.get("training-agenda", ""),
             "Date":          str(f.get("date-of-training", ""))[:10],
             "Notes":         (f.get("training-notes", "") or "")[:120],
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: (x["Date"], x["Trained By"]), reverse=True)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Trained By","Trained By"),
@@ -5021,7 +5065,7 @@ async def _job_stale_untrained(start_date: Optional[date] = None, end_date: Opti
     for c in sorted(candidates, key=lambda x: x["days_stale"] or 99999, reverse=True):
         f   = c["fields"]
         aid = c["account_id"] or ""
-        records.append({
+        rec = {
             "Account":         acct_cache.get(aid, ""),
             "Dealer ID":       f.get("dealer-id")    or _account_to_dealer.get(aid, ""),
             "Platform":        f.get("platform")     or _account_to_platform.get(aid, ""),
@@ -5030,7 +5074,11 @@ async def _job_stale_untrained(start_date: Optional[date] = None, end_date: Opti
             "# Trainings":     c["training_count"],
             "Last Training":   c["last_training"] or "Never",
             "Days Stale":      c["days_stale"] if c["days_stale"] is not None else "Never trained",
-        })
+            "SLP Status":      f.get("slp-status-detail", ""),
+            "Oracle Producer IDs": f.get("oracle-producer-ids", ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Platform","Platform"),
             ("BDR","BDR"), ("Activation Date","Activation Date"),
@@ -5066,14 +5114,16 @@ async def _job_account_status(start_date: Optional[date] = None, end_date: Optio
     for a in all_accounts:
         aid  = str(a.get("id", ""))
         cfs  = cf_map.get(aid, {})
-        records.append({
+        rec  = {
             "Account":      a.get("name", ""),
             "Dealer ID":    _account_to_dealer.get(aid, ""),
             "Platform":     _account_to_platform.get(aid, ""),
             "BDR":          _account_to_bdr.get(aid, ""),
             "Status":       cfs.get("19", ""),
             "Sales Region": cfs.get("23", ""),
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: (x["Status"], x["Sales Region"], x["Account"]))
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Platform","Platform"),
@@ -5199,14 +5249,16 @@ async def _job_partner_activation(start_date: Optional[date] = None, end_date: O
             if start_date or end_date or preset:
                 continue           # skip unparseable dates when a filter is active
             pa_str = str(pa_val)  # show raw value when no filter
-        a = acct_by_id.get(aid, {})
-        records.append({
+        a   = acct_by_id.get(aid, {})
+        rec = {
             "Account":            a.get("name", ""),
             "Dealer ID":          _account_to_dealer.get(aid, ""),
             "Platform":           _account_to_platform.get(aid, ""),
             "BDR":                _account_to_bdr.get(aid, ""),
             "Partner Activation": pa_str,
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: x["Partner Activation"], reverse=True)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Platform","Platform"),
@@ -5272,13 +5324,18 @@ async def _job_oracle_missing(start_date: Optional[date] = None, end_date: Optio
     for c in candidates:
         f   = c["fields"]
         aid = c["account_id"] or ""
-        records.append({
-            "Account":         acct_cache.get(aid, ""),
-            "Dealer ID":       f.get("dealer-id")    or _account_to_dealer.get(aid, ""),
-            "Platform":        f.get("platform")     or _account_to_platform.get(aid, ""),
-            "BDR":             f.get("assigned-bdr") or _account_to_bdr.get(aid, ""),
-            "Activation Date": c["act_date"],
-        })
+        rec = {
+            "Account":                  acct_cache.get(aid, ""),
+            "Dealer ID":                f.get("dealer-id")    or _account_to_dealer.get(aid, ""),
+            "Platform":                 f.get("platform")     or _account_to_platform.get(aid, ""),
+            "BDR":                      f.get("assigned-bdr") or _account_to_bdr.get(aid, ""),
+            "Activation Date":          c["act_date"],
+            "SLP Status":               f.get("slp-status-detail", ""),
+            "Doing Business In States": f.get("doing-business-in-states", ""),
+            "EIN":                      f.get("ein", ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: (x["Platform"], x["BDR"], x["Account"]))
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Platform","Platform"),
@@ -5363,14 +5420,19 @@ async def _job_account_activity(start_date=None, end_date=None, preset=None, rec
         if not acct_notes and not acct_deals:
             continue
         last_note = acct_notes[0] if acct_notes else None
-        records.append({
+        rec = {
             "Account":        acc.get("name", ""),
             "Account ID":     aid,
+            "Dealer ID":      _account_to_dealer.get(aid, ""),
+            "Platform":       _account_to_platform.get(aid, ""),
+            "BDR":            _account_to_bdr.get(aid, ""),
             "Contacts":       len(contacts_by_account.get(aid, [])),
             "Notes":          len(acct_notes),
             "Last Note Date": last_note.get("cdate", "")[:10] if last_note else "",
             "Deals":          len(acct_deals),
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: x["Last Note Date"], reverse=True)
 
     cols = [("Account","Account"), ("Account ID","Account ID"),
@@ -5560,14 +5622,18 @@ async def _job_last_app_date(start_date: Optional[date] = None, end_date: Option
                 continue
         except Exception:
             continue
-        a = acct_by_id.get(aid, {})
-        records.append({
+        a   = acct_by_id.get(aid, {})
+        rec = {
             "Account":       a.get("name", ""),
             "Dealer ID":     cfs.get("18", "") or _account_to_dealer.get(aid, ""),
+            "Platform":      _account_to_platform.get(aid, ""),
+            "BDR":           _account_to_bdr.get(aid, ""),
             "Region":        cfs.get("23", ""),
             "Account Type":  cfs.get("76", ""),
             "Last App Date": date_str,
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: x["Last App Date"], reverse=True)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Region","Region"),
@@ -5670,14 +5736,18 @@ async def _job_last_rpa_date(start_date: Optional[date] = None, end_date: Option
                 continue
         except Exception:
             continue
-        a = acct_by_id.get(aid, {})
-        records.append({
+        a   = acct_by_id.get(aid, {})
+        rec = {
             "Account":       a.get("name", ""),
             "Dealer ID":     cfs.get("18", "") or _account_to_dealer.get(aid, ""),
+            "Platform":      _account_to_platform.get(aid, ""),
+            "BDR":           _account_to_bdr.get(aid, ""),
             "Region":        cfs.get("23", ""),
             "Account Type":  cfs.get("76", ""),
             "Last RPA Date": date_str,
-        })
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: x["Last RPA Date"], reverse=True)
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Region","Region"),
@@ -5731,14 +5801,20 @@ async def _job_not_activated(start_date=None, end_date=None,
 
     records = []
     for c in candidates:
-        f = c["fields"]
-        records.append({
-            "Account":  name_map.get(c["account_id"], ""),
-            "Dealer ID": f.get("dealer-id", ""),
-            "Platform":  f.get("platform", ""),
-            "Status":    f.get("slp-status-detail", "") or "Not Started",
-            "BDR":       c["eff_bdr"],
-        })
+        f   = c["fields"]
+        aid = c["account_id"] or ""
+        rec = {
+            "Account":                  name_map.get(aid, ""),
+            "Dealer ID":                f.get("dealer-id", ""),
+            "Platform":                 f.get("platform", ""),
+            "Status":                   f.get("slp-status-detail", "") or "Not Started",
+            "BDR":                      c["eff_bdr"],
+            "Doing Business In States": f.get("doing-business-in-states", ""),
+            "Enrollment Request Date":  str(f.get("enrollment-request-date", "") or "")[:10],
+            "Oracle Producer IDs":      f.get("oracle-producer-ids", ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
     records.sort(key=lambda x: (x.get("Status", ""), x.get("Account", "")))
 
     cols = [("Account","Account"), ("Dealer ID","Dealer ID"),
