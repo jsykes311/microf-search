@@ -7229,7 +7229,7 @@ async def verdata_inactive_report(
     format: str = Query("json"),
     user=Depends(require_auth),
 ):
-    return await _verdata_report(status_filter="not active", format=format)
+    return await _verdata_report(status_filter="deactivated", format=format)
 
 
 async def _verdata_report(status_filter: str, format: str):
