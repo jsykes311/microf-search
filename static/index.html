@@ -1494,6 +1494,7 @@ select, input { font-family: inherit; }
       <div class="btn-row">
         <button class="btn btn-primary" onclick="runPrebuilt('acta')">▶ Run</button>
         <button class="btn btn-success" onclick="downloadPrebuilt('acta')">⬇ CSV</button>
+        <button class="btn btn-email btn-sm" onclick="sendEmailReport('account-activity','acta-from','acta-to','acta-result')">✉ Email</button>
       </div>
       <div id="acta-result" style="margin-top:12px;"></div>
     </div>
@@ -1572,6 +1573,7 @@ select, input { font-family: inherit; }
       <div class="btn-row" style="margin-top:auto;">
         <button class="btn btn-primary" onclick="runPrebuilt('verdata-active')">▶ Run</button>
         <button class="btn btn-success" onclick="downloadPrebuilt('verdata-active')">⬇ CSV</button>
+        <button class="btn btn-email btn-sm" onclick="sendEmailReport('verdata-active','','','verdata-result')">✉ Email</button>
       </div>
       <div id="verdata-result" style="margin-top:12px;"></div>
     </div>
@@ -1584,6 +1586,7 @@ select, input { font-family: inherit; }
       <div class="btn-row" style="margin-top:auto;">
         <button class="btn btn-primary" onclick="runPrebuilt('verdata-inactive')">▶ Run</button>
         <button class="btn btn-success" onclick="downloadPrebuilt('verdata-inactive')">⬇ CSV</button>
+        <button class="btn btn-email btn-sm" onclick="sendEmailReport('verdata-inactive','','','verdata-inactive-result')">✉ Email</button>
       </div>
       <div id="verdata-inactive-result" style="margin-top:12px;"></div>
     </div>
