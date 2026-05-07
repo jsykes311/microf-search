@@ -44,6 +44,10 @@
   tbody td.acct-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
   tbody td.acct-name a { color: #1d4ed8; text-decoration: none; font-weight: 500; }
   tbody td.acct-name a:hover { text-decoration: underline; }
+  tbody td.col-dbi      { max-width: 80px;  overflow: hidden; text-overflow: ellipsis; }
+  tbody td.col-legal    { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  thead th.col-dbi      { max-width: 80px; }
+  thead th.col-legal    { max-width: 200px; }
 
   .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: .72rem; font-weight: 500; }
   .badge-active   { background: #d1fae5; color: #065f46; }
@@ -96,13 +100,13 @@
         <th onclick="colSort('status')">Account Status <span class="sort-icon"></span></th>
         <th onclick="colSort('bdr')">Assigned BDR <span class="sort-icon"></span></th>
         <th onclick="colSort('dba_name')">DBA Name <span class="sort-icon"></span></th>
-        <th onclick="colSort('doing_business_states')">Doing Business In <span class="sort-icon"></span></th>
+        <th class="col-dbi" onclick="colSort('doing_business_states')">Doing Business In <span class="sort-icon"></span></th>
         <th onclick="colSort('dealer_id')">Parent Dealer ID <span class="sort-icon"></span></th>
         <th onclick="colSort('activation_date')">Partner Activation Date <span class="sort-icon"></span></th>
         <th onclick="colSort('contractor_reactivation')">Contractor Reactivation <span class="sort-icon"></span></th>
         <th onclick="colSort('region')">Sales Region <span class="sort-icon"></span></th>
         <th onclick="colSort('reactivation_date')">Reactivation Date <span class="sort-icon"></span></th>
-        <th onclick="colSort('legal_name')">Account Name (Legal Business Name) <span class="sort-icon"></span></th>
+        <th class="col-legal" onclick="colSort('legal_name')">Account Name (Legal Business Name) <span class="sort-icon"></span></th>
         <th onclick="colSort('revenue')">Annual Revenue <span class="sort-icon"></span></th>
         <th onclick="colSort('strategic_partners')">Strategic Partners <span class="sort-icon"></span></th>
       </tr>
@@ -232,13 +236,13 @@ function renderTable(rows) {
       <td>${statusBadge}</td>
       <td>${esc(r.bdr)}</td>
       <td>${esc(r.dba_name)}</td>
-      <td>${esc(r.doing_business_states)}</td>
+      <td class="col-dbi" title="${esc(r.doing_business_states)}">${esc(r.doing_business_states)}</td>
       <td>${esc(r.dealer_id)}</td>
       <td>${esc(actDate)}</td>
       <td>${reactBadge}</td>
       <td>${esc(r.region)}</td>
       <td>${esc(r.reactivation_date)}</td>
-      <td>${esc(r.legal_name)}</td>
+      <td class="col-legal" title="${esc(r.legal_name)}">${esc(r.legal_name)}</td>
       <td>${esc(r.revenue)}</td>
       <td>${esc(r.strategic_partners)}</td>
     </tr>`;
