@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Move Account — Microf</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f2f1;color:#323130;min-height:100vh}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.apps-btn{margin-left:auto;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:.9rem;font-weight:700;color:#1e3a5f;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.step-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0}
+
+.search-row{display:flex;gap:8px}
+.search-row input{flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+.search-row input:focus{outline:none;border-color:#1e3a5f}
+.search-row button{padding:8px 16px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.85rem;cursor:pointer;white-space:nowrap}
+.search-row button:hover{background:#162d4a}
+
+.results-list{margin-top:10px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;display:none}
+.result-item{padding:9px 12px;cursor:pointer;font-size:.83rem;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center}
+.result-item:last-child{border-bottom:none}
+.result-item:hover{background:#eff6ff}
+.result-item .acct-name{font-weight:500;color:#1e3a5f}
+.result-item .acct-sub{font-size:.75rem;color:#6b7280}
+
+.selected-acct{margin-top:10px;padding:10px 14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.83rem;display:none}
+.selected-acct strong{color:#0369a1}
+.selected-acct .clear-sel{float:right;cursor:pointer;color:#6b7280;font-size:.78rem}
+.selected-acct .clear-sel:hover{color:#dc2626}
+
+.preview-section{display:none}
+.preview-section h3{font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px}
+
+.check-group{display:flex;flex-direction:column;gap:8px}
+.check-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer}
+.check-item:hover{background:#f9fafb}
+.check-item input[type=checkbox]{margin-top:2px;width:15px;height:15px;cursor:pointer;accent-color:#1e3a5f}
+.check-item .check-label{font-size:.83rem;font-weight:600;color:#374151}
+.check-item .check-sub{font-size:.75rem;color:#6b7280;margin-top:2px}
+
+.sub-list{margin-top:6px;padding-left:4px}
+.sub-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:.78rem;color:#374151}
+.sub-item input[type=checkbox]{accent-color:#1e3a5f;cursor:pointer}
+.badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.7rem;font-weight:500;background:#e0f2fe;color:#0369a1}
+.badge-green{background:#d1fae5;color:#065f46}
+.badge-red{background:#fee2e2;color:#991b1b}
+
+.divider{height:1px;background:#e5e7eb;margin:18px 0}
+
+.options-row{display:flex;gap:16px;flex-wrap:wrap}
+.option-check{display:flex;align-items:center;gap:7px;font-size:.83rem;color:#374151;cursor:pointer}
+.option-check input{accent-color:#dc2626;cursor:pointer}
+.danger-label{color:#dc2626;font-weight:600}
+
+.btn-run{width:100%;padding:11px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:16px}
+.btn-run:hover{background:#162d4a}
+.btn-run:disabled{background:#9ca3af;cursor:not-allowed}
+
+.log{margin-top:16px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:14px;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:300px;overflow-y:auto;display:none}
+.log .ok{color:#4ade80}
+.log .err{color:#f87171}
+.log .info{color:#93c5fd}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>🔀 Move Account</h1>
+  </div>
+  <a class="apps-btn" href="/">⬡ Apps</a>
+</header>
+
+<main>
+
+  <!-- Step 1: Source -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">1</span> Source Account <span style="font-weight:400;color:#6b7280;font-size:.8rem">(account to move FROM)</span></div>
+    <div class="search-row">
+      <input id="src-input" type="text" placeholder="Account name or dealer ID…" onkeydown="if(event.key==='Enter')searchAccount('src')"/>
+      <button onclick="searchAccount('src')">Search</button>
+    </div>
+    <div class="results-list" id="src-results"></div>
+    <div class="selected-acct" id="src-selected">
+      <span class="clear-sel" onclick="clearAccount('src')">✕ clear</span>
+      <div id="src-selected-text"></div>
+    </div>
+  </div>
+
+  <!-- Step 2: Target -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">2</span> Target Account <span style="font-weight:400;color:#6b7280;font-size:.8rem">(account to move TO)</span></div>
+    <div class="search-row">
+      <input id="tgt-input" type="text" placeholder="Account name or dealer ID…" onkeydown="if(event.key==='Enter')searchAccount('tgt')"/>
+      <button onclick="searchAccount('tgt')">Search</button>
+    </div>
+    <div class="results-list" id="tgt-results"></div>
+    <div class="selected-acct" id="tgt-selected">
+      <span class="clear-sel" onclick="clearAccount('tgt')">✕ clear</span>
+      <div id="tgt-selected-text"></div>
+    </div>
+  </div>
+
+  <!-- Step 3: What to move -->
+  <div class="card preview-section" id="preview-card">
+    <div class="card-title"><span class="step-badge">3</span> Select What to Move</div>
+
+    <div class="check-group" id="move-options"></div>
+
+    <div class="divider"></div>
+
+    <div class="options-row">
+      <label class="option-check">
+        <input type="checkbox" id="opt-notes"/> Move notes <span style="color:#6b7280;font-size:.75rem">(can be slow for large accounts)</span>
+      </label>
+      <label class="option-check">
+        <input type="checkbox" id="opt-delete"/> <span class="danger-label">Delete source account after move</span>
+      </label>
+    </div>
+
+    <button class="btn-run" id="run-btn" onclick="runMove()">Move Selected Items</button>
+    <div class="log" id="log"></div>
+  </div>
+
+</main>
+
+<script>
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+let state = {
+  src: null,  // {id, name, slps:[], contacts:[], note_count}
+  tgt: null,
+};
+
+// ── Account Search ────────────────────────────────────────────────────────────
+async function searchAccount(side) {
+  const input = document.getElementById(`${side}-input`).value.trim();
+  if (!input) return;
+  const listEl = document.getElementById(`${side}-results`);
+  listEl.innerHTML = '<div class="result-item"><span style="color:#6b7280">Searching…</span></div>';
+  listEl.style.display = 'block';
+
+  try {
+    const res = await fetch(`/api/accounts/search?q=${encodeURIComponent(input)}&limit=10`);
+    const data = await res.json();
+    const accounts = data.accounts || [];
+    if (!accounts.length) {
+      listEl.innerHTML = '<div class="result-item"><span style="color:#6b7280">No accounts found.</span></div>';
+      return;
+    }
+    listEl.innerHTML = accounts.map(a => `
+      <div class="result-item" onclick="selectAccount('${side}', '${a.id}', ${JSON.stringify(esc(a.name))})">
+        <div>
+          <div class="acct-name">${esc(a.name)}</div>
+          <div class="acct-sub">ID: ${a.id}${a.dealer_id ? ' · DID: ' + a.dealer_id : ''}</div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div class="result-item"><span style="color:#dc2626">Error: ${esc(e.message)}</span></div>`;
+  }
+}
+
+async function selectAccount(side, id, name) {
+  document.getElementById(`${side}-results`).style.display = 'none';
+  document.getElementById(`${side}-input`).value = '';
+  const selEl = document.getElementById(`${side}-selected`);
+  const textEl = document.getElementById(`${side}-selected-text`);
+  textEl.innerHTML = `<strong>${esc(name)}</strong> <span style="color:#6b7280;font-size:.75rem">(ID: ${id})</span> — loading…`;
+  selEl.style.display = 'block';
+
+  // Fetch contents
+  try {
+    const res = await fetch(`/api/admin/account-contents/${id}`);
+    const data = await res.json();
+    state[side] = { id, name, ...data };
+    const slpCount = data.slps?.length || 0;
+    const conCount = data.contacts?.length || 0;
+    textEl.innerHTML = `
+      <strong>${esc(name)}</strong> <span style="color:#6b7280;font-size:.75rem">(ID: ${id})</span><br>
+      <span style="font-size:.75rem;color:#374151;margin-top:4px;display:inline-block">
+        ${slpCount} SLP${slpCount!==1?'s':''} · ${conCount} contact${conCount!==1?'s':''} · ${data.note_count?.toLocaleString()||0} notes
+      </span>`;
+  } catch(e) {
+    textEl.innerHTML = `<strong>${esc(name)}</strong> — <span style="color:#dc2626">Error loading contents: ${esc(e.message)}</span>`;
+  }
+
+  checkShowPreview();
+}
+
+function clearAccount(side) {
+  state[side] = null;
+  document.getElementById(`${side}-selected`).style.display = 'none';
+  document.getElementById(`${side}-results`).style.display = 'none';
+  document.getElementById(`${side}-input`).value = '';
+  checkShowPreview();
+}
+
+function checkShowPreview() {
+  const card = document.getElementById('preview-card');
+  if (state.src && state.tgt) {
+    card.style.display = 'block';
+    renderMoveOptions();
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+// ── Render move options ───────────────────────────────────────────────────────
+function renderMoveOptions() {
+  const el = document.getElementById('move-options');
+  const src = state.src;
+  let html = '';
+
+  // SLPs
+  if (src.slps?.length) {
+    html += `<div class="check-item">
+      <input type="checkbox" id="chk-slps-all" onchange="toggleAll('slp', this.checked)" checked/>
+      <div>
+        <div class="check-label">SLPs (${src.slps.length})</div>
+        <div class="sub-list">
+          ${src.slps.map(s => `
+            <div class="sub-item">
+              <input type="checkbox" class="slp-chk" value="${s.id}" checked/>
+              <span>${esc(s.name||'Unnamed')} · DID ${esc(s.dealer_id)} · <span class="badge">${esc(s.channel||'—')}</span></span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="check-item" style="opacity:.5;cursor:default"><div><div class="check-label">SLPs</div><div class="check-sub">None on this account</div></div></div>`;
+  }
+
+  // Contacts
+  if (src.contacts?.length) {
+    html += `<div class="check-item">
+      <input type="checkbox" id="chk-cons-all" onchange="toggleAll('con', this.checked)" checked/>
+      <div>
+        <div class="check-label">Contacts (${src.contacts.length})</div>
+        <div class="sub-list">
+          ${src.contacts.map(c => `
+            <div class="sub-item">
+              <input type="checkbox" class="con-chk" value="${c.id}" checked/>
+              <span>${esc(c.name||'Unnamed')} ${c.email ? `· <span style="color:#6b7280">${esc(c.email)}</span>` : ''}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="check-item" style="opacity:.5;cursor:default"><div><div class="check-label">Contacts</div><div class="check-sub">None on this account</div></div></div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function toggleAll(type, checked) {
+  document.querySelectorAll(`.${type}-chk`).forEach(c => c.checked = checked);
+}
+
+// ── Run move ──────────────────────────────────────────────────────────────────
+async function runMove() {
+  const slpIds  = [...document.querySelectorAll('.slp-chk:checked')].map(c => c.value);
+  const conIds  = [...document.querySelectorAll('.con-chk:checked')].map(c => c.value);
+  const moveNotes  = document.getElementById('opt-notes').checked;
+  const deleteSrc  = document.getElementById('opt-delete').checked;
+
+  if (!slpIds.length && !conIds.length && !moveNotes) {
+    alert('Please select at least one item to move.');
+    return;
+  }
+
+  if (deleteSrc && !confirm(`Delete source account "${state.src.name}" after move? This cannot be undone.`)) return;
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Moving…';
+
+  const log = document.getElementById('log');
+  log.style.display = 'block';
+  log.innerHTML = `<span class="info">Moving from ${esc(state.src.name)} → ${esc(state.tgt.name)}…</span>\n`;
+
+  try {
+    const res = await fetch('/api/admin/consolidate-account', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        source_id: state.src.id,
+        target_id: state.tgt.id,
+        slp_ids: slpIds,
+        contact_ids: conIds,
+        move_notes: moveNotes,
+        delete_source: deleteSrc,
+      })
+    });
+    const data = await res.json();
+
+    data.slps?.forEach(s => {
+      log.innerHTML += s.ok
+        ? `<span class="ok">✓ SLP ${s.id.substring(0,8)}… moved</span>\n`
+        : `<span class="err">✗ SLP ${s.id.substring(0,8)}… failed: ${esc(s.error)}</span>\n`;
+    });
+    data.contacts?.forEach(c => {
+      log.innerHTML += c.ok
+        ? `<span class="ok">✓ Contact ${c.id} moved</span>\n`
+        : `<span class="err">✗ Contact ${c.id} failed: ${esc(c.error)}</span>\n`;
+    });
+    if (data.notes) {
+      log.innerHTML += `<span class="info">Notes: ${data.notes.moved} moved, ${data.notes.errors} errors</span>\n`;
+    }
+    if (data.deleted_source) {
+      log.innerHTML += `<span class="ok">✓ Source account deleted</span>\n`;
+    }
+    data.errors?.forEach(e => {
+      log.innerHTML += `<span class="err">✗ ${esc(e)}</span>\n`;
+    });
+    log.innerHTML += data.ok
+      ? `\n<span class="ok">✅ Done — all items moved successfully.</span>`
+      : `\n<span class="err">⚠ Completed with some errors — check above.</span>`;
+
+    btn.innerHTML = data.ok ? '✅ Done' : '⚠ Done (with errors)';
+  } catch(e) {
+    log.innerHTML += `<span class="err">✗ Request failed: ${esc(e.message)}</span>`;
+    btn.disabled = false;
+    btn.innerHTML = 'Move Selected Items';
+  }
+
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+</body>
+</html>
