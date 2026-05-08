@@ -773,6 +773,7 @@ async def _build_dealer_id_index() -> None:
         _account_to_legal_name.clear();       _account_to_legal_name.update(acct_to_legal_name)
         _account_to_revenue.clear();          _account_to_revenue.update(acct_to_revenue)
         _account_to_strategic_partners.clear(); _account_to_strategic_partners.update(acct_to_strat_part)
+        global _apex_partners_cache; _apex_partners_cache = None  # invalidate on index rebuild
         _account_to_contractor_reactivation.clear(); _account_to_contractor_reactivation.update(acct_to_react)
         _account_to_reactivation_date.clear();       _account_to_reactivation_date.update(acct_to_react_date)
 
@@ -9438,21 +9439,26 @@ async def apex_upload_daily_dump(
     }
 
 
+_apex_partners_cache: list | None = None
+
 @app.get("/api/apex/partners")
 async def apex_list_partners(admin=Depends(_require_admin)):
     """Return all distinct Strategic Partners values found on Contractor accounts."""
+    global _apex_partners_cache
+    if _apex_partners_cache is not None:
+        return {"partners": _apex_partners_cache}
     partners: set = set()
     for aid, sp_val in _account_to_strategic_partners.items():
         if not sp_val:
             continue
         if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
-        # CF132 can be comma-separated multiselect
         for p in sp_val.split(","):
             p = p.strip()
             if p:
                 partners.add(p)
-    return {"partners": sorted(partners, key=str.lower)}
+    _apex_partners_cache = sorted(partners, key=str.lower)
+    return {"partners": _apex_partners_cache}
 
 
 @app.get("/api/apex/dealers")
@@ -9487,16 +9493,25 @@ async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
     rows.sort(key=lambda r: r["name"].lower())
     return {"dealers": rows, "count": len(rows)}
 
+_apex_data_cache: dict | None = None
+
 def _load_apex_data() -> dict:
+    global _apex_data_cache
+    if _apex_data_cache is not None:
+        return _apex_data_cache
     if os.path.exists(_APEX_FILE):
         try:
             with open(_APEX_FILE) as f:
-                return json.load(f)
+                _apex_data_cache = json.load(f)
+                return _apex_data_cache
         except Exception:
             pass
-    return {"periods": {}}
+    _apex_data_cache = {"periods": {}}
+    return _apex_data_cache
 
 def _save_apex_data(data: dict):
+    global _apex_data_cache
+    _apex_data_cache = data          # update cache in-place so reads are instant
     dirpath = os.path.dirname(_APEX_FILE)
     if dirpath:
         os.makedirs(dirpath, exist_ok=True)
