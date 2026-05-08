@@ -9228,8 +9228,9 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
         total_apps    = int(len(grp))
         total_rpas    = int(len(funded))
         total_revenue = round(float(funded["_nia"].sum()), 2)
-        par = round(len(approved) / total_apps, 4) if total_apps > 0 else 0.0
-        tur = round(total_rpas / len(approved), 4)  if len(approved) > 0 else 0.0
+        # Store as 0–100 so pctBar() can display directly
+        par = round(len(approved) / total_apps * 100, 1) if total_apps > 0 else 0.0
+        tur = round(total_rpas / len(approved) * 100, 1) if len(approved) > 0 else 0.0
 
         last_dt = grp["_date"].max()
         last_app_date = last_dt.strftime("%Y-%m-%d") if _pd.notna(last_dt) else ""
