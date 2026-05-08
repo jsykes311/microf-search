@@ -9547,7 +9547,12 @@ def _df_to_rows(df: "_pd.DataFrame", mapped: dict) -> list:
         rows.append(r)
     return rows
 
-@app.get("/apex-review")
+@app.get("/apex-review")  # legacy redirect
+async def apex_review_redirect():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/strategic-partner-report", status_code=301)
+
+@app.get("/strategic-partner-report")
 async def apex_review_page(admin=Depends(_require_admin)):
     return FileResponse("static/reports/apex-review.html")
 
