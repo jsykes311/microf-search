@@ -487,6 +487,14 @@ async function uploadDumpFile(file) {
 
   const fd = new FormData();
   fd.append('file', file);
+
+  // Pass known dealer IDs from the already-loaded roster so the server
+  // doesn't need to re-query AC if the in-memory index is not ready
+  if (acRoster.length > 0) {
+    const ids = acRoster.map(r => r.dealer_id).filter(Boolean).join(',');
+    if (ids) fd.append('dealer_ids', ids);
+  }
+
   const partnerQ = currentPartner ? `?partner=${encodeURIComponent(currentPartner)}` : '';
   try {
     const res  = await fetch(`/api/apex/upload/daily-dump${partnerQ}`, {method: 'POST', body: fd});

@@ -8920,6 +8920,71 @@ def _build_apex_dealer_id_set(partner_filter: str = "") -> set:
                 dealer_ids.add(str(did))
     return dealer_ids
 
+async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
+    """
+    Fallback: query AC directly for APEX dealer IDs when the in-memory index
+    is empty or hasn't been built yet.
+    Scans accountCustomFieldData for CF132 (Strategic Partners) matching the
+    partner filter, then looks up CF18 (Dealer ID) for those accounts.
+    """
+    filter_set = {partner_filter.lower()} if partner_filter else _APEX_PARTNERS
+    matching_acct_ids: set = set()
+
+    # Pass 1 — find accounts with matching Strategic Partners (CF132)
+    offset = 0
+    while True:
+        resp = await ac_get("accountCustomFieldData", {"limit": 100, "offset": offset})
+        items = resp.get("accountCustomFieldData", [])
+        if not items:
+            break
+        for item in items:
+            if str(item.get("customFieldId", "")) != "132":
+                continue
+            val = (item.get("fieldValue") or "").lower()
+            if any(f in val for f in filter_set):
+                aid = str(item.get("accountId", ""))
+                if aid:
+                    matching_acct_ids.add(aid)
+        offset += len(items)
+        total  = int(resp.get("meta", {}).get("total", 0))
+        if offset >= total:
+            break
+
+    if not matching_acct_ids:
+        return set()
+
+    # Pass 2 — get Dealer IDs (CF18) for those accounts
+    dealer_ids: set = set()
+    # First try from already-loaded index
+    for aid in matching_acct_ids:
+        did = _account_to_dealer.get(aid, "")
+        if did:
+            dealer_ids.add(str(did))
+
+    # If index missing entries, query CF18 directly
+    if len(dealer_ids) < len(matching_acct_ids) // 2:
+        offset = 0
+        while True:
+            resp = await ac_get("accountCustomFieldData", {"limit": 100, "offset": offset})
+            items = resp.get("accountCustomFieldData", [])
+            if not items:
+                break
+            for item in items:
+                if str(item.get("customFieldId", "")) != "18":
+                    continue
+                aid = str(item.get("accountId", ""))
+                if aid not in matching_acct_ids:
+                    continue
+                did = str(item.get("fieldValue") or "").strip()
+                if did and did not in ("0", ""):
+                    dealer_ids.add(did)
+            offset += len(items)
+            total  = int(resp.get("meta", {}).get("total", 0))
+            if offset >= total:
+                break
+
+    return dealer_ids
+
 def _parse_dollar(s) -> float:
     if s is None or (isinstance(s, float) and _pd.isna(s)):
         return 0.0
@@ -8993,6 +9058,7 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
 async def apex_upload_daily_dump(
     file: UploadFile = File(...),
     partner: str = "",
+    dealer_ids: str = Form(default=""),   # comma-separated dealer IDs from client roster
     admin=Depends(_require_admin),
 ):
     """
@@ -9003,9 +9069,29 @@ async def apex_upload_daily_dump(
     content = await file.read()
     df = _read_dump(content)
 
-    apex_ids = _build_apex_dealer_id_set(partner)
+    # Priority 1 — dealer IDs passed by the client (already loaded from AC roster in the UI)
+    source = "client_roster"
+    if dealer_ids.strip():
+        apex_ids = {d.strip() for d in dealer_ids.split(",") if d.strip()}
+    else:
+        # Priority 2 — in-memory index
+        apex_ids = _build_apex_dealer_id_set(partner)
+        source = "index"
+
     if not apex_ids:
-        raise HTTPException(400, "No APEX dealers found in the index — make sure the dealer index has been built.")
+        # Priority 3 — direct AC API fallback (slow but reliable)
+        print(f"[apex-dump] falling back to AC API query "
+              f"(strategic_partners index size: {len(_account_to_strategic_partners)})")
+        apex_ids = await _fetch_apex_dealer_ids_from_ac(partner)
+        source = "ac_api"
+
+    if not apex_ids:
+        partner_label = partner or "Apex Service Partners / Southern Air"
+        raise HTTPException(400,
+            f"No APEX dealers found (partner filter: {partner_label!r}). "
+            f"Strategic Partners index size: {len(_account_to_strategic_partners)} accounts. "
+            f"Make sure the dealer index has been built and accounts have the Strategic Partners field set."
+        )
 
     monthly = _dump_to_production(df, apex_ids)
     if not monthly:
@@ -9028,14 +9114,16 @@ async def apex_upload_daily_dump(
     _save_apex_data(data)
 
     summary = {ok: len(v) for ok, v in monthly.items()}
-    print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months across {len(monthly)} periods")
+    print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months across {len(monthly)} periods "
+          f"(dealer_ids source={source}, count={len(apex_ids)})")
     return {
         "ok": True,
-        "periods_created":  created,
-        "periods_updated":  updated,
-        "periods":          periods_touched,
-        "dealers_per_month": summary,
+        "periods_created":    created,
+        "periods_updated":    updated,
+        "periods":            periods_touched,
+        "dealers_per_month":  summary,
         "apex_dealer_ids_used": len(apex_ids),
+        "dealer_id_source":   source,
     }
 
 
