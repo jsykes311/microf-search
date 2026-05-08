@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>APEX Business Review — Microf Reports</title>
+<title>Strategic Partner Report — Microf Reports</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; color: #111827; display: flex; height: 100vh; overflow: hidden; }
@@ -182,7 +182,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
 <!-- ── Sidebar ── -->
 <div class="sidebar">
   <div class="sidebar-header">
-    <h1>🏢 APEX Business Review</h1>
+    <h1>🤝 Strategic Partner Report</h1>
     <p>Admin — Upload &amp; manage report data</p>
   </div>
 
@@ -194,7 +194,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
       <input type="file" accept=".csv,.tsv,.txt" onchange="uploadDump(this)">
       <div class="uz-icon">📂</div>
       <div class="uz-label">Drop the Daily Sales Data Dump here</div>
-      <div class="uz-sub">Auto-splits by month, filters to APEX dealers, creates all periods</div>
+      <div class="uz-sub">Auto-splits by month, filters to selected partner's dealers, creates all periods</div>
       <div class="uz-status" id="status-dump"></div>
     </div>
   </div>
@@ -203,9 +203,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
   <div class="sb-section">
     <div class="sb-title">Strategic Partner</div>
     <div class="partner-pills" id="partner-pills">
-      <div class="pill active" data-p="Apex Service Partners" onclick="selectPartner(this)">Apex Service Partners</div>
-      <div class="pill" data-p="Southern Air" onclick="selectPartner(this)">Southern Air</div>
-      <div class="pill" data-p="" onclick="selectPartner(this)">Both</div>
+      <div class="pill active" data-p="" onclick="selectPartner(this)">All Partners</div>
     </div>
     <button class="btn btn-ghost btn-sm" onclick="loadRoster()">🔄 Refresh Dealer Roster</button>
     <div class="roster-count" id="roster-count" style="margin-top:8px"></div>
@@ -299,7 +297,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
 const AC_BASE = 'https://microf.activehosted.com/app/accounts/';
 let currentPeriod     = null;
 let currentData       = {};
-let currentPartner    = 'Apex Service Partners';
+let currentPartner    = '';          // '' = All partners
 let currentPeriodType = 'monthly';   // 'monthly' | 'quarterly'
 let allPeriods        = [];          // [{label, type, has_production, has_rollup}]
 let acRoster          = [];          // [{account_id, name, dealer_id, enrolled_date, …}]
@@ -372,6 +370,20 @@ function selectPartner(el) {
   el.classList.add('active');
   currentPartner = el.dataset.p;
   loadRoster();
+}
+
+async function loadPartners() {
+  try {
+    const res  = await fetch('/api/apex/partners');
+    const data = await res.json();
+    const partners = data.partners || [];
+    const container = document.getElementById('partner-pills');
+    // Keep "All Partners" pill, add one per distinct partner value
+    container.innerHTML = `<div class="pill active" data-p="" onclick="selectPartner(this)">All Partners</div>` +
+      partners.map(p => `<div class="pill" data-p="${esc(p)}" onclick="selectPartner(this)">${esc(p)}</div>`).join('');
+  } catch(e) {
+    console.warn('Could not load partners:', e);
+  }
 }
 
 // ── Dealer Roster from AC ──────────────────────────────────────────────────────
@@ -891,7 +903,7 @@ function renderReport() {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 (async () => {
-  await Promise.all([initPeriods(), loadRoster()]);
+  await Promise.all([loadPartners(), initPeriods(), loadRoster()]);
 })();
 </script>
 </body>

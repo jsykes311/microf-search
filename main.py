@@ -8883,6 +8883,7 @@ async def welcome_send(
 
 # ── APEX Business Review ──────────────────────────────────────────────────────
 
+# Kept for backward-compat reference; logic now accepts any partner value
 _APEX_PARTNERS = {"apex service partners", "southern air"}
 
 # Enrolled dates provided by the partner (keyed by normalised dealer name).
@@ -8965,29 +8966,30 @@ def _read_dump(content: bytes):
     raise HTTPException(400, "Could not parse file as a Daily Sales Dump (expected tab-separated UTF-16 with Dealer Id + inserted_time columns)")
 
 def _build_apex_dealer_id_set(partner_filter: str = "") -> set:
-    """Return set of str dealer_ids for APEX partners (Contractor accounts only)."""
-    filter_set = {partner_filter.lower()} if partner_filter else _APEX_PARTNERS
+    """Return str dealer_ids for strategic partner contractors. Empty filter = all partners."""
+    pf = partner_filter.lower().strip()
     dealer_ids = set()
     for aid, sp_val in _account_to_strategic_partners.items():
         if not sp_val:
             continue
         if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
-        sp_lower = sp_val.lower()
-        if any(p in sp_lower for p in filter_set):
-            did = _account_to_dealer.get(aid, "")
-            if did:
-                dealer_ids.add(str(did))
+        if pf and pf not in sp_val.lower():
+            continue
+        did = _account_to_dealer.get(aid, "")
+        if did:
+            dealer_ids.add(str(did))
     return dealer_ids
 
 async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
     """
-    Fallback: query AC directly for APEX dealer IDs when the in-memory index
-    is empty or hasn't been built yet.
-    Scans accountCustomFieldData for CF132 (Strategic Partners) matching the
-    partner filter, then looks up CF18 (Dealer ID) for those accounts.
+    Fallback: query AC directly for strategic-partner dealer IDs when the
+    in-memory index is empty or hasn't been built yet.
+    Scans accountCustomFieldData for CF132 (Strategic Partners), optionally
+    filtering to a specific partner value, then looks up CF18 (Dealer ID).
+    Empty partner_filter = any non-empty strategic partner value.
     """
-    filter_set = {partner_filter.lower()} if partner_filter else _APEX_PARTNERS
+    pf = partner_filter.lower().strip()
     matching_acct_ids: set = set()
 
     # Pass 1 — find accounts with matching Strategic Partners (CF132)
@@ -9000,11 +9002,14 @@ async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
         for item in items:
             if str(item.get("customFieldId", "")) != "132":
                 continue
-            val = (item.get("fieldValue") or "").lower()
-            if any(f in val for f in filter_set):
-                aid = str(item.get("accountId", ""))
-                if aid:
-                    matching_acct_ids.add(aid)
+            val = (item.get("fieldValue") or "").strip()
+            if not val:
+                continue
+            if pf and pf not in val.lower():
+                continue
+            aid = str(item.get("accountId", ""))
+            if aid:
+                matching_acct_ids.add(aid)
         offset += len(items)
         total  = int(resp.get("meta", {}).get("total", 0))
         if offset >= total:
@@ -9429,10 +9434,27 @@ async def apex_upload_daily_dump(
     }
 
 
+@app.get("/api/apex/partners")
+async def apex_list_partners(admin=Depends(_require_admin)):
+    """Return all distinct Strategic Partners values found on Contractor accounts."""
+    partners: set = set()
+    for aid, sp_val in _account_to_strategic_partners.items():
+        if not sp_val:
+            continue
+        if _account_to_type.get(aid, "").strip().lower() != "contractor":
+            continue
+        # CF132 can be comma-separated multiselect
+        for p in sp_val.split(","):
+            p = p.strip()
+            if p:
+                partners.add(p)
+    return {"partners": sorted(partners, key=str.lower)}
+
+
 @app.get("/api/apex/dealers")
 async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
-    """Return Contractor accounts whose Strategic Partners field contains one of the APEX partners."""
-    filter_set = {partner.lower()} if partner else _APEX_PARTNERS
+    """Return Contractor accounts with a Strategic Partners value, optionally filtered to one partner."""
+    pf = partner.lower().strip()
 
     rows = []
     for aid, sp_val in _account_to_strategic_partners.items():
@@ -9441,9 +9463,7 @@ async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
         # Contractors only
         if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
-        sp_lower = sp_val.lower()
-        matched = next((p for p in filter_set if p in sp_lower), None)
-        if not matched:
+        if pf and pf not in sp_val.lower():
             continue
         name = _account_to_name.get(aid, "")
         did  = str(_account_to_dealer.get(aid, ""))
