@@ -183,6 +183,19 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
     <p>Admin — Upload &amp; manage report data</p>
   </div>
 
+  <!-- Daily Sales Dump (master upload) -->
+  <div class="sb-section" style="background:rgba(37,99,235,.15);border-color:rgba(96,165,250,.25)">
+    <div class="sb-title" style="color:#60a5fa">⚡ Quick Import — Daily Sales Dump</div>
+    <div class="upload-zone" id="zone-dump"
+      ondragover="onDragOver(event,'dump')" ondragleave="onDragLeave('dump')" ondrop="onDrop(event,'dump')">
+      <input type="file" accept=".csv,.tsv,.txt" onchange="uploadDump(this)">
+      <div class="uz-icon">📂</div>
+      <div class="uz-label">Drop the Daily Sales Data Dump here</div>
+      <div class="uz-sub">Auto-splits by month, filters to APEX dealers, creates all periods</div>
+      <div class="uz-status" id="status-dump"></div>
+    </div>
+  </div>
+
   <!-- Partner filter -->
   <div class="sb-section">
     <div class="sb-title">Strategic Partner</div>
@@ -453,12 +466,53 @@ function onDragOver(e, zone) { e.preventDefault(); document.getElementById(`zone
 function onDragLeave(zone)   { document.getElementById(`zone-${zone}`).classList.remove('drag-over'); }
 function onDrop(e, tableType) {
   e.preventDefault();
+  if (tableType === 'dump') {
+    document.getElementById('zone-dump').classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) uploadDumpFile(file);
+    return;
+  }
   const zone = tableType === 'production' ? 'prod' : 'rollup';
   document.getElementById(`zone-${zone}`).classList.remove('drag-over');
   const file = e.dataTransfer?.files?.[0];
   if (file) uploadFileObj(file, tableType);
 }
 function uploadFile(input, tableType) { if (input.files[0]) uploadFileObj(input.files[0], tableType); }
+function uploadDump(input) { if (input.files[0]) uploadDumpFile(input.files[0]); }
+
+async function uploadDumpFile(file) {
+  const statusEl = document.getElementById('status-dump');
+  statusEl.textContent = '⏳ Processing…';
+  document.getElementById('zone-dump').classList.remove('has-data');
+
+  const fd = new FormData();
+  fd.append('file', file);
+  const partnerQ = currentPartner ? `?partner=${encodeURIComponent(currentPartner)}` : '';
+  try {
+    const res  = await fetch(`/api/apex/upload/daily-dump${partnerQ}`, {method: 'POST', body: fd});
+    const data = await res.json();
+    if (!res.ok) {
+      toast(data.detail || 'Processing failed', false);
+      statusEl.textContent = '✗ Failed';
+      return;
+    }
+    const summary = Object.entries(data.dealers_per_month)
+      .map(([m, n]) => `${m}: ${n} dealers`).join(' · ');
+    toast(`✓ Created/updated ${data.periods.length} period(s): ${data.periods.join(', ')}`);
+    statusEl.textContent = `✓ ${data.periods.length} period(s) imported`;
+    document.getElementById('zone-dump').classList.add('has-data');
+
+    // Refresh period list and load the first imported period
+    await initPeriods();
+    if (data.periods.length > 0) {
+      document.getElementById('period-select').value = data.periods[0];
+      await loadPeriod();
+    }
+  } catch(e) {
+    toast(`Error: ${e.message}`, false);
+    statusEl.textContent = '✗ Error';
+  }
+}
 
 async function uploadFileObj(file, tableType) {
   if (!currentPeriod) { toast('Select or create a period first', false); return; }

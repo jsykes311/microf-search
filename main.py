@@ -8885,6 +8885,160 @@ async def welcome_send(
 
 _APEX_PARTNERS = {"apex service partners", "southern air"}
 
+# ── Daily Sales Dump processing helpers ───────────────────────────────────────
+
+_DUMP_ENCODING_TRIES = [("utf-16", "\t"), ("utf-8", "\t"), ("utf-8", ","), ("latin-1", "\t"), ("latin-1", ",")]
+
+def _read_dump(content: bytes):
+    """Try several encodings/separators; return the first DataFrame that looks like a dump."""
+    if _pd is None:
+        raise HTTPException(500, "pandas not installed on server")
+    for enc, sep in _DUMP_ENCODING_TRIES:
+        try:
+            df = _pd.read_csv(_io.BytesIO(content), encoding=enc, sep=sep)
+            # Must have at least Dealer Id and inserted_time
+            cols_lower = {c.strip().lower() for c in df.columns}
+            if "dealer id" in cols_lower and "inserted_time" in cols_lower:
+                # Rename columns to strip whitespace
+                df.columns = [c.strip() for c in df.columns]
+                return df
+        except Exception:
+            continue
+    raise HTTPException(400, "Could not parse file as a Daily Sales Dump (expected tab-separated UTF-16 with Dealer Id + inserted_time columns)")
+
+def _build_apex_dealer_id_set(partner_filter: str = "") -> set:
+    """Return set of str dealer_ids for APEX partners (from the in-memory index)."""
+    filter_set = {partner_filter.lower()} if partner_filter else _APEX_PARTNERS
+    dealer_ids = set()
+    for aid, sp_val in _account_to_strategic_partners.items():
+        if not sp_val:
+            continue
+        sp_lower = sp_val.lower()
+        if any(p in sp_lower for p in filter_set):
+            did = _account_to_dealer.get(aid, "")
+            if did:
+                dealer_ids.add(str(did))
+    return dealer_ids
+
+def _parse_dollar(s) -> float:
+    if s is None or (isinstance(s, float) and _pd.isna(s)):
+        return 0.0
+    return float(str(s).replace("$", "").replace(",", "").strip() or 0)
+
+def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
+    """
+    Filter a Daily Sales Dump DataFrame to APEX dealers and aggregate by month.
+    Returns: {month_label: [production_row, ...]}
+    """
+    import re
+
+    # Normalise Dealer Id to string
+    df = df.copy()
+    df["_did_str"] = df["Dealer Id"].apply(lambda x: str(int(x)) if _pd.notna(x) and str(x).replace(".0","").isdigit() else "")
+    apex_rows = df[df["_did_str"].isin(apex_ids)].copy()
+
+    if apex_rows.empty:
+        return {}
+
+    # Parse dates
+    apex_rows["_date"] = _pd.to_datetime(apex_rows["inserted_time"], errors="coerce", dayfirst=False)
+    apex_rows["_month_label"] = apex_rows["_date"].dt.strftime("%B %Y")
+
+    # Parse NIA dollar column (funded amount)
+    nia_col = next((c for c in apex_rows.columns if c.strip().lower() == "nia"), None)
+    if nia_col:
+        apex_rows["_nia"] = apex_rows[nia_col].apply(_parse_dollar)
+    else:
+        apex_rows["_nia"] = 0.0
+
+    MONTH_ORDER = ["January","February","March","April","May","June",
+                   "July","August","September","October","November","December"]
+
+    results = {}
+    for month_label, mdf in apex_rows.groupby("_month_label"):
+        # Primary apps only for counting (avoid re-submissions inflating)
+        primary = mdf[mdf["Primary App"] == 1] if "Primary App" in mdf.columns else mdf
+        prod_rows = []
+        for dealer_name, grp in primary.groupby("Contractor Name"):
+            funded = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
+            approved = grp[grp["Response Description"].str.strip() == "Pre-Approved"]
+            pending = grp[grp["Processing Status Description"].str.strip().isin(
+                ["Needs Review", "Decision Pending", "Partially Approved", "Fully Approved", "Preapproved"]
+            )]
+            nia_count = grp[grp.get("Shrinkage", _pd.Series(dtype=str)).str.strip().str.startswith("5.", na=False)]
+            prod_rows.append({
+                "dealer":    dealer_name,
+                "dealer_id": str(grp["_did_str"].iloc[0]),
+                "apps":      int(len(grp)),
+                "approved":  int(len(approved)),
+                "pending":   int(len(pending)),
+                "rpas":      int(len(funded)),
+                "nia":       int(len(nia_count)),
+                "revenue":   round(float(funded["_nia"].sum()), 2),
+            })
+        # Sort by revenue desc, then name
+        prod_rows.sort(key=lambda r: (-r["revenue"], r["dealer"]))
+        results[month_label] = prod_rows
+
+    # Sort months chronologically
+    def _month_sort(label):
+        parts = label.split()
+        m = MONTH_ORDER.index(parts[0]) if parts[0] in MONTH_ORDER else 99
+        y = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 9999
+        return (y, m)
+
+    return dict(sorted(results.items(), key=lambda kv: _month_sort(kv[0])))
+
+@app.post("/api/apex/upload/daily-dump")
+async def apex_upload_daily_dump(
+    file: UploadFile = File(...),
+    partner: str = "",
+    admin=Depends(_require_admin),
+):
+    """
+    Accept a Daily Sales Dump (TSV, UTF-16) and automatically build production
+    data for each calendar month found in the file, filtered to APEX dealers.
+    Creates / updates a period for each month detected.
+    """
+    content = await file.read()
+    df = _read_dump(content)
+
+    apex_ids = _build_apex_dealer_id_set(partner)
+    if not apex_ids:
+        raise HTTPException(400, "No APEX dealers found in the index — make sure the dealer index has been built.")
+
+    monthly = _dump_to_production(df, apex_ids)
+    if not monthly:
+        raise HTTPException(400, "No matching APEX dealer rows found in this file.")
+
+    data = _load_apex_data()
+    created = updated = 0
+    periods_touched = []
+    for month_label, prod_rows in monthly.items():
+        if month_label not in data["periods"]:
+            data["periods"][month_label] = {}
+            created += 1
+        else:
+            updated += 1
+        data["periods"][month_label]["production"] = prod_rows
+        data["periods"][month_label]["production_uploaded_at"] = datetime.now().isoformat()
+        data["periods"][month_label]["production_source"] = "daily_dump"
+        periods_touched.append(month_label)
+
+    _save_apex_data(data)
+
+    summary = {ok: len(v) for ok, v in monthly.items()}
+    print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months across {len(monthly)} periods")
+    return {
+        "ok": True,
+        "periods_created":  created,
+        "periods_updated":  updated,
+        "periods":          periods_touched,
+        "dealers_per_month": summary,
+        "apex_dealer_ids_used": len(apex_ids),
+    }
+
+
 @app.get("/api/apex/dealers")
 async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
     """Return all AC accounts whose Strategic Partners field contains one of the APEX partners."""
