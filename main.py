@@ -9213,6 +9213,53 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
     return rollup_rows
 
 
+_MONTH_TO_Q = {
+    "January": 1, "February": 1, "March": 1,
+    "April": 2,   "May": 2,      "June": 2,
+    "July": 3,    "August": 3,   "September": 3,
+    "October": 4, "November": 4, "December": 4,
+}
+
+def _aggregate_to_quarters(monthly: dict) -> dict:
+    """
+    Roll up monthly production rows into quarterly periods.
+    Returns {quarter_label: [aggregated_prod_rows]} e.g. {"Q1 2026": [...]}
+    """
+    buckets: dict = {}  # q_label -> {dealer_id -> row}
+    for month_label, prod_rows in monthly.items():
+        parts = month_label.split()
+        if len(parts) != 2:
+            continue
+        month_name, year = parts[0], parts[1]
+        q_num = _MONTH_TO_Q.get(month_name)
+        if not q_num:
+            continue
+        q_label = f"Q{q_num} {year}"
+        bucket = buckets.setdefault(q_label, {})
+        for row in prod_rows:
+            did = row["dealer_id"]
+            if did not in bucket:
+                bucket[did] = {
+                    "dealer":    row["dealer"],
+                    "dealer_id": did,
+                    "apps":     0, "approved": 0, "pending": 0,
+                    "rpas":     0, "nia":      0, "revenue": 0.0,
+                }
+            qr = bucket[did]
+            qr["apps"]     += row.get("apps", 0)
+            qr["approved"] += row.get("approved", 0)
+            qr["pending"]  += row.get("pending", 0)
+            qr["rpas"]     += row.get("rpas", 0)
+            qr["nia"]      += row.get("nia", 0)
+            qr["revenue"]  = round(qr["revenue"] + row.get("revenue", 0.0), 2)
+
+    result = {}
+    for q_label, bucket in sorted(buckets.items()):
+        rows = sorted(bucket.values(), key=lambda r: (-r["revenue"], r["dealer"]))
+        result[q_label] = rows
+    return result
+
+
 @app.post("/api/apex/upload/daily-dump")
 async def apex_upload_daily_dump(
     file: UploadFile = File(...),
@@ -9258,11 +9305,15 @@ async def apex_upload_daily_dump(
 
     # Build rollup (all months aggregated) once for the whole dump
     rollup_rows = _dump_to_rollup(df, apex_ids)
+    # Build quarterly aggregates
+    quarterly = _aggregate_to_quarters(monthly)
     now_iso = datetime.now().isoformat()
 
     data = _load_apex_data()
     created = updated = 0
     periods_touched = []
+
+    # Store monthly periods
     for month_label, prod_rows in monthly.items():
         if month_label not in data["periods"]:
             data["periods"][month_label] = {}
@@ -9272,24 +9323,42 @@ async def apex_upload_daily_dump(
         data["periods"][month_label]["production"] = prod_rows
         data["periods"][month_label]["production_uploaded_at"] = now_iso
         data["periods"][month_label]["production_source"] = "daily_dump"
-        # Auto-populate rollup from the same dump
+        data["periods"][month_label]["period_type"] = "monthly"
         if rollup_rows:
             data["periods"][month_label]["rollup"] = rollup_rows
             data["periods"][month_label]["rollup_uploaded_at"] = now_iso
             data["periods"][month_label]["rollup_source"] = "daily_dump"
         periods_touched.append(month_label)
 
+    # Store quarterly periods
+    for q_label, q_prod_rows in quarterly.items():
+        if q_label not in data["periods"]:
+            data["periods"][q_label] = {}
+            created += 1
+        else:
+            updated += 1
+        data["periods"][q_label]["production"] = q_prod_rows
+        data["periods"][q_label]["production_uploaded_at"] = now_iso
+        data["periods"][q_label]["production_source"] = "daily_dump"
+        data["periods"][q_label]["period_type"] = "quarterly"
+        if rollup_rows:
+            data["periods"][q_label]["rollup"] = rollup_rows
+            data["periods"][q_label]["rollup_uploaded_at"] = now_iso
+            data["periods"][q_label]["rollup_source"] = "daily_dump"
+        periods_touched.append(q_label)
+
     _save_apex_data(data)
 
     summary = {ok: len(v) for ok, v in monthly.items()}
-    print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months across {len(monthly)} periods "
-          f"(dealer_ids source={source}, count={len(apex_ids)}, rollup_rows={len(rollup_rows)})")
+    print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months, "
+          f"{len(quarterly)} quarters (dealer_ids source={source}, count={len(apex_ids)}, rollup_rows={len(rollup_rows)})")
     return {
         "ok": True,
         "periods_created":    created,
         "periods_updated":    updated,
         "periods":            periods_touched,
         "dealers_per_month":  summary,
+        "quarters":           list(quarterly.keys()),
         "rollup_dealers":     len(rollup_rows),
         "apex_dealer_ids_used": len(apex_ids),
         "dealer_id_source":   source,
@@ -9397,7 +9466,16 @@ async def apex_review_page(admin=Depends(_require_admin)):
 @app.get("/api/apex/periods")
 async def apex_list_periods(admin=Depends(_require_admin)):
     data = _load_apex_data()
-    periods = list(data.get("periods", {}).keys())
+    periods_raw = data.get("periods", {})
+    periods = [
+        {
+            "label": k,
+            "type":  v.get("period_type", "quarterly" if k.startswith("Q") else "monthly"),
+            "has_production": bool(v.get("production")),
+            "has_rollup":     bool(v.get("rollup")),
+        }
+        for k, v in periods_raw.items()
+    ]
     return {"periods": periods}
 
 @app.get("/api/apex/data/{period:path}")

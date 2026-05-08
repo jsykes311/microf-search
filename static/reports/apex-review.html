@@ -38,6 +38,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; colo
 .btn-blue:hover   { background: #1d4ed8; }
 .btn-sm { padding: 4px 10px; font-size: .74rem; }
 .btn-full { width: 100%; justify-content: center; }
+.period-type-btn { background: rgba(255,255,255,.08); color: rgba(255,255,255,.6); border: 1px solid rgba(255,255,255,.15); flex:1; justify-content:center; }
+.period-type-btn.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.period-type-btn:hover:not(.active) { background: rgba(255,255,255,.15); color:#fff; }
 
 /* Partner filter */
 .partner-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -212,6 +215,10 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
   <!-- Period selector -->
   <div class="sb-section">
     <div class="sb-title">Report Period</div>
+    <div class="period-type-toggle" style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn btn-sm period-type-btn active" data-t="monthly"   onclick="setPeriodType('monthly')">Monthly</button>
+      <button class="btn btn-sm period-type-btn"        data-t="quarterly" onclick="setPeriodType('quarterly')">Quarterly</button>
+    </div>
     <div class="ctrl-row">
       <select id="period-select" onchange="loadPeriod()">
         <option value="">— Select period —</option>
@@ -290,10 +297,12 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
 
 <script>
 const AC_BASE = 'https://microf.activehosted.com/app/accounts/';
-let currentPeriod  = null;
-let currentData    = {};
-let currentPartner = 'Apex Service Partners';
-let acRoster       = [];   // [{account_id, name, dealer_id, activation_date, last_app_date, …}]
+let currentPeriod     = null;
+let currentData       = {};
+let currentPartner    = 'Apex Service Partners';
+let currentPeriodType = 'monthly';   // 'monthly' | 'quarterly'
+let allPeriods        = [];          // [{label, type, has_production, has_rollup}]
+let acRoster          = [];          // [{account_id, name, dealer_id, enrolled_date, …}]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function toast(msg, ok = true) {
@@ -399,19 +408,42 @@ function renderRoster() {
   }).join('');
 }
 
+// ── Period type toggle ────────────────────────────────────────────────────────
+function setPeriodType(type) {
+  currentPeriodType = type;
+  document.querySelectorAll('.period-type-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.t === type);
+  });
+  renderPeriodSelect();
+}
+
+function renderPeriodSelect() {
+  const sel  = document.getElementById('period-select');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Select period —</option>';
+  allPeriods
+    .filter(p => p.type === currentPeriodType)
+    .forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.label;
+      o.textContent = p.label + (p.has_production ? '' : ' (no data)');
+      sel.appendChild(o);
+    });
+  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  else { currentPeriod = null; currentData = {}; renderReport(); }
+}
+
 // ── Periods ───────────────────────────────────────────────────────────────────
 async function initPeriods() {
   const res  = await fetch('/api/apex/periods');
   const data = await res.json();
-  const sel  = document.getElementById('period-select');
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">— Select period —</option>';
-  (data.periods || []).forEach(p => {
-    const o = document.createElement('option');
-    o.value = o.textContent = p;
-    sel.appendChild(o);
-  });
-  if (prev && [...sel.options].some(o => o.value === prev)) sel.value = prev;
+  // Support both old (string[]) and new ({label,type}[]) formats
+  allPeriods = (data.periods || []).map(p =>
+    typeof p === 'string'
+      ? { label: p, type: p.startsWith('Q') ? 'quarterly' : 'monthly', has_production: true, has_rollup: false }
+      : p
+  );
+  renderPeriodSelect();
 }
 
 async function loadPeriod() {
