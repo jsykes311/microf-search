@@ -8883,6 +8883,36 @@ async def welcome_send(
 
 # ── APEX Business Review ──────────────────────────────────────────────────────
 
+_APEX_PARTNERS = {"apex service partners", "southern air"}
+
+@app.get("/api/apex/dealers")
+async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
+    """Return all AC accounts whose Strategic Partners field contains one of the APEX partners."""
+    filter_set = {partner.lower()} if partner else _APEX_PARTNERS
+
+    rows = []
+    for aid, sp_val in _account_to_strategic_partners.items():
+        if not sp_val:
+            continue
+        sp_lower = sp_val.lower()
+        matched = next((p for p in filter_set if p in sp_lower), None)
+        if not matched:
+            continue
+        rows.append({
+            "account_id":      aid,
+            "name":            _account_to_name.get(aid, ""),
+            "dealer_id":       _account_to_dealer.get(aid, ""),
+            "region":          _account_to_region.get(aid, ""),
+            "status":          _account_to_status.get(aid, ""),
+            "activation_date": _account_to_activation_date.get(aid, ""),
+            "last_app_date":   _account_to_last_app.get(aid, ""),
+            "last_rpa_date":   _account_to_last_rpa.get(aid, ""),
+            "strategic_partner": sp_val,
+        })
+
+    rows.sort(key=lambda r: r["name"].lower())
+    return {"dealers": rows, "count": len(rows)}
+
 def _load_apex_data() -> dict:
     if os.path.exists(_APEX_FILE):
         try:
