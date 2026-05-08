@@ -9,3 +9,5 @@ itsdangerous>=2.1.2
 apscheduler>=3.10.0
 pgeocode>=0.4.0
 openpyxl>=3.1.0
+python-multipart>=0.0.9
+pandas>=2.2.0

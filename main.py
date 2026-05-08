@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, Depends, Body, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, Depends, Body, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel as _BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,12 @@ import urllib.parse
 from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
 import json
+import io as _io
 from collections import defaultdict
+try:
+    import pandas as _pd
+except ImportError:
+    _pd = None
 import aiosmtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -95,6 +100,7 @@ _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",  
 # All groups that can access the Apps tab
 _APPS_EMAILS        = _ADMIN_EMAILS | _CONTRACTOR_SUPPORT_EMAILS | _ONBOARDING_EMAILS | _ACCT_MGMT_EMAILS | _SALES_ADMIN_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
 _SCHEDULES_FILE = os.getenv("SCHEDULES_FILE", os.path.join(os.path.dirname(__file__), "schedules.json"))
+_APEX_FILE      = os.getenv("APEX_DATA_FILE",  os.path.join(os.path.dirname(__file__), "apex_data.json"))
 _scheduler      = AsyncIOScheduler()
 _schedules: dict = {}   # job_id → schedule dict
 
@@ -8873,6 +8879,195 @@ async def welcome_send(
         "results":        results,
         "by":             user,
     }
+
+
+# ── APEX Business Review ──────────────────────────────────────────────────────
+
+def _load_apex_data() -> dict:
+    if os.path.exists(_APEX_FILE):
+        try:
+            with open(_APEX_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"periods": {}}
+
+def _save_apex_data(data: dict):
+    dirpath = os.path.dirname(_APEX_FILE)
+    if dirpath:
+        os.makedirs(dirpath, exist_ok=True)
+    with open(_APEX_FILE, "w") as f:
+        json.dump(data, f, indent=2)
+
+def _parse_upload(content: bytes, filename: str) -> "_pd.DataFrame":
+    if _pd is None:
+        raise HTTPException(500, "pandas not installed on server")
+    fn = (filename or "").lower()
+    if fn.endswith(".xlsx") or fn.endswith(".xls"):
+        return _pd.read_excel(_io.BytesIO(content))
+    # CSV — try utf-8, fall back to latin-1
+    try:
+        return _pd.read_csv(_io.StringIO(content.decode("utf-8")))
+    except UnicodeDecodeError:
+        return _pd.read_csv(_io.StringIO(content.decode("latin-1")))
+
+def _map_cols(df: "_pd.DataFrame", col_map: dict) -> dict:
+    """Return {target: actual_col} for each target that could be matched."""
+    lower_cols = {c.strip().lower(): c for c in df.columns}
+    result = {}
+    for target, options in col_map.items():
+        for opt in options:
+            if opt in lower_cols:
+                result[target] = lower_cols[opt]
+                break
+    return result
+
+def _df_to_rows(df: "_pd.DataFrame", mapped: dict) -> list:
+    rows = []
+    for _, row in df.iterrows():
+        r = {}
+        for target, col in mapped.items():
+            val = row.get(col)
+            try:
+                if _pd.isna(val):
+                    val = None
+            except (TypeError, ValueError):
+                pass
+            # Convert numpy types to plain Python
+            if val is not None:
+                try:
+                    val = val.item()
+                except AttributeError:
+                    pass
+            r[target] = val
+        rows.append(r)
+    return rows
+
+@app.get("/apex-review")
+async def apex_review_page(admin=Depends(_require_admin)):
+    return FileResponse("static/reports/apex-review.html")
+
+@app.get("/api/apex/periods")
+async def apex_list_periods(admin=Depends(_require_admin)):
+    data = _load_apex_data()
+    periods = list(data.get("periods", {}).keys())
+    return {"periods": periods}
+
+@app.get("/api/apex/data/{period:path}")
+async def apex_get_period(period: str, admin=Depends(_require_admin)):
+    data = _load_apex_data()
+    period_data = data.get("periods", {}).get(period)
+    if not period_data:
+        raise HTTPException(404, "Period not found")
+    return period_data
+
+@app.post("/api/apex/upload/{period:path}/production")
+async def apex_upload_production(
+    period: str,
+    file: UploadFile = File(...),
+    admin=Depends(_require_admin),
+):
+    content = await file.read()
+    df = _parse_upload(content, file.filename or "")
+    col_map = {
+        "dealer":    ["dealer", "dealer name", "name", "company", "contractor", "location"],
+        "tenure":    ["tenure", "dealer tenure"],
+        "apps":      ["apps", "applications", "app count", "total apps"],
+        "approved":  ["approved", "approvals", "approved apps"],
+        "pending":   ["pending", "pending apps"],
+        "rpas":      ["rpas", "rpa", "rpa count", "total rpas"],
+        "nia":       ["nia", "not interested", "not available"],
+        "revenue":   ["revenue", "funded", "funded amount", "net invoice", "amount",
+                      "funded revenue", "net funded", "total funded"],
+    }
+    mapped = _map_cols(df, col_map)
+    if "dealer" not in mapped:
+        raise HTTPException(400, f"Could not find dealer/name column. Columns found: {list(df.columns)}")
+    rows = _df_to_rows(df, mapped)
+    # strip empty rows
+    rows = [r for r in rows if r.get("dealer")]
+
+    data = _load_apex_data()
+    data["periods"].setdefault(period, {})
+    data["periods"][period]["production"] = rows
+    data["periods"][period]["production_cols"] = mapped
+    data["periods"][period]["production_uploaded_at"] = datetime.now().isoformat()
+    _save_apex_data(data)
+    return {"ok": True, "rows": len(rows), "columns_mapped": mapped}
+
+@app.post("/api/apex/upload/{period:path}/rollup")
+async def apex_upload_rollup(
+    period: str,
+    file: UploadFile = File(...),
+    admin=Depends(_require_admin),
+):
+    content = await file.read()
+    df = _parse_upload(content, file.filename or "")
+    col_map = {
+        "dealer":            ["dealer", "dealer name", "name", "company", "contractor", "location"],
+        "enrolled_date":     ["enrolled date", "enrolled", "enrollment date", "activation date",
+                              "partner activation date", "activated date"],
+        "last_app_date":     ["last app date", "last app", "last application date", "last application"],
+        "ttm_apps":          ["ttm apps", "ttm applications", "apps", "applications", "total apps"],
+        "ttm_rpas":          ["ttm rpas", "ttm rpa", "rpas", "rpa", "total rpas"],
+        "ttm_revenue":       ["ttm net invoice", "ttm revenue", "ttm funded", "net invoice",
+                              "revenue", "funded", "total funded", "net funded"],
+        "pre_approval_rate": ["pre-approval rate", "pre approval rate", "approval rate",
+                              "ttm pre-approval rate", "ttm approval rate"],
+        "take_up_rate":      ["take up rate", "takeup rate", "ttm take up rate",
+                              "ttm takeup rate", "conversion rate"],
+    }
+    mapped = _map_cols(df, col_map)
+    if "dealer" not in mapped:
+        raise HTTPException(400, f"Could not find dealer/name column. Columns found: {list(df.columns)}")
+    rows = _df_to_rows(df, mapped)
+    rows = [r for r in rows if r.get("dealer")]
+
+    data = _load_apex_data()
+    data["periods"].setdefault(period, {})
+    data["periods"][period]["rollup"] = rows
+    data["periods"][period]["rollup_cols"] = mapped
+    data["periods"][period]["rollup_uploaded_at"] = datetime.now().isoformat()
+    _save_apex_data(data)
+    return {"ok": True, "rows": len(rows), "columns_mapped": mapped}
+
+@app.post("/api/apex/meta/{period:path}")
+async def apex_save_meta(period: str, body: dict = Body(...), admin=Depends(_require_admin)):
+    data = _load_apex_data()
+    data["periods"].setdefault(period, {})
+    for key in ("new_locations", "highlights", "discussion", "improvement"):
+        if key in body:
+            data["periods"][period][key] = body[key]
+    data["periods"][period]["meta_updated_at"] = datetime.now().isoformat()
+    _save_apex_data(data)
+    return {"ok": True}
+
+@app.delete("/api/apex/periods/{period:path}")
+async def apex_delete_period(period: str, admin=Depends(_require_admin)):
+    data = _load_apex_data()
+    if period in data.get("periods", {}):
+        del data["periods"][period]
+        _save_apex_data(data)
+    return {"ok": True}
+
+@app.get("/api/apex/export/{period:path}/csv")
+async def apex_export_csv(period: str, table: str = "production", admin=Depends(_require_admin)):
+    data = _load_apex_data()
+    period_data = data.get("periods", {}).get(period, {})
+    rows = period_data.get(table, [])
+    if not rows:
+        raise HTTPException(404, "No data for this period/table")
+    output = _io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    filename = f"apex_{table}_{period.replace(' ', '_')}.csv"
+    return StreamingResponse(
+        _io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 if __name__ == "__main__":

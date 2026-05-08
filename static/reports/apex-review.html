@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APEX Business Review — Microf Reports</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f3f4f6; color: #111827; display: flex; height: 100vh; overflow: hidden; }
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 300px; min-width: 300px; background: #1e3a5f; color: #fff;
+  display: flex; flex-direction: column; height: 100vh; overflow-y: auto;
+}
+.sidebar-header {
+  padding: 16px; border-bottom: 1px solid rgba(255,255,255,.12);
+  background: #162e4d;
+}
+.sidebar-header h1 { font-size: .95rem; font-weight: 600; letter-spacing: .02em; }
+.sidebar-header p { font-size: .75rem; color: #93c5fd; margin-top: 2px; }
+
+.section { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.section-title { font-size: .7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: #93c5fd; margin-bottom: 10px; }
+
+/* Period selector */
+.period-row { display: flex; gap: 6px; align-items: center; }
+.period-row select { flex: 1; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,.2);
+  background: rgba(255,255,255,.08); color: #fff; font-size: .8rem; }
+.period-row select option { background: #1e3a5f; }
+.btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px;
+  border-radius: 6px; font-size: .78rem; font-weight: 500; cursor: pointer;
+  border: none; transition: background .15s; white-space: nowrap; }
+.btn-ghost { background: rgba(255,255,255,.1); color: #fff; border: 1px solid rgba(255,255,255,.2); }
+.btn-ghost:hover { background: rgba(255,255,255,.2); }
+.btn-danger { background: #7f1d1d; color: #fca5a5; border: 1px solid #991b1b; }
+.btn-danger:hover { background: #991b1b; }
+.btn-blue { background: #2563eb; color: #fff; }
+.btn-blue:hover { background: #1d4ed8; }
+.btn-sm { padding: 4px 10px; font-size: .74rem; }
+
+/* New period */
+.new-period-wrap { display: flex; gap: 6px; margin-top: 8px; }
+.new-period-wrap input { flex: 1; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08);
+  color: #fff; font-size: .8rem; }
+.new-period-wrap input::placeholder { color: rgba(255,255,255,.4); }
+
+/* Upload zones */
+.upload-zone {
+  border: 1.5px dashed rgba(255,255,255,.25); border-radius: 8px;
+  padding: 12px; text-align: center; cursor: pointer; transition: all .2s;
+  margin-bottom: 8px; position: relative;
+}
+.upload-zone:hover, .upload-zone.drag-over { border-color: #60a5fa; background: rgba(96,165,250,.08); }
+.upload-zone.has-data { border-color: #34d399; border-style: solid; background: rgba(52,211,153,.06); }
+.upload-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.upload-zone .uz-icon { font-size: 1.3rem; margin-bottom: 4px; }
+.upload-zone .uz-label { font-size: .75rem; color: #93c5fd; font-weight: 500; }
+.upload-zone .uz-sub { font-size: .68rem; color: rgba(255,255,255,.4); margin-top: 2px; }
+.upload-zone .uz-status { font-size: .7rem; color: #34d399; margin-top: 4px; }
+
+/* Meta inputs */
+.meta-input { width: 100%; padding: 6px 8px; border-radius: 6px; margin-bottom: 6px;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.08);
+  color: #fff; font-size: .78rem; resize: vertical; min-height: 60px; font-family: inherit; }
+.meta-input::placeholder { color: rgba(255,255,255,.35); }
+.meta-label { font-size: .72rem; color: #cbd5e1; margin-bottom: 3px; display: block; }
+
+/* Toast */
+.toast-wrap { position: fixed; bottom: 20px; right: 20px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 16px; border-radius: 8px; font-size: .82rem; font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2); animation: slideIn .2s; max-width: 320px; }
+.toast-ok { background: #065f46; color: #d1fae5; border: 1px solid #059669; }
+.toast-err { background: #7f1d1d; color: #fecaca; border: 1px solid #dc2626; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ── Main content ── */
+.main { flex: 1; overflow-y: auto; background: #f3f4f6; }
+
+/* Print / export bar */
+.topbar { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 10px 20px;
+  display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; }
+.topbar h2 { font-size: .9rem; font-weight: 600; color: #1e3a5f; flex: 1; }
+.btn-outline { background: #fff; border: 1px solid #d1d5db; color: #374151; }
+.btn-outline:hover { background: #f9fafb; }
+
+/* Report content */
+.report { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.empty-state { text-align: center; padding: 80px 20px; color: #9ca3af; }
+.empty-state .es-icon { font-size: 3rem; margin-bottom: 12px; }
+.empty-state p { font-size: .9rem; }
+
+/* ── Report sections ── */
+.report-section { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  margin-bottom: 20px; overflow: hidden; }
+
+.section-header { background: #1e3a5f; color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 10px; }
+.section-header h3 { font-size: .9rem; font-weight: 600; letter-spacing: .02em; }
+.section-header .sh-badge { font-size: .72rem; background: rgba(255,255,255,.15); padding: 2px 8px;
+  border-radius: 10px; margin-left: auto; }
+
+.section-body { padding: 16px 20px; }
+
+/* Cover */
+.cover { text-align: center; background: linear-gradient(135deg, #1e3a5f 0%, #1d4ed8 100%);
+  color: #fff; padding: 40px 20px; border-radius: 10px; margin-bottom: 20px; }
+.cover .cover-label { font-size: .8rem; letter-spacing: .12em; text-transform: uppercase;
+  color: #93c5fd; margin-bottom: 8px; }
+.cover h2 { font-size: 1.8rem; font-weight: 700; margin-bottom: 6px; }
+.cover .cover-period { font-size: 1rem; color: #bfdbfe; }
+
+/* Agenda */
+.agenda-list { list-style: none; }
+.agenda-list li { padding: 8px 0; border-bottom: 1px solid #f3f4f6; font-size: .88rem;
+  color: #374151; display: flex; align-items: center; gap: 10px; }
+.agenda-list li:last-child { border-bottom: none; }
+.agenda-num { width: 24px; height: 24px; background: #1e3a5f; color: #fff; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: .72rem; font-weight: 700; flex-shrink: 0; }
+
+/* Locations */
+.locations-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.location-chip { background: #dbeafe; color: #1e40af; padding: 5px 12px; border-radius: 20px;
+  font-size: .8rem; font-weight: 500; }
+
+/* Highlights */
+.highlights-text { font-size: .88rem; color: #374151; line-height: 1.7; white-space: pre-wrap; }
+
+/* ── Data tables ── */
+.data-table-wrap { overflow-x: auto; }
+table.data-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+table.data-table thead th {
+  background: #1e3a5f; color: #fff; padding: 8px 10px; text-align: left;
+  white-space: nowrap; font-weight: 500; font-size: .75rem; letter-spacing: .02em;
+}
+table.data-table thead th.num { text-align: right; }
+table.data-table tbody tr { border-bottom: 1px solid #f3f4f6; }
+table.data-table tbody tr:hover { background: #eff6ff; }
+table.data-table tbody td { padding: 7px 10px; color: #374151; vertical-align: middle; }
+table.data-table tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; border-top: 2px solid #1e3a5f; }
+table.data-table tbody td.dealer-name { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tenure-badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: .68rem; font-weight: 500; }
+.tenure-new  { background: #d1fae5; color: #065f46; }
+.tenure-mid  { background: #dbeafe; color: #1e40af; }
+.tenure-vet  { background: #ede9fe; color: #5b21b6; }
+.pct-bar { display: flex; align-items: center; gap: 6px; }
+.pct-bar .bar { height: 6px; border-radius: 3px; background: #2563eb; min-width: 2px; }
+.pct-val { font-size: .76rem; color: #374151; white-space: nowrap; }
+
+/* ── Stats row ── */
+.stats-row { display: flex; gap: 16px; flex-wrap: wrap; padding: 16px 20px;
+  background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+.stat-box { flex: 1; min-width: 120px; }
+.stat-box .sb-val { font-size: 1.6rem; font-weight: 700; color: #1e3a5f; line-height: 1; }
+.stat-box .sb-label { font-size: .72rem; color: #6b7280; margin-top: 4px; }
+
+/* ── Upload status chips ── */
+.upload-status-bar { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 20px;
+  background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+.us-chip { font-size: .72rem; padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+.us-ok { background: #d1fae5; color: #065f46; }
+.us-missing { background: #fee2e2; color: #991b1b; }
+
+@media print {
+  .sidebar, .topbar { display: none !important; }
+  body { display: block; }
+  .main { overflow: visible; }
+  .report { padding: 0; max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ──────────────────────────────────────────────────────────────── -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>🏢 APEX Business Review</h1>
+    <p>Admin — Upload &amp; manage report data</p>
+  </div>
+
+  <!-- Period selector -->
+  <div class="section">
+    <div class="section-title">Report Period</div>
+    <div class="period-row">
+      <select id="period-select" onchange="loadPeriod()">
+        <option value="">— Select period —</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="confirmDeletePeriod()" title="Delete period">🗑</button>
+    </div>
+    <div class="new-period-wrap">
+      <input id="new-period-input" type="text" placeholder="e.g. January 2026, Q1 2026">
+      <button class="btn btn-ghost btn-sm" onclick="createPeriod()">+ New</button>
+    </div>
+  </div>
+
+  <!-- Production upload -->
+  <div class="section">
+    <div class="section-title">Monthly Production Data</div>
+    <div class="upload-zone" id="zone-prod" ondragover="onDragOver(event,'prod')" ondragleave="onDragLeave('prod')" ondrop="onDrop(event,'production')">
+      <input type="file" accept=".csv,.xlsx,.xls" onchange="uploadFile(this,'production')">
+      <div class="uz-icon">📊</div>
+      <div class="uz-label">Drop CSV / Excel here</div>
+      <div class="uz-sub">Cols: Dealer, Apps, Approved, Pending, RPAs, NIA, Revenue, Tenure</div>
+      <div class="uz-status" id="status-prod"></div>
+    </div>
+  </div>
+
+  <!-- Roll-up upload -->
+  <div class="section">
+    <div class="section-title">Roll-up / TTM Summary</div>
+    <div class="upload-zone" id="zone-rollup" ondragover="onDragOver(event,'rollup')" ondragleave="onDragLeave('rollup')" ondrop="onDrop(event,'rollup')">
+      <input type="file" accept=".csv,.xlsx,.xls" onchange="uploadFile(this,'rollup')">
+      <div class="uz-icon">📈</div>
+      <div class="uz-label">Drop CSV / Excel here</div>
+      <div class="uz-sub">Cols: Dealer, Enrolled Date, Last App Date, TTM Apps, TTM RPAs, TTM Net Invoice, Pre-Approval Rate, Take Up Rate</div>
+      <div class="uz-status" id="status-rollup"></div>
+    </div>
+  </div>
+
+  <!-- Meta / narrative -->
+  <div class="section">
+    <div class="section-title">Narrative Content</div>
+    <label class="meta-label">New Locations (one per line)</label>
+    <textarea class="meta-input" id="meta-locations" placeholder="Pioneer Comfort Nashville&#10;Trinity Heating Cooling Plumbing" rows="4"></textarea>
+
+    <label class="meta-label">Highlights / Key Stats</label>
+    <textarea class="meta-input" id="meta-highlights" placeholder="Funded Revenue grew by $X&#10;Now have X enrolled dealers" rows="4"></textarea>
+
+    <label class="meta-label">Discussion Topic</label>
+    <textarea class="meta-input" id="meta-discussion" placeholder="Topics for discussion..." rows="3"></textarea>
+
+    <label class="meta-label">Areas for Improvement</label>
+    <textarea class="meta-input" id="meta-improvement" placeholder="Feedback and improvement areas..." rows="3"></textarea>
+
+    <button class="btn btn-blue" style="width:100%;justify-content:center;margin-top:4px" onclick="saveMeta()">💾 Save Narrative</button>
+  </div>
+
+  <!-- Export -->
+  <div class="section" style="border-bottom:none">
+    <div class="section-title">Export</div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center;margin-bottom:6px" onclick="exportCSV('production')">⬇ Production CSV</button>
+    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:center" onclick="exportCSV('rollup')">⬇ Roll-up CSV</button>
+  </div>
+</div>
+
+<!-- ── Main content ──────────────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="topbar">
+    <h2 id="report-title">APEX Business Review</h2>
+    <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Print</button>
+  </div>
+
+  <div class="report" id="report">
+    <div class="empty-state">
+      <div class="es-icon">📋</div>
+      <p>Select or create a period, then upload data using the sidebar.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+let currentPeriod = null;
+let currentData   = {};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function toast(msg, ok = true) {
+  const w = document.getElementById('toast-wrap');
+  const d = document.createElement('div');
+  d.className = `toast ${ok ? 'toast-ok' : 'toast-err'}`;
+  d.textContent = msg;
+  w.appendChild(d);
+  setTimeout(() => d.remove(), 3500);
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmt$(n) {
+  if (n == null || n === '') return '—';
+  const num = parseFloat(String(n).replace(/[^0-9.-]/g,''));
+  if (isNaN(num)) return esc(n);
+  return '$' + num.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function fmtNum(n) {
+  if (n == null || n === '') return '—';
+  const num = parseInt(n);
+  return isNaN(num) ? esc(n) : num.toLocaleString();
+}
+
+function fmtPct(v) {
+  if (v == null || v === '') return '—';
+  const s = String(v).trim();
+  return s.includes('%') ? s : (parseFloat(s) * 100).toFixed(0) + '%';
+}
+
+function tenureBadge(t) {
+  const s = (t || '').toLowerCase();
+  if (s.includes('less') || s.includes('< 12') || s.includes('new')) return `<span class="tenure-badge tenure-new">< 12 mo</span>`;
+  if (s.includes('12') || s.includes('mid'))   return `<span class="tenure-badge tenure-mid">12–24 mo</span>`;
+  if (s.includes('24') || s.includes('>'))     return `<span class="tenure-badge tenure-vet">> 24 mo</span>`;
+  return esc(t);
+}
+
+function pctBar(v, max = 100) {
+  if (v == null || v === '') return '—';
+  const s = String(v).trim();
+  const num = parseFloat(s.replace('%',''));
+  if (isNaN(num)) return esc(s);
+  const pct = Math.min(num, max);
+  const w = Math.round(pct / max * 60);
+  return `<div class="pct-bar"><div class="bar" style="width:${w}px"></div><span class="pct-val">${Math.round(pct)}%</span></div>`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  const res  = await fetch('/api/apex/periods');
+  const data = await res.json();
+  const sel  = document.getElementById('period-select');
+  sel.innerHTML = '<option value="">— Select period —</option>';
+  (data.periods || []).forEach(p => {
+    const o = document.createElement('option');
+    o.value = o.textContent = p;
+    sel.appendChild(o);
+  });
+}
+
+async function loadPeriod() {
+  const sel = document.getElementById('period-select');
+  const p   = sel.value;
+  if (!p) { currentPeriod = null; currentData = {}; renderReport(); return; }
+  currentPeriod = p;
+  try {
+    const res  = await fetch(`/api/apex/data/${encodeURIComponent(p)}`);
+    if (!res.ok) { currentData = {}; }
+    else { currentData = await res.json(); }
+  } catch { currentData = {}; }
+  populateMeta();
+  updateUploadStatus();
+  renderReport();
+}
+
+function populateMeta() {
+  document.getElementById('meta-locations').value   = (currentData.new_locations || []).join('\n');
+  document.getElementById('meta-highlights').value  = currentData.highlights   || '';
+  document.getElementById('meta-discussion').value  = currentData.discussion   || '';
+  document.getElementById('meta-improvement').value = currentData.improvement  || '';
+  document.getElementById('status-prod').textContent =
+    currentData.production ? `✓ ${currentData.production.length} rows` : '';
+  document.getElementById('status-rollup').textContent =
+    currentData.rollup ? `✓ ${currentData.rollup.length} rows` : '';
+  document.getElementById('zone-prod').classList.toggle('has-data',   !!currentData.production);
+  document.getElementById('zone-rollup').classList.toggle('has-data', !!currentData.rollup);
+}
+
+function updateUploadStatus() {
+  document.getElementById('status-prod').textContent =
+    currentData.production ? `✓ ${currentData.production.length} rows loaded` : '';
+  document.getElementById('status-rollup').textContent =
+    currentData.rollup ? `✓ ${currentData.rollup.length} rows loaded` : '';
+}
+
+async function createPeriod() {
+  const inp = document.getElementById('new-period-input');
+  const p   = inp.value.trim();
+  if (!p) { toast('Enter a period name', false); return; }
+  // Save empty meta to create it
+  await fetch(`/api/apex/meta/${encodeURIComponent(p)}`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({})
+  });
+  inp.value = '';
+  await init();
+  document.getElementById('period-select').value = p;
+  await loadPeriod();
+  toast(`Period "${p}" created`);
+}
+
+async function confirmDeletePeriod() {
+  if (!currentPeriod) return;
+  if (!confirm(`Delete period "${currentPeriod}" and all its data?`)) return;
+  await fetch(`/api/apex/periods/${encodeURIComponent(currentPeriod)}`, {method:'DELETE'});
+  currentPeriod = null; currentData = {};
+  await init();
+  renderReport();
+  toast('Period deleted');
+}
+
+// ── File uploads ──────────────────────────────────────────────────────────────
+function onDragOver(e, zone) {
+  e.preventDefault();
+  document.getElementById(`zone-${zone}`).classList.add('drag-over');
+}
+function onDragLeave(zone) {
+  document.getElementById(`zone-${zone}`).classList.remove('drag-over');
+}
+function onDrop(e, tableType) {
+  e.preventDefault();
+  const zone = tableType === 'production' ? 'prod' : 'rollup';
+  document.getElementById(`zone-${zone}`).classList.remove('drag-over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) uploadFileObj(file, tableType);
+}
+function uploadFile(input, tableType) {
+  if (input.files[0]) uploadFileObj(input.files[0], tableType);
+}
+async function uploadFileObj(file, tableType) {
+  if (!currentPeriod) { toast('Select or create a period first', false); return; }
+  const statusEl = document.getElementById(`status-${tableType === 'production' ? 'prod' : 'rollup'}`);
+  statusEl.textContent = '⏳ Uploading…';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`/api/apex/upload/${encodeURIComponent(currentPeriod)}/${tableType}`, {
+      method: 'POST', body: fd
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.detail || 'Upload failed', false); statusEl.textContent = '✗ Failed'; return; }
+    toast(`✓ ${data.rows} rows uploaded for ${tableType}`);
+    statusEl.textContent = `✓ ${data.rows} rows`;
+    const zoneId = tableType === 'production' ? 'zone-prod' : 'zone-rollup';
+    document.getElementById(zoneId).classList.add('has-data');
+    await loadPeriod();
+  } catch(e) {
+    toast(`Upload error: ${e.message}`, false);
+    statusEl.textContent = '✗ Error';
+  }
+}
+
+async function saveMeta() {
+  if (!currentPeriod) { toast('Select a period first', false); return; }
+  const locs = document.getElementById('meta-locations').value.trim();
+  const body = {
+    new_locations: locs ? locs.split('\n').map(l=>l.trim()).filter(Boolean) : [],
+    highlights:    document.getElementById('meta-highlights').value.trim(),
+    discussion:    document.getElementById('meta-discussion').value.trim(),
+    improvement:   document.getElementById('meta-improvement').value.trim(),
+  };
+  const res = await fetch(`/api/apex/meta/${encodeURIComponent(currentPeriod)}`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  if (res.ok) { toast('Narrative saved'); await loadPeriod(); }
+  else { toast('Save failed', false); }
+}
+
+function exportCSV(table) {
+  if (!currentPeriod) { toast('Select a period first', false); return; }
+  window.location = `/api/apex/export/${encodeURIComponent(currentPeriod)}/csv?table=${table}`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderReport() {
+  const container = document.getElementById('report');
+  const titleEl   = document.getElementById('report-title');
+
+  if (!currentPeriod) {
+    titleEl.textContent = 'APEX Business Review';
+    container.innerHTML = `<div class="empty-state">
+      <div class="es-icon">📋</div>
+      <p>Select or create a period, then upload data using the sidebar.</p>
+    </div>`;
+    return;
+  }
+
+  titleEl.textContent = `APEX Business Review — ${currentPeriod}`;
+
+  const prod    = currentData.production  || [];
+  const rollup  = currentData.rollup      || [];
+  const locs    = currentData.new_locations || [];
+  const hilites = currentData.highlights  || '';
+  const disc    = currentData.discussion  || '';
+  const impr    = currentData.improvement || '';
+
+  // Upload status bar
+  const statusBar = `<div class="upload-status-bar">
+    <span class="us-chip ${prod.length   ? 'us-ok' : 'us-missing'}">${prod.length   ? `✓ Production (${prod.length} dealers)` : '✗ Production data missing'}</span>
+    <span class="us-chip ${rollup.length ? 'us-ok' : 'us-missing'}">${rollup.length ? `✓ Roll-up (${rollup.length} dealers)`   : '✗ Roll-up data missing'}</span>
+    <span class="us-chip ${locs.length   ? 'us-ok' : 'us-missing'}">${locs.length   ? `✓ ${locs.length} new location(s)` : '○ No new locations'}</span>
+  </div>`;
+
+  // ── Cover ──
+  const cover = `<div class="cover">
+    <div class="cover-label">Partner Report</div>
+    <h2>APEX Monthly Business Review</h2>
+    <div class="cover-period">${esc(currentPeriod)}</div>
+  </div>`;
+
+  // ── Agenda ──
+  const agendaItems = [
+    prod.length   ? `${esc(currentPeriod)} Application Production` : null,
+    locs.length   ? 'New Locations'    : null,
+    hilites       ? 'Period Highlights' : null,
+    rollup.length ? 'Performance Roll-up' : null,
+    disc          ? 'Discussion Topics' : null,
+    impr          ? 'Areas for Improvement' : null,
+  ].filter(Boolean);
+
+  const agenda = `<div class="report-section">
+    <div class="section-header"><h3>📋 Agenda</h3></div>
+    <div class="section-body">
+      <ul class="agenda-list">
+        ${agendaItems.map((item, i) => `<li><span class="agenda-num">${i+1}</span>${item}</li>`).join('')}
+      </ul>
+    </div>
+  </div>`;
+
+  // ── Production table ──
+  let productionHtml = '';
+  if (prod.length) {
+    // Grand totals
+    const totApps     = prod.reduce((s,r)=>s+(parseFloat(r.apps)||0), 0);
+    const totApproved = prod.reduce((s,r)=>s+(parseFloat(r.approved)||0), 0);
+    const totPending  = prod.reduce((s,r)=>s+(parseFloat(r.pending)||0), 0);
+    const totRPAs     = prod.reduce((s,r)=>s+(parseFloat(r.rpas)||0), 0);
+    const totNIA      = prod.reduce((s,r)=>s+(parseFloat(r.nia)||0), 0);
+    const totRev      = prod.reduce((s,r)=>s+(parseFloat(String(r.revenue||'').replace(/[^0-9.-]/g,''))||0), 0);
+    const convRate    = totApps > 0 ? Math.round(totApproved / totApps * 100) : 0;
+    const l2b         = totRPAs > 0 && totApps > 0 ? Math.round(totRPAs / totApps * 100) : null;
+
+    const statsRow = `<div class="stats-row">
+      <div class="stat-box"><div class="sb-val">${fmtNum(totApps)}</div><div class="sb-label">Total Apps</div></div>
+      <div class="stat-box"><div class="sb-val">${fmtNum(totApproved)}</div><div class="sb-label">Approved</div></div>
+      <div class="stat-box"><div class="sb-val">${fmtNum(totRPAs)}</div><div class="sb-label">RPAs</div></div>
+      <div class="stat-box"><div class="sb-val">${fmt$(totRev)}</div><div class="sb-label">Funded Revenue</div></div>
+      <div class="stat-box"><div class="sb-val">${convRate}%</div><div class="sb-label">Conversion Rate</div></div>
+      ${l2b !== null ? `<div class="stat-box"><div class="sb-val">${l2b}%</div><div class="sb-label">Look-to-Book Rate</div></div>` : ''}
+    </div>`;
+
+    const hasTenure = prod.some(r => r.tenure);
+    const hasNIA    = prod.some(r => r.nia != null && r.nia !== '');
+    const rows = prod.map(r => `<tr>
+      <td class="dealer-name" title="${esc(r.dealer)}">${esc(r.dealer)}</td>
+      ${hasTenure ? `<td>${tenureBadge(r.tenure)}</td>` : ''}
+      <td class="num">${fmtNum(r.apps)}</td>
+      <td class="num">${fmtNum(r.approved)}</td>
+      <td class="num">${fmtNum(r.pending)}</td>
+      <td class="num">${fmtNum(r.rpas)}</td>
+      ${hasNIA ? `<td class="num">${fmtNum(r.nia)}</td>` : ''}
+      <td class="num">${fmt$(r.revenue)}</td>
+    </tr>`).join('');
+
+    productionHtml = `<div class="report-section">
+      <div class="section-header">
+        <h3>📊 ${esc(currentPeriod)} Application Production</h3>
+        <span class="sh-badge">${prod.length} dealers</span>
+      </div>
+      ${statsRow}
+      <div class="section-body" style="padding:0">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Dealer</th>
+              ${hasTenure ? '<th>Tenure</th>' : ''}
+              <th class="num">Apps</th>
+              <th class="num">Approved</th>
+              <th class="num">Pending</th>
+              <th class="num">RPAs</th>
+              ${hasNIA ? '<th class="num">NIA</th>' : ''}
+              <th class="num">Funded Revenue</th>
+            </tr></thead>
+            <tbody>
+              ${rows}
+              <tr class="grand-total">
+                <td><strong>Grand Total</strong></td>
+                ${hasTenure ? '<td></td>' : ''}
+                <td class="num">${fmtNum(totApps)}</td>
+                <td class="num">${fmtNum(totApproved)}</td>
+                <td class="num">${fmtNum(totPending)}</td>
+                <td class="num">${fmtNum(totRPAs)}</td>
+                ${hasNIA ? `<td class="num">${fmtNum(totNIA)}</td>` : ''}
+                <td class="num">${fmt$(totRev)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── New Locations ──
+  let locationsHtml = '';
+  if (locs.length) {
+    locationsHtml = `<div class="report-section">
+      <div class="section-header"><h3>📍 New Locations</h3><span class="sh-badge">${locs.length} added</span></div>
+      <div class="section-body">
+        <div class="locations-grid">${locs.map(l=>`<div class="location-chip">📌 ${esc(l)}</div>`).join('')}</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Highlights ──
+  let highlightsHtml = '';
+  if (hilites) {
+    highlightsHtml = `<div class="report-section">
+      <div class="section-header"><h3>🏆 Period Highlights</h3></div>
+      <div class="section-body"><div class="highlights-text">${esc(hilites)}</div></div>
+    </div>`;
+  }
+
+  // ── Roll-up table ──
+  let rollupHtml = '';
+  if (rollup.length) {
+    const totApps = rollup.reduce((s,r)=>s+(parseFloat(r.ttm_apps)||0), 0);
+    const totRPAs = rollup.reduce((s,r)=>s+(parseFloat(r.ttm_rpas)||0), 0);
+    const totRev  = rollup.reduce((s,r)=>s+(parseFloat(String(r.ttm_revenue||'').replace(/[^0-9.-]/g,''))||0), 0);
+
+    const hasEnrolled  = rollup.some(r => r.enrolled_date);
+    const hasLastApp   = rollup.some(r => r.last_app_date);
+    const hasPAR       = rollup.some(r => r.pre_approval_rate != null);
+    const hasTUR       = rollup.some(r => r.take_up_rate != null);
+
+    const rows = rollup.map(r => `<tr>
+      <td class="dealer-name" title="${esc(r.dealer)}">${esc(r.dealer)}</td>
+      ${hasEnrolled ? `<td>${esc(r.enrolled_date ? String(r.enrolled_date).substring(0,10) : '')}</td>` : ''}
+      ${hasLastApp  ? `<td>${esc(r.last_app_date  ? String(r.last_app_date ).substring(0,10) : '')}</td>` : ''}
+      <td class="num">${fmtNum(r.ttm_apps)}</td>
+      <td class="num">${fmtNum(r.ttm_rpas)}</td>
+      <td class="num">${fmt$(r.ttm_revenue)}</td>
+      ${hasPAR ? `<td>${pctBar(r.pre_approval_rate)}</td>` : ''}
+      ${hasTUR ? `<td>${pctBar(r.take_up_rate)}</td>` : ''}
+    </tr>`).join('');
+
+    rollupHtml = `<div class="report-section">
+      <div class="section-header">
+        <h3>📈 Performance Roll-up</h3>
+        <span class="sh-badge">${rollup.length} dealers</span>
+      </div>
+      <div class="stats-row">
+        <div class="stat-box"><div class="sb-val">${fmtNum(totApps)}</div><div class="sb-label">Total Apps (TTM)</div></div>
+        <div class="stat-box"><div class="sb-val">${fmtNum(totRPAs)}</div><div class="sb-label">Total RPAs (TTM)</div></div>
+        <div class="stat-box"><div class="sb-val">${fmt$(totRev)}</div><div class="sb-label">Net Invoice (TTM)</div></div>
+      </div>
+      <div class="section-body" style="padding:0">
+        <div class="data-table-wrap">
+          <table class="data-table">
+            <thead><tr>
+              <th>Dealer</th>
+              ${hasEnrolled ? '<th>Enrolled</th>' : ''}
+              ${hasLastApp  ? '<th>Last App</th>' : ''}
+              <th class="num">TTM Apps</th>
+              <th class="num">TTM RPAs</th>
+              <th class="num">TTM Net Invoice</th>
+              ${hasPAR ? '<th>Pre-Approval Rate</th>' : ''}
+              ${hasTUR ? '<th>Take-Up Rate</th>' : ''}
+            </tr></thead>
+            <tbody>
+              ${rows}
+              <tr class="grand-total">
+                <td><strong>Grand Total</strong></td>
+                ${hasEnrolled ? '<td></td>' : ''}
+                ${hasLastApp  ? '<td></td>' : ''}
+                <td class="num">${fmtNum(totApps)}</td>
+                <td class="num">${fmtNum(totRPAs)}</td>
+                <td class="num">${fmt$(totRev)}</td>
+                ${hasPAR ? '<td></td>' : ''}
+                ${hasTUR ? '<td></td>' : ''}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Discussion ──
+  let discussionHtml = '';
+  if (disc) {
+    discussionHtml = `<div class="report-section">
+      <div class="section-header"><h3>💬 Discussion Topics</h3></div>
+      <div class="section-body"><div class="highlights-text">${esc(disc)}</div></div>
+    </div>`;
+  }
+
+  // ── Improvement ──
+  let improvementHtml = '';
+  if (impr) {
+    improvementHtml = `<div class="report-section">
+      <div class="section-header"><h3>🔧 Areas for Improvement</h3></div>
+      <div class="section-body"><div class="highlights-text">${esc(impr)}</div></div>
+    </div>`;
+  }
+
+  container.innerHTML =
+    statusBar + cover + agenda + productionHtml + locationsHtml +
+    highlightsHtml + rollupHtml + discussionHtml + improvementHtml;
+}
+
+init();
+</script>
+</body>
+</html>
