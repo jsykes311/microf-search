@@ -9111,7 +9111,11 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
         prod_rows = []
         for dealer_name, grp in primary.groupby("Contractor Name"):
             funded = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
-            approved = grp[grp["Response Description"].str.strip() == "Pre-Approved"]
+            # Approved = Pre-Approved OR Funded (funded implies approved even via Further Review path)
+            approved = grp[
+                (grp["Response Description"].str.strip() == "Pre-Approved") |
+                (grp["App Sub Status"].str.upper().str.strip() == "FUNDED")
+            ]
             pending = grp[grp["Processing Status Description"].str.strip().isin(
                 ["Needs Review", "Decision Pending", "Partially Approved", "Fully Approved", "Preapproved"]
             )]
@@ -9171,7 +9175,11 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
     rollup_rows = []
     for dealer_name, grp in primary.groupby("Contractor Name"):
         funded   = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
-        approved = grp[grp["Response Description"].str.strip() == "Pre-Approved"]
+        # Approved = Pre-Approved OR Funded (funded implies approved even via Further Review path)
+        approved = grp[
+            (grp["Response Description"].str.strip() == "Pre-Approved") |
+            (grp["App Sub Status"].str.upper().str.strip() == "FUNDED")
+        ]
 
         total_apps    = int(len(grp))
         total_rpas    = int(len(funded))
