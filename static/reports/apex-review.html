@@ -280,7 +280,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
 <!-- ── Main ── -->
 <div class="main">
   <div class="topbar">
-    <h2 id="report-title">APEX Business Review</h2>
+    <h2 id="report-title">Strategic Partner Report</h2>
     <button class="btn btn-outline btn-sm" onclick="window.print()">🖨 Print</button>
   </div>
   <div class="report" id="report">
@@ -635,7 +635,7 @@ function renderReport() {
   const titleEl   = document.getElementById('report-title');
 
   if (!currentPeriod) {
-    titleEl.textContent = 'APEX Business Review';
+    titleEl.textContent = 'Strategic Partner Report';
     container.innerHTML = `<div class="empty-state"><div class="es-icon">📋</div>
       <p>Select or create a period, then upload data using the sidebar.</p></div>`;
     return;
