@@ -8965,16 +8965,20 @@ def _read_dump(content: bytes):
             continue
     raise HTTPException(400, "Could not parse file as a Daily Sales Dump (expected tab-separated UTF-16 with Dealer Id + inserted_time columns)")
 
+def _partner_filter_list(partner_filter: str) -> list:
+    """Parse comma-separated partner filter into list of lowercase strings. Empty = match all."""
+    return [p.strip().lower() for p in partner_filter.split(",") if p.strip()] if partner_filter else []
+
 def _build_apex_dealer_id_set(partner_filter: str = "") -> set:
     """Return str dealer_ids for strategic partner contractors. Empty filter = all partners."""
-    pf = partner_filter.lower().strip()
+    pf_list = _partner_filter_list(partner_filter)
     dealer_ids = set()
     for aid, sp_val in _account_to_strategic_partners.items():
         if not sp_val:
             continue
         if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
-        if pf and pf not in sp_val.lower():
+        if pf_list and not any(pf in sp_val.lower() for pf in pf_list):
             continue
         did = _account_to_dealer.get(aid, "")
         if did:
@@ -8989,7 +8993,7 @@ async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
     filtering to a specific partner value, then looks up CF18 (Dealer ID).
     Empty partner_filter = any non-empty strategic partner value.
     """
-    pf = partner_filter.lower().strip()
+    pf_list = _partner_filter_list(partner_filter)
     matching_acct_ids: set = set()
 
     # Pass 1 — find accounts with matching Strategic Partners (CF132)
@@ -9005,7 +9009,7 @@ async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
             val = (item.get("fieldValue") or "").strip()
             if not val:
                 continue
-            if pf and pf not in val.lower():
+            if pf_list and not any(pf in val.lower() for pf in pf_list):
                 continue
             aid = str(item.get("accountId", ""))
             if aid:
@@ -9361,9 +9365,9 @@ async def apex_upload_daily_dump(
         source = "ac_api"
 
     if not apex_ids:
-        partner_label = partner or "Apex Service Partners / Southern Air"
+        partner_label = partner or "All Strategic Partners"
         raise HTTPException(400,
-            f"No APEX dealers found (partner filter: {partner_label!r}). "
+            f"No strategic partner dealers found (partner filter: {partner_label!r}). "
             f"Strategic Partners index size: {len(_account_to_strategic_partners)} accounts. "
             f"Make sure the dealer index has been built and accounts have the Strategic Partners field set."
         )
@@ -9454,7 +9458,7 @@ async def apex_list_partners(admin=Depends(_require_admin)):
 @app.get("/api/apex/dealers")
 async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
     """Return Contractor accounts with a Strategic Partners value, optionally filtered to one partner."""
-    pf = partner.lower().strip()
+    pf_list = _partner_filter_list(partner)
 
     rows = []
     for aid, sp_val in _account_to_strategic_partners.items():
@@ -9463,7 +9467,7 @@ async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
         # Contractors only
         if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
-        if pf and pf not in sp_val.lower():
+        if pf_list and not any(pf in sp_val.lower() for pf in pf_list):
             continue
         name = _account_to_name.get(aid, "")
         did  = str(_account_to_dealer.get(aid, ""))

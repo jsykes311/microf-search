@@ -297,7 +297,7 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
 const AC_BASE = 'https://microf.activehosted.com/app/accounts/';
 let currentPeriod     = null;
 let currentData       = {};
-let currentPartner    = '';          // '' = All partners
+let currentPartners   = [];          // [] = All partners; otherwise array of selected strings
 let currentPeriodType = 'monthly';   // 'monthly' | 'quarterly'
 let allPeriods        = [];          // [{label, type, has_production, has_rollup}]
 let acRoster          = [];          // [{account_id, name, dealer_id, enrolled_date, …}]
@@ -366,9 +366,28 @@ function matchToAC(row) {
 
 // ── Partner pills ─────────────────────────────────────────────────────────────
 function selectPartner(el) {
-  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-  el.classList.add('active');
-  currentPartner = el.dataset.p;
+  const val = el.dataset.p;
+  const allPill = document.querySelector('.pill[data-p=""]');
+  if (val === '') {
+    // "All Partners" — clear selection
+    currentPartners = [];
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+  } else {
+    // Toggle this partner
+    allPill && allPill.classList.remove('active');
+    if (currentPartners.includes(val)) {
+      currentPartners = currentPartners.filter(p => p !== val);
+      el.classList.remove('active');
+    } else {
+      currentPartners.push(val);
+      el.classList.add('active');
+    }
+    // Nothing selected → fall back to All
+    if (currentPartners.length === 0) {
+      allPill && allPill.classList.add('active');
+    }
+  }
   loadRoster();
 }
 
@@ -391,7 +410,7 @@ async function loadRoster() {
   document.getElementById('roster-list').innerHTML = '<div class="roster-empty">Loading from ActiveCampaign…</div>';
   document.getElementById('roster-count').textContent = '';
   try {
-    const q = currentPartner ? `?partner=${encodeURIComponent(currentPartner)}` : '';
+    const q = currentPartners.length ? `?partner=${encodeURIComponent(currentPartners.join(','))}` : '';
     const res  = await fetch(`/api/apex/dealers${q}`);
     const data = await res.json();
     acRoster = data.dealers || [];
@@ -541,7 +560,7 @@ async function uploadDumpFile(file) {
     if (ids) fd.append('dealer_ids', ids);
   }
 
-  const partnerQ = currentPartner ? `?partner=${encodeURIComponent(currentPartner)}` : '';
+  const partnerQ = currentPartners.length ? `?partner=${encodeURIComponent(currentPartners.join(','))}` : '';
   try {
     const res  = await fetch(`/api/apex/upload/daily-dump${partnerQ}`, {method: 'POST', body: fd});
     const data = await res.json();
@@ -622,7 +641,7 @@ function renderReport() {
     return;
   }
 
-  const partnerLabel = currentPartner || 'Apex Service Partners / Southern Air';
+  const partnerLabel = currentPartners.length ? currentPartners.join(' + ') : 'All Strategic Partners';
   titleEl.textContent = `${partnerLabel} — ${currentPeriod}`;
 
   const prod    = currentData.production  || [];
