@@ -8885,6 +8885,64 @@ async def welcome_send(
 
 _APEX_PARTNERS = {"apex service partners", "southern air"}
 
+# Enrolled dates provided by the partner (keyed by normalised dealer name).
+# Normalisation: lowercase, strip punctuation, collapse whitespace.
+import re as _re
+def _norm_dealer(name: str) -> str:
+    name = name.lower()
+    name = _re.sub(r"[^a-z0-9 ]", " ", name)
+    return _re.sub(r"\s+", " ", name).strip()
+
+_APEX_ENROLLED_DATES: dict = {
+    _norm_dealer(k): v for k, v in {
+        "SOUTHERN AIR OF SHREVEPORT":                                    "5/7/2024",
+        "DILLING HEATING COOLING PLUMBING & ELECTRICAL":                 "2/4/2025",
+        "ACE HEATING COOLING & PLUMBING LLC DBA ACE HOME SERVICES":      "7/3/2024",
+        "WILLARD EAST":                                                  "4/2/2025",
+        "SNYDER AIR CONDITIONING PLUMBING & ELECTRIC":                   "10/29/2024",
+        "A#1 AIR PLUMBING & ELECTRICAL":                                 "4/14/2025",
+        "WILLARD WEST":                                                  "3/21/2025",
+        "BASSETT SERVICES HEATING & COOLING LLC":                        "8/20/2025",
+        "CJS HEATING AND AIR":                                           "8/18/2025",
+        "CHAMPIONS GREENVILLE":                                          "8/11/2025",
+        "RIGHT NOW HEATING COOLING PLUMBING LLC":                        "7/8/2024",
+        "BLAZE TRIANGLE LLC":                                            "3/26/2025",
+        "ACE AIR CONDITIONING AND PLUMBING":                             "5/15/2025",
+        "PIONEER COMFORT NASHVILLE":                                     "12/23/2025",
+        "LEGACY HEATING AND AIR INC":                                    "8/19/2025",
+        "AXSOM AIR OF LA INC":                                           "8/23/2018",
+        "DIRECT HEATING AND COOLING LLC":                                "11/15/2024",
+        "COTE'S MECHANICAL LLC":                                         "5/19/2025",
+        "TIN MAN HEATING COOLING PLUMBING & ELECTRICAL":                 "9/25/2025",
+        "KORTE DOES IT ALL INC":                                         "8/25/2025",
+        "CHAMPIONS FLAT ROCK":                                           "8/11/2025",
+        "EVANS AIR CONDITIONING PLUMBING & ELECTRICAL":                  "4/28/2025",
+        "GEES HEATING COOLING PLUMBING AND ELECTRICAL LLC":              "12/18/2025",
+        "HENCO PLUMBING SERVICES":                                       "1/21/2025",
+        "PRIDE MECHANICAL":                                              "8/28/2024",
+        "RENFROW HEATING COOLING PLUMBING AND ELECTRICAL":               "10/22/2025",
+        "SUNSET HEATING COOLING AND PLUMBING LLC":                       "1/18/2025",
+        "TRINITY AIR HEATING COOLING PLUMBING & ELECTRICAL":             "12/18/2025",
+    }.items()
+}
+
+def _lookup_enrolled_date(dealer_name: str, did: str = "") -> str:
+    """Return enrolled date: static lookup → AC activation date fallback."""
+    norm = _norm_dealer(dealer_name)
+    # Exact match
+    if norm in _APEX_ENROLLED_DATES:
+        return _APEX_ENROLLED_DATES[norm]
+    # Partial match (name contains a key or key contains the name)
+    for key, val in _APEX_ENROLLED_DATES.items():
+        if key in norm or norm in key:
+            return val
+    # Fallback: AC activation date via dealer_id
+    if did:
+        for aid, ddid in _account_to_dealer.items():
+            if str(ddid) == str(did):
+                return (_account_to_activation_date.get(aid, "") or "")[:10]
+    return ""
+
 # ── Daily Sales Dump processing helpers ───────────────────────────────────────
 
 _DUMP_ENCODING_TRIES = [("utf-16", "\t"), ("utf-8", "\t"), ("utf-8", ","), ("latin-1", "\t"), ("latin-1", ",")]
@@ -8907,11 +8965,13 @@ def _read_dump(content: bytes):
     raise HTTPException(400, "Could not parse file as a Daily Sales Dump (expected tab-separated UTF-16 with Dealer Id + inserted_time columns)")
 
 def _build_apex_dealer_id_set(partner_filter: str = "") -> set:
-    """Return set of str dealer_ids for APEX partners (from the in-memory index)."""
+    """Return set of str dealer_ids for APEX partners (Contractor accounts only)."""
     filter_set = {partner_filter.lower()} if partner_filter else _APEX_PARTNERS
     dealer_ids = set()
     for aid, sp_val in _account_to_strategic_partners.items():
         if not sp_val:
+            continue
+        if _account_to_type.get(aid, "").strip().lower() != "contractor":
             continue
         sp_lower = sp_val.lower()
         if any(p in sp_lower for p in filter_set):
@@ -8952,6 +9012,31 @@ async def _fetch_apex_dealer_ids_from_ac(partner_filter: str = "") -> set:
 
     if not matching_acct_ids:
         return set()
+
+    # Filter to Contractor accounts only (CF76) using in-memory index or AC query
+    contractor_ids: set = {aid for aid in matching_acct_ids
+                           if _account_to_type.get(aid, "").strip().lower() == "contractor"}
+    # If index is cold, fall back to querying CF76
+    if not contractor_ids:
+        offset = 0
+        while True:
+            resp = await ac_get("accountCustomFieldData", {"limit": 100, "offset": offset})
+            items = resp.get("accountCustomFieldData", [])
+            if not items:
+                break
+            for item in items:
+                if str(item.get("customFieldId", "")) != "76":
+                    continue
+                aid = str(item.get("accountId", ""))
+                if aid not in matching_acct_ids:
+                    continue
+                if (item.get("fieldValue") or "").strip().lower() == "contractor":
+                    contractor_ids.add(aid)
+            offset += len(items)
+            total = int(resp.get("meta", {}).get("total", 0))
+            if offset >= total:
+                break
+    matching_acct_ids = contractor_ids if contractor_ids else matching_acct_ids
 
     # Pass 2 — get Dealer IDs (CF18) for those accounts
     dealer_ids: set = set()
@@ -9083,12 +9168,6 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
 
     primary["_date"] = _pd.to_datetime(primary["inserted_time"], errors="coerce")
 
-    # Build reverse map: dealer_id -> activation_date from in-memory index
-    did_to_enrolled: dict = {}
-    for aid, ddid in _account_to_dealer.items():
-        if ddid:
-            did_to_enrolled[str(ddid)] = _account_to_activation_date.get(aid, "")
-
     rollup_rows = []
     for dealer_name, grp in primary.groupby("Contractor Name"):
         funded   = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
@@ -9104,12 +9183,19 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
         last_app_date = last_dt.strftime("%Y-%m-%d") if _pd.notna(last_dt) else ""
 
         did = str(grp["_did_str"].iloc[0])
-        enrolled_date = did_to_enrolled.get(did, "")
+        enrolled_date = _lookup_enrolled_date(dealer_name, did)
         if enrolled_date:
             try:
-                enrolled_date = str(enrolled_date)[:10]
+                # Normalise to YYYY-MM-DD if stored as M/D/YYYY
+                from datetime import datetime as _dt
+                for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y"):
+                    try:
+                        enrolled_date = _dt.strptime(enrolled_date, fmt).strftime("%Y-%m-%d")
+                        break
+                    except ValueError:
+                        pass
             except Exception:
-                enrolled_date = ""
+                pass
 
         rollup_rows.append({
             "dealer":            dealer_name,
@@ -9212,26 +9298,32 @@ async def apex_upload_daily_dump(
 
 @app.get("/api/apex/dealers")
 async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
-    """Return all AC accounts whose Strategic Partners field contains one of the APEX partners."""
+    """Return Contractor accounts whose Strategic Partners field contains one of the APEX partners."""
     filter_set = {partner.lower()} if partner else _APEX_PARTNERS
 
     rows = []
     for aid, sp_val in _account_to_strategic_partners.items():
         if not sp_val:
             continue
+        # Contractors only
+        if _account_to_type.get(aid, "").strip().lower() != "contractor":
+            continue
         sp_lower = sp_val.lower()
         matched = next((p for p in filter_set if p in sp_lower), None)
         if not matched:
             continue
+        name = _account_to_name.get(aid, "")
+        did  = str(_account_to_dealer.get(aid, ""))
         rows.append({
-            "account_id":      aid,
-            "name":            _account_to_name.get(aid, ""),
-            "dealer_id":       _account_to_dealer.get(aid, ""),
-            "region":          _account_to_region.get(aid, ""),
-            "status":          _account_to_status.get(aid, ""),
-            "activation_date": _account_to_activation_date.get(aid, ""),
-            "last_app_date":   _account_to_last_app.get(aid, ""),
-            "last_rpa_date":   _account_to_last_rpa.get(aid, ""),
+            "account_id":        aid,
+            "name":              name,
+            "dealer_id":         did,
+            "region":            _account_to_region.get(aid, ""),
+            "status":            _account_to_status.get(aid, ""),
+            "activation_date":   _account_to_activation_date.get(aid, ""),
+            "enrolled_date":     _lookup_enrolled_date(name, did),
+            "last_app_date":     _account_to_last_app.get(aid, ""),
+            "last_rpa_date":     _account_to_last_rpa.get(aid, ""),
             "strategic_partner": sp_val,
         })
 

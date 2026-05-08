@@ -389,12 +389,14 @@ function renderRoster() {
     listEl.innerHTML = '<div class="roster-empty">No dealers found for this partner.</div>';
     return;
   }
-  listEl.innerHTML = acRoster.map(r =>
-    `<div class="roster-item">
+  listEl.innerHTML = acRoster.map(r => {
+    const enr = r.enrolled_date || r.activation_date || '';
+    return `<div class="roster-item">
       <span class="ri-name" title="${esc(r.name)}">${esc(r.name)}</span>
       <span class="ri-did">${esc(r.dealer_id || '—')}</span>
-    </div>`
-  ).join('');
+      ${enr ? `<span class="ri-enr">${esc(enr.substring(0,10))}</span>` : ''}
+    </div>`;
+  }).join('');
 }
 
 // ── Periods ───────────────────────────────────────────────────────────────────
@@ -725,16 +727,19 @@ function renderReport() {
   let rosterHtml = '';
   if (acRoster.length) {
     const activeCount = acRoster.filter(r => (r.status || '').toLowerCase().includes('active') && !r.status.toLowerCase().includes('not')).length;
-    const rosterRows  = acRoster.map(r => `<tr>
-      <td class="dealer-name" title="${esc(r.name)}">
-        <a href="${AC_BASE}${esc(r.account_id)}" target="_blank">${esc(r.name)}</a>
-      </td>
-      <td>${esc(r.dealer_id || '—')}</td>
-      <td>${esc(r.region || '—')}</td>
-      <td>${esc(r.activation_date ? r.activation_date.substring(0,10) : '—')}</td>
-      <td>${esc(r.last_app_date  ? r.last_app_date.substring(0,10)  : '—')}</td>
-      <td>${esc(r.strategic_partner || '—')}</td>
-    </tr>`).join('');
+    const rosterRows  = acRoster.map(r => {
+      const enrolledDate = r.enrolled_date || r.activation_date || '';
+      return `<tr>
+        <td class="dealer-name" title="${esc(r.name)}">
+          <a href="${AC_BASE}${esc(r.account_id)}" target="_blank">${esc(r.name)}</a>
+        </td>
+        <td>${esc(r.dealer_id || '—')}</td>
+        <td>${esc(r.region || '—')}</td>
+        <td>${esc(enrolledDate ? enrolledDate.substring(0,10) : '—')}</td>
+        <td>${esc(r.last_app_date ? r.last_app_date.substring(0,10) : '—')}</td>
+        <td>${esc(r.strategic_partner || '—')}</td>
+      </tr>`;
+    }).join('');
 
     rosterHtml = `<div class="report-section">
       <div class="section-header">
