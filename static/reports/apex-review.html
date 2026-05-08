@@ -654,8 +654,18 @@ function renderReport() {
   const partnerLabel = currentPartners.length ? currentPartners.join(' + ') : 'All Strategic Partners';
   titleEl.textContent = `${partnerLabel} — ${currentPeriod}`;
 
-  const prod    = currentData.production  || [];
-  const rollup  = currentData.rollup      || [];
+  // Filter rows by selected partners when strategic_partner is stored on row
+  function matchesPartnerFilter(r) {
+    if (!currentPartners.length) return true;
+    const sp = (r.strategic_partner || '').toLowerCase();
+    if (!sp) return true;  // no tag = include (backward compat)
+    return currentPartners.some(p => sp.includes(p.toLowerCase()));
+  }
+
+  const prodAll  = currentData.production || [];
+  const prod     = prodAll.filter(matchesPartnerFilter);
+  const rollupAll = currentData.rollup    || [];
+  const rollup   = rollupAll.filter(matchesPartnerFilter);
   const locs    = currentData.new_locations || [];
   const hilites = currentData.highlights  || '';
   const disc    = currentData.discussion  || '';
