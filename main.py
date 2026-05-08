@@ -9054,6 +9054,79 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
 
     return dict(sorted(results.items(), key=lambda kv: _month_sort(kv[0])))
 
+
+def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
+    """
+    Aggregate the *entire* dump (all months) per dealer into a single rollup row.
+    Returns a list of rollup rows compatible with the rollup upload format.
+    Enrolled date is pulled from the in-memory AC index when available.
+    """
+    df = df.copy()
+    df["_did_str"] = df["Dealer Id"].apply(
+        lambda x: str(int(x)) if _pd.notna(x) and str(x).replace(".0", "").isdigit() else ""
+    )
+    apex_rows = df[df["_did_str"].isin(apex_ids)].copy()
+    if apex_rows.empty:
+        return []
+
+    # Primary apps only
+    primary = apex_rows[apex_rows["Primary App"] == 1] if "Primary App" in apex_rows.columns else apex_rows
+
+    # NIA dollar column
+    nia_col = next((c for c in primary.columns if c.strip().lower() == "nia"), None)
+    if nia_col:
+        primary = primary.copy()
+        primary["_nia"] = primary[nia_col].apply(_parse_dollar)
+    else:
+        primary = primary.copy()
+        primary["_nia"] = 0.0
+
+    primary["_date"] = _pd.to_datetime(primary["inserted_time"], errors="coerce")
+
+    # Build reverse map: dealer_id -> activation_date from in-memory index
+    did_to_enrolled: dict = {}
+    for aid, ddid in _account_to_dealer.items():
+        if ddid:
+            did_to_enrolled[str(ddid)] = _account_to_activation_date.get(aid, "")
+
+    rollup_rows = []
+    for dealer_name, grp in primary.groupby("Contractor Name"):
+        funded   = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
+        approved = grp[grp["Response Description"].str.strip() == "Pre-Approved"]
+
+        total_apps    = int(len(grp))
+        total_rpas    = int(len(funded))
+        total_revenue = round(float(funded["_nia"].sum()), 2)
+        par = round(len(approved) / total_apps, 4) if total_apps > 0 else 0.0
+        tur = round(total_rpas / len(approved), 4)  if len(approved) > 0 else 0.0
+
+        last_dt = grp["_date"].max()
+        last_app_date = last_dt.strftime("%Y-%m-%d") if _pd.notna(last_dt) else ""
+
+        did = str(grp["_did_str"].iloc[0])
+        enrolled_date = did_to_enrolled.get(did, "")
+        if enrolled_date:
+            try:
+                enrolled_date = str(enrolled_date)[:10]
+            except Exception:
+                enrolled_date = ""
+
+        rollup_rows.append({
+            "dealer":            dealer_name,
+            "dealer_id":         did,
+            "enrolled_date":     enrolled_date,
+            "last_app_date":     last_app_date,
+            "ttm_apps":          total_apps,
+            "ttm_rpas":          total_rpas,
+            "ttm_revenue":       total_revenue,
+            "pre_approval_rate": par,
+            "take_up_rate":      tur,
+        })
+
+    rollup_rows.sort(key=lambda r: (-r["ttm_revenue"], r["dealer"]))
+    return rollup_rows
+
+
 @app.post("/api/apex/upload/daily-dump")
 async def apex_upload_daily_dump(
     file: UploadFile = File(...),
@@ -9097,6 +9170,10 @@ async def apex_upload_daily_dump(
     if not monthly:
         raise HTTPException(400, "No matching APEX dealer rows found in this file.")
 
+    # Build rollup (all months aggregated) once for the whole dump
+    rollup_rows = _dump_to_rollup(df, apex_ids)
+    now_iso = datetime.now().isoformat()
+
     data = _load_apex_data()
     created = updated = 0
     periods_touched = []
@@ -9107,21 +9184,27 @@ async def apex_upload_daily_dump(
         else:
             updated += 1
         data["periods"][month_label]["production"] = prod_rows
-        data["periods"][month_label]["production_uploaded_at"] = datetime.now().isoformat()
+        data["periods"][month_label]["production_uploaded_at"] = now_iso
         data["periods"][month_label]["production_source"] = "daily_dump"
+        # Auto-populate rollup from the same dump
+        if rollup_rows:
+            data["periods"][month_label]["rollup"] = rollup_rows
+            data["periods"][month_label]["rollup_uploaded_at"] = now_iso
+            data["periods"][month_label]["rollup_source"] = "daily_dump"
         periods_touched.append(month_label)
 
     _save_apex_data(data)
 
     summary = {ok: len(v) for ok, v in monthly.items()}
     print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months across {len(monthly)} periods "
-          f"(dealer_ids source={source}, count={len(apex_ids)})")
+          f"(dealer_ids source={source}, count={len(apex_ids)}, rollup_rows={len(rollup_rows)})")
     return {
         "ok": True,
         "periods_created":    created,
         "periods_updated":    updated,
         "periods":            periods_touched,
         "dealers_per_month":  summary,
+        "rollup_dealers":     len(rollup_rows),
         "apex_dealer_ids_used": len(apex_ids),
         "dealer_id_source":   source,
     }
