@@ -9087,28 +9087,44 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
     df["_did_str"] = df["Dealer Id"].apply(lambda x: str(int(x)) if _pd.notna(x) and str(x).replace(".0","").isdigit() else "")
     apex_rows = df[df["_did_str"].isin(apex_ids)].copy()
 
-    if apex_rows.empty:
-        return {}
+    # Build did→name from AC index for zero-app dealers
+    did_to_ac_name: dict = {}
+    for aid, ddid in _account_to_dealer.items():
+        sdid = str(ddid)
+        if sdid in apex_ids and sdid not in did_to_ac_name:
+            did_to_ac_name[sdid] = _account_to_name.get(aid, "")
 
-    # Parse dates
-    apex_rows["_date"] = _pd.to_datetime(apex_rows["inserted_time"], errors="coerce", dayfirst=False)
-    apex_rows["_month_label"] = apex_rows["_date"].dt.strftime("%B %Y")
+    # Parse dates (even if apex_rows is empty we still want zero rows per month)
+    if not apex_rows.empty:
+        apex_rows["_date"] = _pd.to_datetime(apex_rows["inserted_time"], errors="coerce", dayfirst=False)
+        apex_rows["_month_label"] = apex_rows["_date"].dt.strftime("%B %Y")
+        month_labels = sorted(apex_rows["_month_label"].dropna().unique().tolist(),
+                              key=lambda lbl: (_pd.to_datetime("1 " + lbl, format="%d %B %Y", errors="coerce") or _pd.Timestamp.max))
+    else:
+        month_labels = []
 
     # Parse NIA dollar column (funded amount)
-    nia_col = next((c for c in apex_rows.columns if c.strip().lower() == "nia"), None)
+    nia_col = next((c for c in apex_rows.columns if c.strip().lower() == "nia"), None) if not apex_rows.empty else None
     if nia_col:
         apex_rows["_nia"] = apex_rows[nia_col].apply(_parse_dollar)
     else:
-        apex_rows["_nia"] = 0.0
+        if not apex_rows.empty:
+            apex_rows["_nia"] = 0.0
 
     MONTH_ORDER = ["January","February","March","April","May","June",
                    "July","August","September","October","November","December"]
 
+    def _zero_row(did, name):
+        return {"dealer": name or f"Dealer {did}", "dealer_id": did,
+                "apps": 0, "approved": 0, "pending": 0, "rpas": 0, "nia": 0, "revenue": 0.0}
+
     results = {}
-    for month_label, mdf in apex_rows.groupby("_month_label"):
+    for month_label in month_labels:
+        mdf = apex_rows[apex_rows["_month_label"] == month_label]
         # Primary apps only for counting (avoid re-submissions inflating)
         primary = mdf[mdf["Primary App"] == 1] if "Primary App" in mdf.columns else mdf
         prod_rows = []
+        active_dids = set()
         for dealer_name, grp in primary.groupby("Contractor Name"):
             funded = grp[grp["App Sub Status"].str.upper().str.strip() == "FUNDED"]
             # Approved = Pre-Approved OR Funded (funded implies approved even via Further Review path)
@@ -9120,9 +9136,11 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
                 ["Needs Review", "Decision Pending", "Partially Approved", "Fully Approved", "Preapproved"]
             )]
             nia_count = grp[grp.get("Shrinkage", _pd.Series(dtype=str)).str.strip().str.startswith("5.", na=False)]
+            did = str(grp["_did_str"].iloc[0])
+            active_dids.add(did)
             prod_rows.append({
                 "dealer":    dealer_name,
-                "dealer_id": str(grp["_did_str"].iloc[0]),
+                "dealer_id": did,
                 "apps":      int(len(grp)),
                 "approved":  int(len(approved)),
                 "pending":   int(len(pending)),
@@ -9130,8 +9148,13 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
                 "nia":       int(len(nia_count)),
                 "revenue":   round(float(funded["_nia"].sum()), 2),
             })
-        # Sort by revenue desc, then name
-        prod_rows.sort(key=lambda r: (-r["revenue"], r["dealer"]))
+        # Add enrolled dealers with zero activity this month
+        for did in sorted(apex_ids - active_dids):
+            name = did_to_ac_name.get(did, "")
+            if name:  # only add if we know the dealer name
+                prod_rows.append(_zero_row(did, name))
+        # Sort: active (revenue desc, name) then zeros (name)
+        prod_rows.sort(key=lambda r: (r["apps"] == 0, -r["revenue"], r["dealer"].lower()))
         results[month_label] = prod_rows
 
     # Sort months chronologically
@@ -9217,7 +9240,40 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
             "take_up_rate":      tur,
         })
 
-    rollup_rows.sort(key=lambda r: (-r["ttm_revenue"], r["dealer"]))
+    # Add enrolled dealers with zero activity in the entire dump period
+    active_dids = {r["dealer_id"] for r in rollup_rows}
+    for did in sorted(apex_ids - active_dids):
+        for aid, ddid in _account_to_dealer.items():
+            if str(ddid) == did:
+                name = _account_to_name.get(aid, "")
+                if name:
+                    enrolled_date = _lookup_enrolled_date(name, did)
+                    if enrolled_date:
+                        try:
+                            from datetime import datetime as _dt
+                            for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y"):
+                                try:
+                                    enrolled_date = _dt.strptime(enrolled_date, fmt).strftime("%Y-%m-%d")
+                                    break
+                                except ValueError:
+                                    pass
+                        except Exception:
+                            pass
+                    rollup_rows.append({
+                        "dealer":            name,
+                        "dealer_id":         did,
+                        "enrolled_date":     enrolled_date,
+                        "last_app_date":     "",
+                        "ttm_apps":          0,
+                        "ttm_rpas":          0,
+                        "ttm_revenue":       0.0,
+                        "pre_approval_rate": 0.0,
+                        "take_up_rate":      0.0,
+                    })
+                break
+
+    # Sort: active dealers (revenue desc, name) then zeros (name)
+    rollup_rows.sort(key=lambda r: (r["ttm_apps"] == 0, -r["ttm_revenue"], r["dealer"].lower()))
     return rollup_rows
 
 
