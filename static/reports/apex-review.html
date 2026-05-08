@@ -352,13 +352,23 @@ function normName(n) {
     .replace(/[^a-z0-9]/g, '').trim();
 }
 
-// Match an uploaded row's dealer name/id against the AC roster
+// Match an uploaded row against the AC roster.
+// Priority: account_id (embedded in row) → dealer_id → name fuzzy match
 function matchToAC(row) {
+  // 1. account_id baked into the row by the backend — always reliable
+  if (row.account_id) {
+    const hit = acRoster.find(r => r.account_id === row.account_id);
+    if (hit) return hit;
+    // Not in filtered roster but we know the account — synthesise a minimal hit
+    return { account_id: row.account_id, dealer_id: row.dealer_id, name: row.dealer };
+  }
+  // 2. dealer_id match against roster
   const uploadedId = String(row.dealer_id || '').trim();
   if (uploadedId) {
     const hit = acRoster.find(r => String(r.dealer_id) === uploadedId);
     if (hit) return hit;
   }
+  // 3. Name fuzzy match (fallback for manually uploaded CSVs)
   const nn = normName(row.dealer);
   return acRoster.find(r => normName(r.name) === nn ||
     (nn.length > 4 && (normName(r.name).includes(nn) || nn.includes(normName(r.name))))) || null;

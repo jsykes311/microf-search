@@ -9097,12 +9097,14 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
     df["_did_str"] = df["Dealer Id"].apply(lambda x: str(int(x)) if _pd.notna(x) and str(x).replace(".0","").isdigit() else "")
     apex_rows = df[df["_did_str"].isin(apex_ids)].copy()
 
-    # Build did→name from AC index for zero-app dealers
+    # Build did→name and did→account_id from AC index
     did_to_ac_name: dict = {}
+    did_to_account_id: dict = {}
     for aid, ddid in _account_to_dealer.items():
         sdid = str(ddid)
         if sdid in apex_ids and sdid not in did_to_ac_name:
             did_to_ac_name[sdid] = _account_to_name.get(aid, "")
+            did_to_account_id[sdid] = aid
 
     # Parse dates (even if apex_rows is empty we still want zero rows per month)
     if not apex_rows.empty:
@@ -9126,6 +9128,7 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
 
     def _zero_row(did, name):
         return {"dealer": name or f"Dealer {did}", "dealer_id": did,
+                "account_id": did_to_account_id.get(did, ""),
                 "apps": 0, "approved": 0, "pending": 0, "rpas": 0, "nia": 0, "revenue": 0.0}
 
     results = {}
@@ -9149,14 +9152,15 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
             did = str(grp["_did_str"].iloc[0])
             active_dids.add(did)
             prod_rows.append({
-                "dealer":    dealer_name,
-                "dealer_id": did,
-                "apps":      int(len(grp)),
-                "approved":  int(len(approved)),
-                "pending":   int(len(pending)),
-                "rpas":      int(len(funded)),
-                "nia":       int(len(nia_count)),
-                "revenue":   round(float(funded["_nia"].sum()), 2),
+                "dealer":     dealer_name,
+                "dealer_id":  did,
+                "account_id": did_to_account_id.get(did, ""),
+                "apps":       int(len(grp)),
+                "approved":   int(len(approved)),
+                "pending":    int(len(pending)),
+                "rpas":       int(len(funded)),
+                "nia":        int(len(nia_count)),
+                "revenue":    round(float(funded["_nia"].sum()), 2),
             })
         # Add enrolled dealers with zero activity this month
         for did in sorted(apex_ids - active_dids):
@@ -9190,6 +9194,13 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
     apex_rows = df[df["_did_str"].isin(apex_ids)].copy()
     if apex_rows.empty:
         return []
+
+    # Build did→account_id lookup
+    did_to_account_id: dict = {}
+    for aid, ddid in _account_to_dealer.items():
+        sdid = str(ddid)
+        if sdid in apex_ids and sdid not in did_to_account_id:
+            did_to_account_id[sdid] = aid
 
     # Primary apps only
     primary = apex_rows[apex_rows["Primary App"] == 1] if "Primary App" in apex_rows.columns else apex_rows
@@ -9241,6 +9252,7 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
         rollup_rows.append({
             "dealer":            dealer_name,
             "dealer_id":         did,
+            "account_id":        did_to_account_id.get(did, ""),
             "enrolled_date":     enrolled_date,
             "last_app_date":     last_app_date,
             "ttm_apps":          total_apps,
@@ -9272,6 +9284,7 @@ def _dump_to_rollup(df: "_pd.DataFrame", apex_ids: set) -> list:
                     rollup_rows.append({
                         "dealer":            name,
                         "dealer_id":         did,
+                        "account_id":        did_to_account_id.get(did, ""),
                         "enrolled_date":     enrolled_date,
                         "last_app_date":     "",
                         "ttm_apps":          0,
