@@ -663,21 +663,21 @@ function renderReport() {
 
   // Enrich prod rows with AC data
   const enrichedProd = prod.map(r => ({...r, _ac: matchToAC(r)}));
-  const unmatched    = enrichedProd.filter(r => !r._ac).length;
+  const matched   = enrichedProd.filter(r => r._ac && r._ac.account_id).length;
+  const unmatched = enrichedProd.filter(r => !r._ac || !r._ac.account_id).length;
 
   // ── Status bar ──
   const statusBar = `<div class="upload-status-bar">
     <span class="us-chip ${prod.length   ? 'us-ok'   : 'us-missing'}">${prod.length   ? `✓ Production (${prod.length} rows)` : '✗ Production missing'}</span>
     <span class="us-chip ${rollup.length ? 'us-ok'   : 'us-missing'}">${rollup.length ? `✓ Roll-up (${rollup.length} rows)`  : '✗ Roll-up missing'}</span>
-    <span class="us-chip ${acRoster.length ? 'us-ok' : 'us-warn'}">${acRoster.length ? `✓ ${acRoster.length} dealers in AC` : '⚠ Roster not loaded'}</span>
-    ${unmatched ? `<span class="us-chip us-warn">⚠ ${unmatched} unmatched dealers</span>` : ''}
+    ${matched   ? `<span class="us-chip us-ok">✓ ${matched} linked to AC</span>` : ''}
+    ${unmatched ? `<span class="us-chip us-warn">⚠ ${unmatched} not linked to AC</span>` : ''}
   </div>`;
 
   // ── Cover ──
   const cover = `<div class="cover">
     <div class="cover-label">Partner Report</div>
-    <h2>APEX Monthly Business Review</h2>
-    <div class="cover-sub">${esc(partnerLabel)}</div>
+    <h2>${esc(partnerLabel)} Business Review</h2>
     <div class="cover-period">${esc(currentPeriod)}</div>
   </div>`;
 
