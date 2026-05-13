@@ -3234,6 +3234,7 @@ async def team_activity_breakdown(
         accounts.append({
             "account_id":    aid,
             "account_name":  _account_to_name.get(aid, f"Account {aid}"),
+            "dealer_id":     _account_to_dealer.get(aid, ""),
             "channel":       _account_to_platform.get(aid, ""),
             "region":        _account_to_region.get(aid, ""),
             "notes":         s["notes"],
@@ -3252,6 +3253,7 @@ async def team_activity_account_detail(
     account_id: str           = Query(...),
     from_date:  Optional[str] = Query(None),
     to_date:    Optional[str] = Query(None),
+    format:     str           = Query("json"),
     _: None = Depends(require_auth),
 ):
     """Notes and activities by a specific user on a specific account."""
@@ -3419,10 +3421,38 @@ async def team_activity_account_detail(
         })
     emails_out.sort(key=lambda x: x["date"], reverse=True)
 
+    account_name = _account_to_name.get(account_id, f"Account {account_id}")
+    dealer_id    = _account_to_dealer.get(account_id, "")
+
+    if format == "csv":
+        out = io.StringIO()
+        rows = []
+        for a in activities_out:
+            rows.append({"type": "Activity", "date": a["date"], "kind": a["type"],
+                         "title": a["name"], "body": a["description"],
+                         "contact": "", "account": account_name, "dealer_id": dealer_id})
+        for n in notes_out:
+            rows.append({"type": "Note", "date": n["date"], "kind": "",
+                         "title": "", "body": n["note"],
+                         "contact": "", "account": account_name, "dealer_id": dealer_id})
+        for e in emails_out:
+            rows.append({"type": "Email", "date": e["date"], "kind": e["label"],
+                         "title": e["subject"], "body": "",
+                         "contact": e["contact_email"], "account": account_name, "dealer_id": dealer_id})
+        rows.sort(key=lambda x: x["date"], reverse=True)
+        if rows:
+            w = csv.DictWriter(out, fieldnames=rows[0].keys())
+            w.writeheader(); w.writerows(rows)
+        safe_name = "".join(c if c.isalnum() or c in "-_ " else "_" for c in account_name)[:40]
+        fn = f"{safe_name}_{from_date or 'all'}_{to_date or 'all'}.csv"
+        return StreamingResponse(iter([out.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": f"attachment; filename={fn}"})
+
     return {
         "user_name":    user_name,
         "account_id":   account_id,
-        "account_name": _account_to_name.get(account_id, f"Account {account_id}"),
+        "account_name": account_name,
+        "dealer_id":    dealer_id,
         "notes":        notes_out,
         "activities":   activities_out,
         "emails":       emails_out,

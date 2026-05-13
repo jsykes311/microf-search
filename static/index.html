@@ -4891,10 +4891,15 @@ function tpRenderDrawer(data) {
     return;
   }
 
-  const rows = accounts.map(a => `
+  const rows = accounts.map(a => {
+    const dlParams = new URLSearchParams({ user_name: _tpActiveUser, account_id: a.account_id, format: 'csv' });
+    if (_tpFromDate) dlParams.set('from_date', _tpFromDate);
+    if (_tpToDate)   dlParams.set('to_date',   _tpToDate);
+    const dlUrl = `/api/report/team-activity/account-detail?${dlParams}`;
+    return `
     <div class="tp-acct-row" data-acct-id="${esc(a.account_id)}" data-acct-name="${esc(a.account_name)}" onclick="tpOpenAcct(this)">
       <div style="flex:1;min-width:0;">
-        <div class="tp-acct-name" title="${esc(a.account_name)}">${esc(a.account_name)}</div>
+        <div class="tp-acct-name" title="${esc(a.account_name)}">${esc(a.account_name)}${a.dealer_id ? `<span style="font-size:.7rem;color:#9ca3af;margin-left:5px;">#${esc(a.dealer_id)}</span>` : ''}</div>
         <div class="tp-acct-sub">${[a.channel, a.region].filter(Boolean).join(' · ') || '—'}</div>
       </div>
       <div class="tp-acct-badges">
@@ -4902,8 +4907,9 @@ function tpRenderDrawer(data) {
         ${a.activities ? `<span class="tp-badge tp-badge-act">${a.activities}A</span>` : ''}
       </div>
       <div class="tp-badge-date">${esc(a.latest_date || '')}</div>
-      <div style="color:#9ca3af;font-size:.8rem;margin-left:4px;">›</div>
-    </div>`).join('');
+      <a href="${dlUrl}" onclick="event.stopPropagation();" title="Download CSV" style="color:#9ca3af;font-size:.82rem;text-decoration:none;margin-left:4px;">⬇</a>
+    </div>`;
+  }).join('');
 
   document.getElementById('tp-drawer-body').innerHTML =
     `<div class="tp-section-hdr">Accounts Touched (${accounts.length}) — click to drill in</div>${rows}`;

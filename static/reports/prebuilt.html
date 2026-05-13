@@ -1162,6 +1162,8 @@ function esc2(s){const d=document.createElement('div');d.textContent=String(s??'
 
 async function tpOpenDrawer(userName, rowEl) {
   _tpCurrentUser = userName;
+  _tpFromDate = document.getElementById('from')?.value || '';
+  _tpToDate   = document.getElementById('to')?.value   || '';
   document.querySelectorAll('[data-tp-row]').forEach(r=>r.classList.remove('tp-active-row'));
   rowEl?.closest('tr')?.classList.add('tp-active-row');
   const overlay = document.getElementById('tp-overlay');
@@ -1188,23 +1190,8 @@ function tpEscHandler(e){ if(e.key==='Escape') tpCloseDrawer(); }
 async function tpRenderDrawer(userName) {
   const params = new URLSearchParams();
   params.set('user_name', userName);
-  // Pass current date filters if set
-  const fromEl = document.getElementById('from'), toEl = document.getElementById('to');
-  if (fromEl?.value) params.set('from_date', fromEl.value);
-  if (toEl?.value)   params.set('to_date',   toEl.value);
-  // Try period-based dates if no explicit dates
-  const periodSel = document.getElementById('period-select');
-  if (periodSel?.value && !fromEl?.value && !toEl?.value) {
-    const now = new Date();
-    if (periodSel.value === 'this_month') {
-      params.set('from_date', `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`);
-    } else if (periodSel.value === 'last_month') {
-      const lm = new Date(now.getFullYear(), now.getMonth()-1, 1);
-      params.set('from_date', `${lm.getFullYear()}-${String(lm.getMonth()+1).padStart(2,'0')}-01`);
-      const le = new Date(now.getFullYear(), now.getMonth(), 0);
-      params.set('to_date', `${le.getFullYear()}-${String(le.getMonth()+1).padStart(2,'0')}-${String(le.getDate()).padStart(2,'0')}`);
-    }
-  }
+  if (_tpFromDate) params.set('from_date', _tpFromDate);
+  if (_tpToDate)   params.set('to_date',   _tpToDate);
   let accts = [];
   try {
     const res = await fetch(`/api/report/team-activity/breakdown?${params}`);
@@ -1223,9 +1210,16 @@ async function tpRenderDrawer(userName) {
   accts.forEach(a => {
     const nb = a.notes > 0      ? `<span class="tp-badge tp-badge-n" title="Notes">${a.notes}</span>` : '';
     const ab = a.activities > 0 ? `<span class="tp-badge tp-badge-a" title="Activities">${a.activities}</span>` : '';
+    const dlParams = new URLSearchParams({ user_name: _tpCurrentUser, account_id: a.account_id, format: 'csv' });
+    if (_tpFromDate) dlParams.set('from_date', _tpFromDate);
+    if (_tpToDate)   dlParams.set('to_date',   _tpToDate);
+    const dlUrl = `/api/report/team-activity/account-detail?${dlParams}`;
     html += `<div class="tp-acct-row" data-acct-id="${esc2(a.account_id)}" onclick="tpOpenAcct(this)">
-      <div class="tp-acct-name">${esc2(a.account_name)}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="tp-acct-name">${esc2(a.account_name)}${a.dealer_id ? `<span style="font-size:.72rem;color:#6b7280;margin-left:6px;">#${esc2(a.dealer_id)}</span>` : ''}</div>
+      </div>
       <div style="display:flex;gap:4px;align-items:center;">${nb}${ab}</div>
+      <a href="${dlUrl}" onclick="event.stopPropagation();" title="Download CSV" style="margin-left:6px;color:#9ca3af;font-size:.8rem;text-decoration:none;">⬇</a>
     </div>`;
   });
   document.getElementById('tp-body').innerHTML = html;
@@ -1234,6 +1228,8 @@ async function tpRenderDrawer(userName) {
 }
 
 let _tpCurrentUser = '';
+let _tpFromDate = '';
+let _tpToDate   = '';
 
 async function tpOpenAcct(rowEl) {
   const accountId   = rowEl.dataset.acctId;
@@ -1263,9 +1259,8 @@ async function tpRenderAcct(accountId, userName) {
 
   // Fetch user's notes + activities on this account
   const params = new URLSearchParams({ user_name: userName, account_id: accountId });
-  const fromEl = document.getElementById('from'), toEl = document.getElementById('to');
-  if (fromEl?.value) params.set('from_date', fromEl.value);
-  if (toEl?.value)   params.set('to_date',   toEl.value);
+  if (_tpFromDate) params.set('from_date', _tpFromDate);
+  if (_tpToDate)   params.set('to_date',   _tpToDate);
 
   let data = {};
   try {
