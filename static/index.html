@@ -4892,13 +4892,13 @@ function tpRenderDrawer(data) {
   }
 
   const rows = accounts.map(a => `
-    <div class="tp-acct-row" onclick="tpOpenAcct('${a.account_id}', ${JSON.stringify(a.account_name).replace(/'/g,"\\'")})" >
+    <div class="tp-acct-row" data-acct-id="${esc(a.account_id)}" data-acct-name="${esc(a.account_name)}" onclick="tpOpenAcct(this)">
       <div style="flex:1;min-width:0;">
         <div class="tp-acct-name" title="${esc(a.account_name)}">${esc(a.account_name)}</div>
         <div class="tp-acct-sub">${[a.channel, a.region].filter(Boolean).join(' · ') || '—'}</div>
       </div>
       <div class="tp-acct-badges">
-        ${a.notes     ? `<span class="tp-badge tp-badge-note">${a.notes}N</span>` : ''}
+        ${a.notes      ? `<span class="tp-badge tp-badge-note">${a.notes}N</span>` : ''}
         ${a.activities ? `<span class="tp-badge tp-badge-act">${a.activities}A</span>` : ''}
       </div>
       <div class="tp-badge-date">${esc(a.latest_date || '')}</div>
@@ -4912,16 +4912,22 @@ function tpRenderDrawer(data) {
 // ── Account sub-drawer ─────────────────────────────────────────────────────
 let _tpAcctActive = null;
 
-function tpOpenAcct(accountId, accountName) {
+function tpOpenAcct(rowEl) {
+  const accountId   = rowEl.dataset.acctId;
+  const accountName = rowEl.dataset.acctName || `Account ${accountId}`;
   _tpAcctActive = accountId;
-  document.getElementById('tp-acct-name').textContent = accountName || 'Loading…';
+  document.getElementById('tp-acct-name').textContent = accountName;
   document.getElementById('tp-acct-meta').innerHTML   = '';
   document.getElementById('tp-acct-ac-link').href     = `https://microf.activehosted.com/app/accounts/${accountId}`;
-  document.getElementById('tp-acct-body').innerHTML   = '<div class="tp-loading"><div class="tp-spin"></div><br>Loading account…</div>';
+  document.getElementById('tp-acct-body').innerHTML   = '<div class="tp-loading"><div class="tp-spin"></div><br>Loading…</div>';
   document.getElementById('tp-acct-overlay').classList.add('open');
   document.getElementById('tp-acct-drawer').classList.add('open');
 
-  fetch(`/api/accounts/${accountId}/detail`)
+  const params = new URLSearchParams({ user_name: _tpActiveUser, account_id: accountId });
+  if (_tpFromDate) params.set('from_date', _tpFromDate);
+  if (_tpToDate)   params.set('to_date',   _tpToDate);
+
+  fetch(`/api/report/team-activity/account-detail?${params}`)
     .then(r => r.json())
     .then(data => { if (_tpAcctActive === accountId) tpRenderAcct(data); })
     .catch(e  => {
@@ -4937,61 +4943,8 @@ function tpCloseAcct() {
 }
 
 function tpRenderAcct(data) {
-  const acct     = data.account  || {};
-  const slps     = data.slps     || [];
-  const contacts = data.contacts || [];
-  const notes    = data.notes    || [];
-  const fields   = acct.fields   || {};
-
-  // Header meta
-  const meta = [];
-  if (fields['Sales Region'])     meta.push(`📍 ${fields['Sales Region']}`);
-  if (fields['Parent Dealer ID']) meta.push(`🆔 ${fields['Parent Dealer ID']}`);
-  document.getElementById('tp-acct-name').textContent = acct.name || '—';
-  document.getElementById('tp-acct-meta').innerHTML   = meta.map(m => `<span>${esc(m)}</span>`).join('');
-
-  // Key fields
-  const keyFields = ['Account Type','Sales Region','Parent Dealer ID','Assigned BDR','Account Status','Strategic Partners'];
-  const fieldHtml = keyFields.filter(k => fields[k]).map(k =>
-    `<div style="margin-bottom:6px;"><div style="font-size:.65rem;color:#9ca3af;text-transform:uppercase;">${esc(k)}</div>
-     <div style="font-size:.82rem;font-weight:600;">${esc(fields[k])}</div></div>`).join('');
-
-  // SLPs
-  const slpHtml = slps.length ? slps.map(s => {
-    const status  = s['slp-status-detail'] || '';
-    const channel = s['channel'] || s['platform'] || '—';
-    const actDate = (s['contractor-activated-date'] || '').slice(0,10);
-    const pillColor = status.toLowerCase().includes('activated') ? '#d1fae5;color:#065f46'
-                    : status.toLowerCase().includes('deactivat') ? '#fee2e2;color:#b91c1c'
-                    : '#fef3c7;color:#92400e';
-    return `<div style="border:1px solid #e5e7eb;border-radius:7px;padding:8px 10px;margin-bottom:6px;background:#fafafa;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="font-weight:700;font-size:.83rem;">${esc(channel)}</span>
-        <span style="font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;background:${pillColor};">${esc(status||'No Status')}</span>
-      </div>
-      <div style="font-size:.74rem;color:#6b7280;">${actDate ? `Activated: ${esc(actDate)}` : ''}</div>
-    </div>`;
-  }).join('') : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No SLPs found</div>';
-
-  // Contacts
-  const contactHtml = contacts.length ? contacts.map(c => {
-    const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(no name)';
-    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;">
-      <div style="flex:1;">
-        <div style="font-weight:600;font-size:.82rem;">${esc(name)}</div>
-        <div style="font-size:.72rem;color:#6b7280;">${esc(c.email||'')}${c.phone?(c.email?' · ':'')+esc(c.phone):''}</div>
-      </div>
-      <a href="https://microf.activehosted.com/app/contacts/${c.id}" target="_blank" style="font-size:.72rem;color:#356ae6;text-decoration:none;">AC ↗</a>
-    </div>`;
-  }).join('') : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No contacts linked</div>';
-
-  // Recent notes
-  const notesHtml = notes.length ? notes.slice(0,6).map(n =>
-    `<div style="padding:6px 0;border-bottom:1px solid #f3f4f6;">
-      <div style="font-size:.68rem;color:#9ca3af;">${esc((n.cdate||'').slice(0,10))}</div>
-      <div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(n.note||'')}</div>
-    </div>`).join('')
-    : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No recent notes</div>';
+  const notes      = data.notes      || [];
+  const activities = data.activities || [];
 
   const section = (title, content) =>
     `<div style="margin-bottom:16px;">
@@ -4999,11 +4952,32 @@ function tpRenderAcct(data) {
       ${content}
     </div>`;
 
+  if (!notes.length && !activities.length) {
+    document.getElementById('tp-acct-body').innerHTML =
+      '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:.88rem;">No notes or activities found for this period.</div>';
+    return;
+  }
+
+  const actHtml = activities.length ? activities.map(a =>
+    `<div style="padding:7px 0;border-bottom:1px solid #f3f4f6;">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+        ${a.type ? `<span style="font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8;">${esc(a.type)}</span>` : ''}
+        <span style="font-size:.68rem;color:#9ca3af;">${esc(a.date)}</span>
+      </div>
+      ${a.description ? `<div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(a.description)}</div>` : ''}
+    </div>`).join('')
+    : '';
+
+  const notesHtml = notes.length ? notes.map(n =>
+    `<div style="padding:7px 0;border-bottom:1px solid #f3f4f6;">
+      <div style="font-size:.68rem;color:#9ca3af;">${esc(n.date)}</div>
+      <div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(n.note)}</div>
+    </div>`).join('')
+    : '';
+
   document.getElementById('tp-acct-body').innerHTML =
-    (fieldHtml ? section('Account Details', `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">${fieldHtml}</div>`) : '') +
-    section(`SLPs (${slps.length})`, slpHtml) +
-    section(`Contacts (${contacts.length})`, contactHtml) +
-    section('Recent Notes', notesHtml);
+    (activities.length ? section(`Activities (${activities.length})`, actHtml) : '') +
+    (notes.length      ? section(`Notes (${notes.length})`,           notesHtml) : '');
 }
 
 document.addEventListener('keydown', e => {

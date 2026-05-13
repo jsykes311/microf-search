@@ -1161,6 +1161,7 @@ function renderTeam(data) {
 function esc2(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
 
 async function tpOpenDrawer(userName, rowEl) {
+  _tpCurrentUser = userName;
   document.querySelectorAll('[data-tp-row]').forEach(r=>r.classList.remove('tp-active-row'));
   rowEl?.closest('tr')?.classList.add('tp-active-row');
   const overlay = document.getElementById('tp-overlay');
@@ -1220,17 +1221,26 @@ async function tpRenderDrawer(userName) {
   }
   let html = '<div class="tp-sec-title">Accounts Touched</div>';
   accts.forEach(a => {
-    const nb = a.notes > 0    ? `<span class="tp-badge tp-badge-n" title="Notes">${a.notes}</span>` : '';
+    const nb = a.notes > 0      ? `<span class="tp-badge tp-badge-n" title="Notes">${a.notes}</span>` : '';
     const ab = a.activities > 0 ? `<span class="tp-badge tp-badge-a" title="Activities">${a.activities}</span>` : '';
-    html += `<div class="tp-acct-row" onclick="tpOpenAcct('${esc2(a.account_id)}','${esc2(a.account_name)}')">
+    html += `<div class="tp-acct-row" data-acct-id="${esc2(a.account_id)}" onclick="tpOpenAcct(this)">
       <div class="tp-acct-name">${esc2(a.account_name)}</div>
       <div style="display:flex;gap:4px;align-items:center;">${nb}${ab}</div>
     </div>`;
   });
   document.getElementById('tp-body').innerHTML = html;
+  // store accounts for lookup
+  document.getElementById('tp-body')._accts = accts;
 }
 
-async function tpOpenAcct(accountId, accountName) {
+let _tpCurrentUser = '';
+
+async function tpOpenAcct(rowEl) {
+  const accountId   = rowEl.dataset.acctId;
+  const accts       = document.getElementById('tp-body')._accts || [];
+  const acct        = accts.find(a => a.account_id === accountId) || {};
+  const accountName = acct.account_name || `Account ${accountId}`;
+
   const overlay = document.getElementById('tp-acct-overlay');
   const drawer  = document.getElementById('tp-acct-drawer');
   document.getElementById('tp-acct-name').textContent = accountName;
@@ -1238,7 +1248,7 @@ async function tpOpenAcct(accountId, accountName) {
   document.getElementById('tp-acct-body').innerHTML = '<div class="tp-empty">Loading…</div>';
   overlay.classList.add('tp-active');
   drawer.classList.add('tp-active');
-  await tpRenderAcct(accountId);
+  await tpRenderAcct(accountId, _tpCurrentUser);
 }
 
 function tpCloseAcct() {
@@ -1246,67 +1256,51 @@ function tpCloseAcct() {
   document.getElementById('tp-acct-drawer').classList.remove('tp-active');
 }
 
-async function tpRenderAcct(accountId) {
-  let data = {};
-  try {
-    const res = await fetch(`/api/account-detail/${accountId}`);
-    data = await res.json();
-  } catch(e) {
-    document.getElementById('tp-acct-body').innerHTML = '<div class="tp-empty">Error loading account.</div>';
-    return;
-  }
-  const acUrl = `https://microf.activehosted.com/app/accounts/${accountId}`;
+async function tpRenderAcct(accountId, userName) {
+  const acUrl  = `https://microf.activehosted.com/app/accounts/${accountId}`;
   const acLink = `<a href="${acUrl}" target="_blank" style="font-size:.75rem;color:#fff;opacity:.8;text-decoration:none;">Open in AC ↗</a>`;
   document.getElementById('tp-acct-meta').innerHTML = acLink;
 
-  const fields = data.fields || {};
-  const slps   = data.slps   || [];
-  const contacts = data.contacts || [];
-  const notes  = data.notes  || [];
+  // Fetch user's notes + activities on this account
+  const params = new URLSearchParams({ user_name: userName, account_id: accountId });
+  const fromEl = document.getElementById('from'), toEl = document.getElementById('to');
+  if (fromEl?.value) params.set('from_date', fromEl.value);
+  if (toEl?.value)   params.set('to_date',   toEl.value);
 
-  const fv = (k) => fields[k] || '—';
-  let html = `<div class="tp-sec-title">Account Details</div>
-  <div class="tp-field-grid">
-    <div class="tp-field"><span class="tp-field-label">Type</span><span class="tp-field-val">${esc2(fv('type'))}</span></div>
-    <div class="tp-field"><span class="tp-field-label">Region</span><span class="tp-field-val">${esc2(fv('region'))}</span></div>
-    <div class="tp-field"><span class="tp-field-label">Dealer ID</span><span class="tp-field-val">${esc2(fv('dealer_id'))}</span></div>
-    <div class="tp-field"><span class="tp-field-label">BDR</span><span class="tp-field-val">${esc2(fv('bdr'))}</span></div>
-    <div class="tp-field"><span class="tp-field-label">Owner</span><span class="tp-field-val">${esc2(fv('owner'))}</span></div>
-    <div class="tp-field"><span class="tp-field-label">State</span><span class="tp-field-val">${esc2(fv('state'))}</span></div>
-  </div>`;
-
-  if (slps.length) {
-    html += `<div class="tp-sec-title">SLPs (${slps.length})</div>`;
-    slps.forEach(s => {
-      const st = (s.status||'').toLowerCase();
-      const pillCls = st.includes('activated') ? 'tp-pill-green' : st.includes('deactivated')||st.includes('declined') ? 'tp-pill-red' : 'tp-pill-amber';
-      html += `<div class="tp-slp-card">
-        <div class="tp-slp-title">${esc2(s.platform||'Unknown')} <span class="tp-pill ${pillCls}">${esc2(s.status||'Unknown')}</span></div>
-        ${s.activation_date ? `<div style="font-size:.75rem;color:#6b7280;margin-top:4px;">Activated: ${esc2(s.activation_date)}</div>` : ''}
-      </div>`;
-    });
+  let data = {};
+  try {
+    const res = await fetch(`/api/report/team-activity/account-detail?${params}`);
+    data = await res.json();
+  } catch(e) {
+    document.getElementById('tp-acct-body').innerHTML = '<div class="tp-empty">Error loading detail.</div>';
+    return;
   }
 
-  if (contacts.length) {
-    html += `<div class="tp-sec-title">Contacts (${contacts.length})</div>`;
-    contacts.forEach(c => {
-      const initials = ((c.first||'').charAt(0)+(c.last||'').charAt(0)).toUpperCase()||'?';
-      const cUrl = `https://microf.activehosted.com/app/contacts/${c.id}`;
-      html += `<div class="tp-contact-row">
-        <div class="tp-avatar">${esc2(initials)}</div>
-        <div style="flex:1;min-width:0;">
-          <div style="font-size:.85rem;font-weight:500;">${esc2((c.first||'')+' '+(c.last||''))}</div>
-          ${c.email ? `<div style="font-size:.75rem;color:#6b7280;">${esc2(c.email)}</div>` : ''}
+  const notes      = data.notes      || [];
+  const activities = data.activities || [];
+  let html = '';
+
+  if (!notes.length && !activities.length) {
+    html = '<div class="tp-empty">No notes or activities found for this period.</div>';
+  }
+
+  if (activities.length) {
+    html += `<div class="tp-sec-title">Activities (${activities.length})</div>`;
+    activities.forEach(a => {
+      html += `<div class="tp-note-row">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+          ${a.type ? `<span style="font-size:.72rem;font-weight:600;background:#dbeafe;color:#1d4ed8;padding:1px 7px;border-radius:9999px;">${esc2(a.type)}</span>` : ''}
+          <span class="tp-note-date" style="margin:0;">${esc2(a.date)}</span>
         </div>
-        <a href="${cUrl}" target="_blank" style="font-size:.72rem;color:#2563eb;text-decoration:none;">AC ↗</a>
+        ${a.description ? `<div>${esc2(a.description)}</div>` : ''}
       </div>`;
     });
   }
 
   if (notes.length) {
-    html += `<div class="tp-sec-title">Recent Notes</div>`;
-    notes.slice(0,5).forEach(n => {
-      html += `<div class="tp-note-row">${esc2(n.note||n.body||'')}<div class="tp-note-date">${esc2(n.cdate||n.date||'')}</div></div>`;
+    html += `<div class="tp-sec-title">Notes (${notes.length})</div>`;
+    notes.forEach(n => {
+      html += `<div class="tp-note-row">${esc2(n.note)}<div class="tp-note-date">${esc2(n.date)}</div></div>`;
     });
   }
 

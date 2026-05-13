@@ -3110,12 +3110,18 @@ async def team_activity_breakdown(
     """Per-account breakdown for a single user in the given date range."""
     from datetime import timezone
 
-    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
-        ac_get("users"),
-        ac_get_all("notes", "notes", {}),
-        ac_get_all("contacts", "contacts", {}),
-        ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
-    )
+    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
+        users_data    = _ta_cache["users_data"]
+        all_notes_raw = _ta_cache["all_notes_raw"]
+        all_contacts  = _ta_cache["all_contacts"]
+        all_activity  = _ta_cache["all_activity"]
+    else:
+        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+            ac_get("users"),
+            ac_get_all("notes", "notes", {}),
+            ac_get_all("contacts", "contacts", {}),
+            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
+        )
 
     # Build user map and find target uid(s)
     users: dict = {}
@@ -3220,6 +3226,137 @@ async def team_activity_breakdown(
     accounts.sort(key=lambda x: (-x["total"], x["account_name"]))
 
     return {"user_name": user_name, "accounts": accounts, "total_accounts": len(accounts)}
+
+
+@app.get("/api/report/team-activity/account-detail")
+async def team_activity_account_detail(
+    user_name:  str           = Query(...),
+    account_id: str           = Query(...),
+    from_date:  Optional[str] = Query(None),
+    to_date:    Optional[str] = Query(None),
+    _: None = Depends(require_auth),
+):
+    """Notes and activities by a specific user on a specific account."""
+    from datetime import timezone
+
+    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
+        users_data    = _ta_cache["users_data"]
+        all_notes_raw = _ta_cache["all_notes_raw"]
+        all_contacts  = _ta_cache["all_contacts"]
+        all_activity  = _ta_cache["all_activity"]
+    else:
+        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+            ac_get("users"),
+            ac_get_all("notes", "notes", {}),
+            ac_get_all("contacts", "contacts", {}),
+            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
+        )
+
+    # Build user map and find target UIDs
+    users: dict = {}
+    for u in (users_data.get("users", []) if isinstance(users_data, dict) else []):
+        uid  = str(u.get("id", ""))
+        name = f"{u.get('firstName','').strip()} {u.get('lastName','').strip()}".strip()
+        users[uid] = name or u.get("email", f"User {uid}")
+
+    target_uids = {uid for uid, name in users.items() if name == user_name}
+
+    def match_user(val: str) -> Optional[str]:
+        if not val: return None
+        v = val.strip().lower()
+        for uid, name in users.items():
+            if name.lower() == v: return uid
+        if len(v) == 2 and v.isalpha():
+            for uid, name in users.items():
+                parts = name.split()
+                if len(parts) >= 2 and parts[0][:1].lower() == v[0] and parts[-1][:1].lower() == v[1]:
+                    return uid
+        for uid, name in users.items():
+            parts = name.split()
+            if parts and parts[0].lower() == v: return uid
+            if v in name.lower(): return uid
+        return None
+
+    contact_to_account: dict = {}
+    for c in all_contacts:
+        cid = str(c.get("id", ""))
+        aid = str(c.get("account", "") or "")
+        if aid and aid != "0":
+            contact_to_account[cid] = aid
+
+    from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if from_date else None)
+    to_dt   = (datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None)
+    from_d  = from_dt.date() if from_dt else None
+    to_d    = to_dt.date()   if to_dt   else None
+
+    notes_out = []
+    for n in all_notes_raw:
+        reltype = (n.get("reltype") or "").lower()
+        if reltype not in ("contact", "customeraccount", "deal"):
+            continue
+        uid = str(n.get("userid", "") or "")
+        if uid not in target_uids:
+            continue
+        raw_date = n.get("cdate", "")
+        if from_dt or to_dt:
+            try:
+                nd = (datetime.fromisoformat(raw_date.replace("Z", "+00:00")) if "T" in raw_date
+                      else datetime.strptime(raw_date[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc))
+                if from_dt and nd < from_dt: continue
+                if to_dt   and nd > to_dt:   continue
+            except Exception:
+                continue
+        cid = str(n.get("rel_id", "") or "")
+        # Resolve note to account
+        if reltype == "customeraccount":
+            note_aid = cid
+        else:
+            note_aid = contact_to_account.get(cid, "")
+        if note_aid != account_id:
+            continue
+        notes_out.append({
+            "id":   n.get("id"),
+            "note": (n.get("note") or "")[:500],
+            "date": raw_date[:10] if raw_date else "",
+        })
+    notes_out.sort(key=lambda x: x["date"], reverse=True)
+
+    activities_out = []
+    for r in all_activity:
+        fmap       = {f["id"]: f.get("value") for f in r.get("fields", [])}
+        act_date   = (fmap.get("activity-date") or "")[:10]
+        performed  = (fmap.get("performed-by")  or "").strip()
+        rec_aid    = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
+        if rec_aid != account_id:
+            continue
+        if act_date and (from_d or to_d):
+            try:
+                ad = datetime.strptime(act_date, "%Y-%m-%d").date()
+                if from_d and ad < from_d: continue
+                if to_d   and ad > to_d:   continue
+            except Exception:
+                pass
+        matched_uid = match_user(performed)
+        if not matched_uid:
+            matched_uid = _account_to_owner.get(account_id)
+        if matched_uid not in target_uids:
+            continue
+        activities_out.append({
+            "id":          r.get("id"),
+            "type":        fmap.get("activity-type", ""),
+            "description": (fmap.get("activity-description") or fmap.get("notes") or "")[:500],
+            "date":        act_date,
+            "performed_by": performed,
+        })
+    activities_out.sort(key=lambda x: x["date"], reverse=True)
+
+    return {
+        "user_name":   user_name,
+        "account_id":  account_id,
+        "account_name": _account_to_name.get(account_id, f"Account {account_id}"),
+        "notes":       notes_out,
+        "activities":  activities_out,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
