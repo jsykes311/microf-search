@@ -6465,19 +6465,28 @@ async def report_ars_360(
     format: str = Query("json"),
     _: None = Depends(require_auth),
 ):
-    """ARS dealers on 360 Finance program with all linked contacts."""
+    """ARS dealers on 360 Finance program with all linked contacts.
+    Uses SLP channel field directly so accounts with multiple SLPs are not missed."""
     all_accounts = await ac_get_all("accounts", "accounts", {})
 
-    # Filter to ARS accounts on 360 Finance
+    # Build map: account_id → set of SLP channels (from live SLP cache)
+    acct_channels: dict = defaultdict(set)
+    for slp_rec in _slp_cache_records:
+        for acct_id in slp_rec.get("relationships", {}).get("account", []):
+            aid = str(acct_id)
+            for f in slp_rec.get("fields", []):
+                if f.get("id") == "channel" and f.get("value"):
+                    acct_channels[aid].add(f["value"].strip())
+
+    # Filter to ARS accounts that have at least one SLP with channel = 360 Finance
     ars_accounts = {
         str(a["id"]): a
         for a in all_accounts
         if "ARS" in a.get("name", "").upper()
-        and _account_to_platform.get(str(a["id"]), "") == "360 Finance"
+        and "360 Finance" in acct_channels.get(str(a["id"]), set())
     }
 
-    # Fetch contacts per account using accountContacts (more reliable than
-    # filtering all contacts by the account field)
+    # Fetch contacts per account
     by_account: dict = defaultdict(list)
     async def _fetch_contacts_for_account(aid: str):
         try:
@@ -6507,11 +6516,13 @@ async def report_ars_360(
     results = []
     for aid, acct in sorted(ars_accounts.items(), key=lambda x: x[1].get("name", "")):
         contacts = by_account.get(aid, [])
+        # Show all channels this account has SLPs for
+        channels = ", ".join(sorted(acct_channels.get(aid, set())))
         base = {
-            "dealer_id":      _account_to_dealer.get(aid, ""),
-            "dealer_name":    acct.get("name", ""),
-            "dealer_program": _account_to_platform.get(aid, ""),
-            "bdr":            _account_to_bdr.get(aid, ""),
+            "dealer_id":   _account_to_dealer.get(aid, ""),
+            "dealer_name": acct.get("name", ""),
+            "channel":     channels,
+            "bdr":         _account_to_bdr.get(aid, ""),
         }
         if contacts:
             for c in contacts:
