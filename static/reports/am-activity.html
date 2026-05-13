@@ -133,6 +133,107 @@
     font-size: .72rem; color: #6b7280; padding: 6px 18px 8px;
     border-top: 1px solid #f3f4f6; display: flex; align-items: center; gap: 6px;
   }
+
+  /* ── Drawer ── */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35);
+    z-index: 900; opacity: 0; pointer-events: none;
+    transition: opacity .2s;
+  }
+  .drawer-overlay.open { opacity: 1; pointer-events: all; }
+
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 480px; max-width: 96vw;
+    background: #fff; z-index: 901; box-shadow: -4px 0 24px rgba(0,0,0,.15);
+    display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .22s cubic-bezier(.4,0,.2,1);
+    overflow: hidden;
+  }
+  .drawer.open { transform: translateX(0); }
+
+  .drawer-header {
+    background: linear-gradient(135deg, #356ae6 0%, #1a3fa8 100%);
+    color: #fff; padding: 14px 18px; display: flex; align-items: flex-start; gap: 10px;
+    flex-shrink: 0;
+  }
+  .drawer-title { flex: 1; }
+  .drawer-title h2 { font-size: .95rem; font-weight: 700; line-height: 1.3; margin-bottom: 4px; }
+  .drawer-title .drawer-meta { font-size: .75rem; opacity: .85; display: flex; gap: 10px; flex-wrap: wrap; }
+  .drawer-close {
+    background: rgba(255,255,255,.15); border: none; color: #fff; border-radius: 6px;
+    width: 28px; height: 28px; font-size: 1rem; cursor: pointer; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  .drawer-close:hover { background: rgba(255,255,255,.28); }
+  .drawer-ac-link {
+    font-size: .72rem; background: rgba(255,255,255,.15); color: #fff;
+    padding: 3px 9px; border-radius: 5px; text-decoration: none; white-space: nowrap;
+    align-self: center;
+  }
+  .drawer-ac-link:hover { background: rgba(255,255,255,.28); }
+
+  .drawer-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+
+  .drawer-section { margin-bottom: 18px; }
+  .drawer-section-title {
+    font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+    color: #6b7280; margin-bottom: 8px; padding-bottom: 5px;
+    border-bottom: 1px solid #f0f0f0;
+  }
+
+  .drawer-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+  .drawer-field { }
+  .drawer-field-label { font-size: .65rem; color: #9ca3af; text-transform: uppercase; letter-spacing: .4px; }
+  .drawer-field-value { font-size: .82rem; font-weight: 600; color: #111827; margin-top: 1px; }
+
+  .slp-card {
+    border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; background: #fafafa;
+  }
+  .slp-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .slp-platform { font-weight: 700; font-size: .85rem; color: #111827; }
+  .slp-status-pill {
+    font-size: .68rem; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+    white-space: nowrap;
+  }
+  .pill-activated { background: #d1fae5; color: #065f46; }
+  .pill-deactivated { background: #fee2e2; color: #b91c1c; }
+  .pill-pending { background: #fef3c7; color: #92400e; }
+  .pill-other { background: #e5e7eb; color: #374151; }
+  .slp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; font-size: .75rem; color: #6b7280; }
+  .slp-fields span { color: #374151; }
+
+  .contact-row {
+    display: flex; align-items: center; gap: 10px; padding: 7px 0;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .contact-row:last-child { border-bottom: none; }
+  .contact-avatar {
+    width: 30px; height: 30px; border-radius: 50%; background: #e0e7ff;
+    color: #4f46e5; font-size: .75rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .contact-name { font-weight: 600; font-size: .82rem; color: #111827; }
+  .contact-sub { font-size: .72rem; color: #6b7280; }
+  .contact-ac-link { margin-left: auto; font-size: .72rem; color: #356ae6; text-decoration: none; flex-shrink: 0; }
+  .contact-ac-link:hover { text-decoration: underline; }
+
+  .note-row { padding: 7px 0; border-bottom: 1px solid #f3f4f6; font-size: .8rem; }
+  .note-row:last-child { border-bottom: none; }
+  .note-date { font-size: .68rem; color: #9ca3af; margin-bottom: 2px; }
+  .note-text { color: #374151; white-space: pre-wrap; word-break: break-word; }
+
+  .drawer-empty { text-align: center; color: #9ca3af; font-size: .82rem; padding: 12px 0; }
+  .drawer-loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .drawer-loading .spin {
+    display: inline-block; width: 24px; height: 24px; margin-bottom: 10px;
+    border: 3px solid #e5e7eb; border-top-color: #356ae6;
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+
+  tr[data-id] { cursor: pointer; }
+  tr[data-id]:hover td { filter: brightness(.97); }
+  tr[data-id].drawer-active td { background: #eff6ff !important; }
 </style>
 </head>
 <body>
@@ -141,6 +242,22 @@
   <h1>📊 AM Activity Dashboard</h1>
   <a class="apps-btn" href="/">⬡ Apps</a>
 </header>
+
+<!-- Drawer overlay + panel -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-header" id="drawer-header">
+    <div class="drawer-title">
+      <h2 id="drawer-name">Loading…</h2>
+      <div class="drawer-meta" id="drawer-meta"></div>
+    </div>
+    <a id="drawer-ac-link" href="#" target="_blank" class="drawer-ac-link">Open in AC ↗</a>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body">
+    <div class="drawer-loading"><div class="spin"></div><br>Loading account…</div>
+  </div>
+</div>
 
 <div class="container">
 
@@ -393,8 +510,8 @@ function renderTable(rows) {
       : `<span class="lc-loading"><span class="lc-spin"></span></span>`;
     const lcBadge    = _lcLoaded ? daysBadge(lcDays, !!lcDate) : '';
     const lcTypeCell = _lcLoaded ? (lcType ? esc(lcType) : '<span class="days-na">—</span>') : '';
-    return `<tr class="${cls}" data-id="${a.id}">
-      <td class="acct-name" title="${esc(a.name)}"><a href="${acUrl}" target="_blank">${esc(a.name)}</a></td>
+    return `<tr class="${cls}" data-id="${a.id}" onclick="openDrawer('${a.id}', this)">
+      <td class="acct-name" title="${esc(a.name)}">${esc(a.name)}</td>
       <td>${esc(a.owner_name || '—')}</td>
       <td class="tag-region">${esc(a.region || '—')}</td>
       <td class="tag-channel">${esc(a.channel || '—')}</td>
@@ -597,6 +714,134 @@ function esc(s) {
 
 document.getElementById('f-region').addEventListener('change', applyFiltersAndRender);
 document.getElementById('f-sort').addEventListener('change', applyFiltersAndRender);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+
+// ── Drawer ────────────────────────────────────────────────────────────────────
+let _drawerActiveId = null;
+
+function openDrawer(accountId, rowEl) {
+  // Highlight row
+  document.querySelectorAll('tr.drawer-active').forEach(r => r.classList.remove('drawer-active'));
+  if (rowEl) rowEl.classList.add('drawer-active');
+
+  _drawerActiveId = accountId;
+  const acUrl = `https://microf.activehosted.com/app/accounts/${accountId}`;
+  document.getElementById('drawer-ac-link').href = acUrl;
+  document.getElementById('drawer-name').textContent = 'Loading…';
+  document.getElementById('drawer-meta').innerHTML = '';
+  document.getElementById('drawer-body').innerHTML = `<div class="drawer-loading"><div class="spin"></div><br>Loading account…</div>`;
+
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+
+  fetch(`/api/accounts/${accountId}/detail`)
+    .then(r => r.json())
+    .then(data => { if (_drawerActiveId === accountId) renderDrawer(data); })
+    .catch(e => {
+      if (_drawerActiveId === accountId)
+        document.getElementById('drawer-body').innerHTML = `<div class="drawer-empty" style="color:#dc2626;">Error: ${esc(e.message)}</div>`;
+    });
+}
+
+function closeDrawer() {
+  document.getElementById('drawer-overlay').classList.remove('open');
+  document.getElementById('drawer').classList.remove('open');
+  document.querySelectorAll('tr.drawer-active').forEach(r => r.classList.remove('drawer-active'));
+  _drawerActiveId = null;
+}
+
+function renderDrawer(data) {
+  const acct  = data.account || {};
+  const slps  = data.slps   || [];
+  const contacts = data.contacts || [];
+  const notes = data.notes  || [];
+  const fields = acct.fields || {};
+
+  // Header
+  document.getElementById('drawer-name').textContent = acct.name || '—';
+  const meta = [];
+  if (fields['Sales Region'])    meta.push(`📍 ${fields['Sales Region']}`);
+  if (fields['Parent Dealer ID']) meta.push(`🆔 ${fields['Parent Dealer ID']}`);
+  if (acct.owner_name)           meta.push(`👤 ${acct.owner_name}`);
+  document.getElementById('drawer-meta').innerHTML = meta.map(m => `<span>${esc(m)}</span>`).join('');
+
+  // Key fields section
+  const keyFields = ['Account Type','Sales Region','Parent Dealer ID','Assigned BDR',
+                     'Account Status','Strategic Partners','Account Activation Date'];
+  const fieldRows = keyFields
+    .filter(k => fields[k])
+    .map(k => `<div class="drawer-field">
+      <div class="drawer-field-label">${esc(k)}</div>
+      <div class="drawer-field-value">${esc(fields[k])}</div>
+    </div>`).join('');
+
+  // SLPs
+  const slpHtml = slps.length ? slps.map(s => {
+    const status  = s['slp-status-detail'] || '';
+    const channel = s['channel'] || s['platform'] || '—';
+    const actDate = (s['contractor-activated-date'] || '').slice(0,10);
+    const pillCls = status.toLowerCase().includes('activated') ? 'pill-activated'
+                  : status.toLowerCase().includes('deactivat') ? 'pill-deactivated'
+                  : status.toLowerCase().includes('pending') || status.toLowerCase().includes('progress') ? 'pill-pending'
+                  : 'pill-other';
+    return `<div class="slp-card">
+      <div class="slp-card-top">
+        <span class="slp-platform">${esc(channel)}</span>
+        <span class="slp-status-pill ${pillCls}">${esc(status || 'No Status')}</span>
+      </div>
+      <div class="slp-fields">
+        ${actDate ? `Activated: <span>${esc(actDate)}</span>` : ''}
+        ${s['dealer-id'] ? `Dealer ID: <span>${esc(s['dealer-id'])}</span>` : ''}
+        ${s['assigned-bdr'] ? `BDR: <span>${esc(s['assigned-bdr'])}</span>` : ''}
+        ${s['oracle-producer-ids'] ? `Oracle IDs: <span>${esc(s['oracle-producer-ids'].split(',').length + ' IDs')}</span>` : ''}
+      </div>
+    </div>`;
+  }).join('') : `<div class="drawer-empty">No SLPs found</div>`;
+
+  // Contacts
+  const contactHtml = contacts.length ? contacts.map(c => {
+    const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(no name)';
+    const initials = [c.firstName?.[0], c.lastName?.[0]].filter(Boolean).join('').toUpperCase() || '?';
+    const acContactUrl = `https://microf.activehosted.com/app/contacts/${c.id}`;
+    return `<div class="contact-row">
+      <div class="contact-avatar">${esc(initials)}</div>
+      <div>
+        <div class="contact-name">${esc(name)}</div>
+        <div class="contact-sub">${esc(c.email || '')}${c.phone ? (c.email ? ' · ' : '') + esc(c.phone) : ''}</div>
+      </div>
+      <a href="${acContactUrl}" target="_blank" class="contact-ac-link">AC ↗</a>
+    </div>`;
+  }).join('') : `<div class="drawer-empty">No contacts linked</div>`;
+
+  // Notes
+  const notesData = data.notes || [];
+  const notesHtml = notesData.length ? notesData.slice(0,8).map(n => {
+    const d = (n.cdate || '').slice(0,10);
+    return `<div class="note-row">
+      <div class="note-date">${esc(d)}</div>
+      <div class="note-text">${esc(n.note || '')}</div>
+    </div>`;
+  }).join('') : `<div class="drawer-empty">No recent notes</div>`;
+
+  document.getElementById('drawer-body').innerHTML = `
+    ${fieldRows ? `<div class="drawer-section">
+      <div class="drawer-section-title">Account Details</div>
+      <div class="drawer-fields">${fieldRows}</div>
+    </div>` : ''}
+    <div class="drawer-section">
+      <div class="drawer-section-title">SLPs (${slps.length})</div>
+      ${slpHtml}
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Contacts (${contacts.length})</div>
+      ${contactHtml}
+    </div>
+    <div class="drawer-section">
+      <div class="drawer-section-title">Recent Notes</div>
+      ${notesHtml}
+    </div>
+  `;
+}
 </script>
 </body>
 </html>
