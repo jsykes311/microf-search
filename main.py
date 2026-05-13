@@ -358,6 +358,7 @@ async def _startup():
     asyncio.create_task(_build_location_index())
     asyncio.create_task(_slp_cache_loop())  # waits 60s then fetches, avoiding rate-limit race
     asyncio.create_task(_lc_cache_loop())   # waits 120s then builds last-contacted cache
+    asyncio.create_task(_ta_cache_loop())   # waits 180s then caches raw notes+activity for team report
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -1037,6 +1038,38 @@ async def _lc_cache_loop() -> None:
         except Exception as e:
             print(f"[lc-cache] loop error: {e}")
         await asyncio.sleep(_LC_CACHE_TTL)
+
+# ─── Team Activity raw-data cache ────────────────────────────────────────────
+_ta_cache: dict  = {}
+_ta_cache_ts: float = 0.0
+_TA_CACHE_TTL = 900   # 15 minutes
+
+async def _refresh_ta_cache() -> None:
+    global _ta_cache, _ta_cache_ts
+    print("[ta-cache] refreshing…")
+    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+        ac_get("users"),
+        ac_get_all("notes", "notes", {}),
+        ac_get_all("contacts", "contacts", {}),
+        ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
+    )
+    _ta_cache = {
+        "users_data":    users_data,
+        "all_notes_raw": all_notes_raw,
+        "all_contacts":  all_contacts,
+        "all_activity":  all_activity,
+    }
+    _ta_cache_ts = _time.time()
+    print(f"[ta-cache] done — {len(all_notes_raw)} notes, {len(all_activity)} activities, {len(all_contacts)} contacts")
+
+async def _ta_cache_loop() -> None:
+    await asyncio.sleep(180)   # stagger after other startup tasks
+    while True:
+        try:
+            await _refresh_ta_cache()
+        except Exception as e:
+            print(f"[ta-cache] loop error: {e}")
+        await asyncio.sleep(_TA_CACHE_TTL)
 
 async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
@@ -2917,12 +2950,20 @@ async def team_activity_report(
     from datetime import timezone
     print("\nTeam activity report...")
 
-    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
-        ac_get("users"),
-        ac_get_all("notes", "notes", {}),
-        ac_get_all("contacts", "contacts", {}),
-        ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
-    )
+    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
+        users_data    = _ta_cache["users_data"]
+        all_notes_raw = _ta_cache["all_notes_raw"]
+        all_contacts  = _ta_cache["all_contacts"]
+        all_activity  = _ta_cache["all_activity"]
+        print("[ta-cache] using cached data")
+    else:
+        print("[ta-cache] cache miss — fetching fresh")
+        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+            ac_get("users"),
+            ac_get_all("notes", "notes", {}),
+            ac_get_all("contacts", "contacts", {}),
+            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
+        )
 
     # Build user map: userid → display name
     users: dict = {}
