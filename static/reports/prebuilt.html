@@ -307,9 +307,75 @@ tbody tr:hover td { background: #f9fafb; }
   color: var(--text4);
   font-size: 0.9rem;
 }
+
+/* ── Team Performance Drawers ── */
+#tp-overlay,#tp-acct-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;opacity:0;pointer-events:none;transition:opacity .25s;}
+#tp-overlay.tp-active,#tp-acct-overlay.tp-active{opacity:1;pointer-events:all;}
+#tp-drawer,#tp-acct-drawer{position:fixed;top:0;right:0;height:100%;overflow-y:auto;z-index:1001;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);}
+#tp-drawer.tp-active,#tp-acct-drawer.tp-active{transform:translateX(0);}
+#tp-drawer{width:min(540px,96vw);background:#fff;}
+#tp-acct-drawer{width:min(500px,96vw);background:#fff;z-index:1002;}
+.tp-dh{padding:18px 20px 14px;color:#fff;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+#tp-drawer .tp-dh{background:linear-gradient(135deg,#5b21b6,#7c3aed);}
+#tp-acct-drawer .tp-dh{background:linear-gradient(135deg,#1d4ed8,#2563eb);}
+.tp-dh-info{flex:1;min-width:0;}
+.tp-dh-name{font-size:1.15rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tp-dh-meta{font-size:.78rem;opacity:.85;margin-top:3px;}
+.tp-close{background:rgba(255,255,255,.2);border:none;color:#fff;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:1rem;line-height:28px;text-align:center;flex-shrink:0;transition:background .15s;}
+.tp-close:hover{background:rgba(255,255,255,.35);}
+.tp-body{padding:16px;}
+.tp-sec-title{font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#6b7280;margin:14px 0 6px;}
+.tp-acct-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .15s;}
+.tp-acct-row:hover{background:#f3f4f6;}
+.tp-acct-name{flex:1;font-size:.88rem;font-weight:500;color:#111;}
+.tp-acct-ch{font-size:.72rem;color:#6b7280;}
+.tp-badge{display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;font-size:.68rem;font-weight:700;min-width:22px;height:20px;padding:0 5px;}
+.tp-badge-n{background:#ede9fe;color:#5b21b6;}
+.tp-badge-a{background:#dbeafe;color:#1d4ed8;}
+.tp-field-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-bottom:8px;}
+.tp-field{display:flex;flex-direction:column;}
+.tp-field-label{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;}
+.tp-field-val{font-size:.85rem;color:#111;margin-top:1px;}
+.tp-slp-card{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:6px;}
+.tp-slp-title{font-size:.85rem;font-weight:600;color:#111;display:flex;align-items:center;gap:7px;}
+.tp-pill{display:inline-block;padding:1px 8px;border-radius:9999px;font-size:.68rem;font-weight:600;}
+.tp-pill-green{background:#d1fae5;color:#065f46;}
+.tp-pill-red{background:#fee2e2;color:#991b1b;}
+.tp-pill-amber{background:#fef3c7;color:#92400e;}
+.tp-contact-row{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid #f3f4f6;}
+.tp-contact-row:last-child{border-bottom:none;}
+.tp-avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0;}
+.tp-note-row{padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:.82rem;color:#374151;}
+.tp-note-row:last-child{border-bottom:none;}
+.tp-note-date{font-size:.72rem;color:#9ca3af;margin-top:2px;}
+.tp-empty{font-size:.82rem;color:#9ca3af;padding:8px 0;}
 </style>
 </head>
 <body>
+
+<!-- Team Performance drawers -->
+<div id="tp-overlay" onclick="tpCloseDrawer()"></div>
+<div id="tp-drawer">
+  <div class="tp-dh">
+    <div class="tp-dh-info">
+      <div class="tp-dh-name" id="tp-dh-name">—</div>
+      <div class="tp-dh-meta" id="tp-dh-meta"></div>
+    </div>
+    <button class="tp-close" onclick="tpCloseDrawer()">✕</button>
+  </div>
+  <div class="tp-body" id="tp-body"></div>
+</div>
+<div id="tp-acct-overlay" onclick="tpCloseAcct()"></div>
+<div id="tp-acct-drawer">
+  <div class="tp-dh">
+    <div class="tp-dh-info">
+      <div class="tp-dh-name" id="tp-acct-name">—</div>
+      <div class="tp-dh-meta" id="tp-acct-meta"></div>
+    </div>
+    <button class="tp-close" onclick="tpCloseAcct()">✕</button>
+  </div>
+  <div class="tp-body" id="tp-acct-body"></div>
+</div>
 
 <div class="page-header">
   <a class="back-btn" href="/" onclick="if(history.length>1){history.back();return false;}">← Back</a>
@@ -1074,8 +1140,8 @@ function renderTeam(data) {
         <th>Name</th><th style="text-align:right;">Notes</th><th style="text-align:right;">Activities</th>
         <th style="text-align:right;">Total</th><th style="text-align:right;">Accounts</th><th>Last Active</th>
       </tr></thead>
-      <tbody>${records.map(r => `<tr>
-        <td style="font-weight:500;">${esc(r.user_name)}</td>
+      <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}',this)" style="cursor:pointer;">
+        <td style="font-weight:500;color:#5b21b6;text-decoration:underline;">${esc(r.user_name)}</td>
         <td style="text-align:right;">${r.notes_written}</td>
         <td style="text-align:right;">${r.activities_logged}</td>
         <td style="text-align:right;font-weight:600;">${r.total_actions}</td>
@@ -1089,6 +1155,162 @@ function renderTeam(data) {
   }
   document.getElementById('custom-render').innerHTML = html;
   card.style.display = 'block';
+}
+
+/* ── Team Performance Drawers ─────────────────────────────────────── */
+function esc2(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
+
+async function tpOpenDrawer(userName, rowEl) {
+  document.querySelectorAll('[data-tp-row]').forEach(r=>r.classList.remove('tp-active-row'));
+  rowEl?.closest('tr')?.classList.add('tp-active-row');
+  const overlay = document.getElementById('tp-overlay');
+  const drawer  = document.getElementById('tp-drawer');
+  document.getElementById('tp-dh-name').textContent = userName;
+  document.getElementById('tp-dh-meta').textContent = 'Loading…';
+  document.getElementById('tp-body').innerHTML = '<div class="tp-empty">Loading…</div>';
+  overlay.classList.add('tp-active');
+  drawer.classList.add('tp-active');
+  document.addEventListener('keydown', tpEscHandler);
+  await tpRenderDrawer(userName);
+}
+
+function tpCloseDrawer() {
+  document.getElementById('tp-overlay').classList.remove('tp-active');
+  document.getElementById('tp-drawer').classList.remove('tp-active');
+  document.querySelectorAll('[data-tp-row]').forEach(r=>r.classList.remove('tp-active-row'));
+  document.removeEventListener('keydown', tpEscHandler);
+  tpCloseAcct();
+}
+
+function tpEscHandler(e){ if(e.key==='Escape') tpCloseDrawer(); }
+
+async function tpRenderDrawer(userName) {
+  const params = new URLSearchParams();
+  params.set('user_name', userName);
+  // Pass current date filters if set
+  const fromEl = document.getElementById('from'), toEl = document.getElementById('to');
+  if (fromEl?.value) params.set('from_date', fromEl.value);
+  if (toEl?.value)   params.set('to_date',   toEl.value);
+  // Try period-based dates if no explicit dates
+  const periodSel = document.getElementById('period-select');
+  if (periodSel?.value && !fromEl?.value && !toEl?.value) {
+    const now = new Date();
+    if (periodSel.value === 'this_month') {
+      params.set('from_date', `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`);
+    } else if (periodSel.value === 'last_month') {
+      const lm = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      params.set('from_date', `${lm.getFullYear()}-${String(lm.getMonth()+1).padStart(2,'0')}-01`);
+      const le = new Date(now.getFullYear(), now.getMonth(), 0);
+      params.set('to_date', `${le.getFullYear()}-${String(le.getMonth()+1).padStart(2,'0')}-${String(le.getDate()).padStart(2,'0')}`);
+    }
+  }
+  let accts = [];
+  try {
+    const res = await fetch(`/api/report/team-activity/breakdown?${params}`);
+    const json = await res.json();
+    accts = json.accounts || [];
+  } catch(e) {
+    document.getElementById('tp-body').innerHTML = '<div class="tp-empty">Error loading data.</div>';
+    return;
+  }
+  document.getElementById('tp-dh-meta').textContent = `${accts.length} account${accts.length!==1?'s':''} touched`;
+  if (!accts.length) {
+    document.getElementById('tp-body').innerHTML = '<div class="tp-empty">No accounts found for this period.</div>';
+    return;
+  }
+  let html = '<div class="tp-sec-title">Accounts Touched</div>';
+  accts.forEach(a => {
+    const nb = a.notes > 0    ? `<span class="tp-badge tp-badge-n" title="Notes">${a.notes}</span>` : '';
+    const ab = a.activities > 0 ? `<span class="tp-badge tp-badge-a" title="Activities">${a.activities}</span>` : '';
+    html += `<div class="tp-acct-row" onclick="tpOpenAcct('${esc2(a.account_id)}','${esc2(a.account_name)}')">
+      <div class="tp-acct-name">${esc2(a.account_name)}</div>
+      <div style="display:flex;gap:4px;align-items:center;">${nb}${ab}</div>
+    </div>`;
+  });
+  document.getElementById('tp-body').innerHTML = html;
+}
+
+async function tpOpenAcct(accountId, accountName) {
+  const overlay = document.getElementById('tp-acct-overlay');
+  const drawer  = document.getElementById('tp-acct-drawer');
+  document.getElementById('tp-acct-name').textContent = accountName;
+  document.getElementById('tp-acct-meta').textContent = 'Loading…';
+  document.getElementById('tp-acct-body').innerHTML = '<div class="tp-empty">Loading…</div>';
+  overlay.classList.add('tp-active');
+  drawer.classList.add('tp-active');
+  await tpRenderAcct(accountId);
+}
+
+function tpCloseAcct() {
+  document.getElementById('tp-acct-overlay').classList.remove('tp-active');
+  document.getElementById('tp-acct-drawer').classList.remove('tp-active');
+}
+
+async function tpRenderAcct(accountId) {
+  let data = {};
+  try {
+    const res = await fetch(`/api/account-detail/${accountId}`);
+    data = await res.json();
+  } catch(e) {
+    document.getElementById('tp-acct-body').innerHTML = '<div class="tp-empty">Error loading account.</div>';
+    return;
+  }
+  const acUrl = `https://microf.activehosted.com/app/accounts/${accountId}`;
+  const acLink = `<a href="${acUrl}" target="_blank" style="font-size:.75rem;color:#fff;opacity:.8;text-decoration:none;">Open in AC ↗</a>`;
+  document.getElementById('tp-acct-meta').innerHTML = acLink;
+
+  const fields = data.fields || {};
+  const slps   = data.slps   || [];
+  const contacts = data.contacts || [];
+  const notes  = data.notes  || [];
+
+  const fv = (k) => fields[k] || '—';
+  let html = `<div class="tp-sec-title">Account Details</div>
+  <div class="tp-field-grid">
+    <div class="tp-field"><span class="tp-field-label">Type</span><span class="tp-field-val">${esc2(fv('type'))}</span></div>
+    <div class="tp-field"><span class="tp-field-label">Region</span><span class="tp-field-val">${esc2(fv('region'))}</span></div>
+    <div class="tp-field"><span class="tp-field-label">Dealer ID</span><span class="tp-field-val">${esc2(fv('dealer_id'))}</span></div>
+    <div class="tp-field"><span class="tp-field-label">BDR</span><span class="tp-field-val">${esc2(fv('bdr'))}</span></div>
+    <div class="tp-field"><span class="tp-field-label">Owner</span><span class="tp-field-val">${esc2(fv('owner'))}</span></div>
+    <div class="tp-field"><span class="tp-field-label">State</span><span class="tp-field-val">${esc2(fv('state'))}</span></div>
+  </div>`;
+
+  if (slps.length) {
+    html += `<div class="tp-sec-title">SLPs (${slps.length})</div>`;
+    slps.forEach(s => {
+      const st = (s.status||'').toLowerCase();
+      const pillCls = st.includes('activated') ? 'tp-pill-green' : st.includes('deactivated')||st.includes('declined') ? 'tp-pill-red' : 'tp-pill-amber';
+      html += `<div class="tp-slp-card">
+        <div class="tp-slp-title">${esc2(s.platform||'Unknown')} <span class="tp-pill ${pillCls}">${esc2(s.status||'Unknown')}</span></div>
+        ${s.activation_date ? `<div style="font-size:.75rem;color:#6b7280;margin-top:4px;">Activated: ${esc2(s.activation_date)}</div>` : ''}
+      </div>`;
+    });
+  }
+
+  if (contacts.length) {
+    html += `<div class="tp-sec-title">Contacts (${contacts.length})</div>`;
+    contacts.forEach(c => {
+      const initials = ((c.first||'').charAt(0)+(c.last||'').charAt(0)).toUpperCase()||'?';
+      const cUrl = `https://microf.activehosted.com/app/contacts/${c.id}`;
+      html += `<div class="tp-contact-row">
+        <div class="tp-avatar">${esc2(initials)}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:.85rem;font-weight:500;">${esc2((c.first||'')+' '+(c.last||''))}</div>
+          ${c.email ? `<div style="font-size:.75rem;color:#6b7280;">${esc2(c.email)}</div>` : ''}
+        </div>
+        <a href="${cUrl}" target="_blank" style="font-size:.72rem;color:#2563eb;text-decoration:none;">AC ↗</a>
+      </div>`;
+    });
+  }
+
+  if (notes.length) {
+    html += `<div class="tp-sec-title">Recent Notes</div>`;
+    notes.slice(0,5).forEach(n => {
+      html += `<div class="tp-note-row">${esc2(n.note||n.body||'')}<div class="tp-note-date">${esc2(n.cdate||n.date||'')}</div></div>`;
+    });
+  }
+
+  document.getElementById('tp-acct-body').innerHTML = html;
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
