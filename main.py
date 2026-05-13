@@ -92,7 +92,7 @@ _SMTP_FROM  = os.getenv("SMTP_FROM_NAME", "Microf Reports")
 _RECIPIENTS = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") if r.strip()]
 
 # ── Admin / Scheduler ─────────────────────────────────────────────────────
-_ADMIN_EMAILS       = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL",       "jsykes@microf.com,bsanders@microf.com,parnold@microf.com").split(",") if e.strip()}
+_ADMIN_EMAILS       = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL",       "jsykes@microf.com,bsanders@microf.com,parnold@microf.com,lfutrell@microf.com").split(",") if e.strip()}
 _SALES_ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("SALES_ADMIN_EMAIL", "parnold@microf.com").split(",") if e.strip()}
 _CONTRACTOR_SUPPORT_EMAILS = {e.strip().lower() for e in os.getenv("CONTRACTOR_SUPPORT_EMAIL", "elove@microf.com,cristian.perez@microf.com,rlugo@microf.com").split(",") if e.strip()}
 _ONBOARDING_EMAILS  = {e.strip().lower() for e in os.getenv("ONBOARDING_EMAIL",  "tbillings@microf.com,cristian.perez@microf.com,elove@microf.com").split(",") if e.strip()}
