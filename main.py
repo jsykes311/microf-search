@@ -3059,6 +3059,128 @@ async def team_activity_report(
     return {"count": len(user_rows), "records": user_rows, "unmatched_activity": unmatched}
 
 
+@app.get("/api/report/team-activity/breakdown")
+async def team_activity_breakdown(
+    user_name:  str           = Query(..., description="Display name of the user"),
+    from_date:  Optional[str] = Query(None),
+    to_date:    Optional[str] = Query(None),
+    _: None = Depends(require_auth),
+):
+    """Per-account breakdown for a single user in the given date range."""
+    from datetime import timezone
+
+    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+        ac_get("users"),
+        ac_get_all("notes", "notes", {}),
+        ac_get_all("contacts", "contacts", {}),
+        ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
+    )
+
+    # Build user map and find target uid(s)
+    users: dict = {}
+    for u in (users_data.get("users", []) if isinstance(users_data, dict) else []):
+        uid  = str(u.get("id", ""))
+        name = f"{u.get('firstName','').strip()} {u.get('lastName','').strip()}".strip()
+        users[uid] = name or u.get("email", f"User {uid}")
+
+    target_uids = {uid for uid, name in users.items() if name == user_name}
+
+    def match_user(val: str) -> Optional[str]:
+        if not val: return None
+        v = val.strip().lower()
+        for uid, name in users.items():
+            if name.lower() == v: return uid
+        if len(v) == 2 and v.isalpha():
+            for uid, name in users.items():
+                parts = name.split()
+                if len(parts) >= 2 and parts[0][:1].lower() == v[0] and parts[-1][:1].lower() == v[1]:
+                    return uid
+        for uid, name in users.items():
+            parts = name.split()
+            if parts and parts[0].lower() == v: return uid
+            if v in name.lower(): return uid
+        return None
+
+    contact_to_account: dict = {}
+    for c in all_contacts:
+        cid = str(c.get("id", ""))
+        aid = str(c.get("account", "") or "")
+        if aid and aid != "0":
+            contact_to_account[cid] = aid
+
+    from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if from_date else None)
+    to_dt   = (datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None)
+    from_d  = from_dt.date() if from_dt else None
+    to_d    = to_dt.date()   if to_dt   else None
+
+    # account_id → {notes, activities, latest_date}
+    acct_stats: dict = defaultdict(lambda: {"notes": 0, "activities": 0, "latest_date": ""})
+
+    for n in all_notes_raw:
+        reltype = (n.get("reltype") or "").lower()
+        if reltype not in ("contact", "customeraccount", "deal"):
+            continue
+        uid = str(n.get("userid", "") or "")
+        if uid not in target_uids:
+            continue
+        raw_date = n.get("cdate", "")
+        if from_dt or to_dt:
+            try:
+                nd = (datetime.fromisoformat(raw_date.replace("Z", "+00:00")) if "T" in raw_date
+                      else datetime.strptime(raw_date[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc))
+                if from_dt and nd < from_dt: continue
+                if to_dt   and nd > to_dt:   continue
+            except Exception:
+                continue
+        cid = str(n.get("rel_id", "") or "")
+        aid = contact_to_account.get(cid, "")
+        if not aid:
+            continue
+        s = acct_stats[aid]
+        s["notes"] += 1
+        if raw_date > s["latest_date"]: s["latest_date"] = raw_date
+
+    for r in all_activity:
+        fmap      = {f["id"]: f.get("value") for f in r.get("fields", [])}
+        act_date  = (fmap.get("activity-date") or "")[:10]
+        performed = (fmap.get("performed-by")  or "").strip()
+        account_id = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
+        if not account_id:
+            continue
+        if act_date and (from_d or to_d):
+            try:
+                ad = datetime.strptime(act_date, "%Y-%m-%d").date()
+                if from_d and ad < from_d: continue
+                if to_d   and ad > to_d:   continue
+            except Exception:
+                pass
+        matched_uid = match_user(performed)
+        if not matched_uid:
+            matched_uid = _account_to_owner.get(account_id)
+        if matched_uid not in target_uids:
+            continue
+        s = acct_stats[account_id]
+        s["activities"] += 1
+        if act_date and act_date > s["latest_date"][:10]:
+            s["latest_date"] = act_date
+
+    accounts = []
+    for aid, s in acct_stats.items():
+        accounts.append({
+            "account_id":    aid,
+            "account_name":  _account_to_name.get(aid, f"Account {aid}"),
+            "channel":       _account_to_platform.get(aid, ""),
+            "region":        _account_to_region.get(aid, ""),
+            "notes":         s["notes"],
+            "activities":    s["activities"],
+            "total":         s["notes"] + s["activities"],
+            "latest_date":   s["latest_date"][:10] if s["latest_date"] else "",
+        })
+    accounts.sort(key=lambda x: (-x["total"], x["account_name"]))
+
+    return {"user_name": user_name, "accounts": accounts, "total_accounts": len(accounts)}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ACCOUNT BROWSER
 # ═══════════════════════════════════════════════════════════════════════════

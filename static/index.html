@@ -799,9 +799,96 @@ select, input { font-family: inherit; }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ── Team Performance drill-down drawer ── */
+#tp-overlay {
+  position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:900;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+}
+#tp-overlay.open{opacity:1;pointer-events:all;}
+#tp-drawer {
+  position:fixed;top:0;right:0;bottom:0;width:520px;max-width:96vw;
+  background:#fff;z-index:901;box-shadow:-4px 0 24px rgba(0,0,0,.15);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);
+}
+#tp-drawer.open{transform:translateX(0);}
+.tp-drawer-hdr {
+  background:linear-gradient(135deg,#7c3aed 0%,#4f46e5 100%);
+  color:#fff;padding:14px 18px;display:flex;align-items:flex-start;gap:10px;flex-shrink:0;
+}
+.tp-drawer-hdr h2{font-size:.95rem;font-weight:700;flex:1;line-height:1.3;}
+.tp-drawer-hdr .tp-meta{font-size:.75rem;opacity:.85;margin-top:3px;}
+.tp-close-btn {
+  background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;
+  width:28px;height:28px;font-size:1rem;cursor:pointer;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+}
+.tp-close-btn:hover{background:rgba(255,255,255,.28);}
+#tp-drawer-body{flex:1;overflow-y:auto;padding:0;}
+.tp-acct-row {
+  display:flex;align-items:center;gap:10px;padding:9px 18px;
+  border-bottom:1px solid #f3f4f6;cursor:pointer;
+}
+.tp-acct-row:hover{background:#f8f8ff;}
+.tp-acct-row:last-child{border-bottom:none;}
+.tp-acct-name{font-weight:600;font-size:.83rem;color:#111827;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tp-acct-sub{font-size:.72rem;color:#6b7280;margin-top:1px;}
+.tp-acct-badges{display:flex;gap:5px;flex-shrink:0;}
+.tp-badge{font-size:.7rem;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap;}
+.tp-badge-note{background:#ede9fe;color:#5b21b6;}
+.tp-badge-act{background:#dbeafe;color:#1e40af;}
+.tp-badge-date{font-size:.7rem;color:#9ca3af;white-space:nowrap;flex-shrink:0;}
+.tp-loading{text-align:center;padding:48px 24px;color:#9ca3af;}
+.tp-loading .tp-spin{display:inline-block;width:22px;height:22px;margin-bottom:10px;border:3px solid #e5e7eb;border-top-color:#7c3aed;border-radius:50%;animation:tp-spin .7s linear infinite;}
+@keyframes tp-spin{to{transform:rotate(360deg);}}
+.tp-section-hdr{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;padding:10px 18px 6px;background:#f8f9fb;border-bottom:1px solid #e8eaed;}
+/* account sub-drawer */
+#tp-acct-overlay{position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:1000;opacity:0;pointer-events:none;transition:opacity .15s;}
+#tp-acct-overlay.open{opacity:1;pointer-events:all;}
+#tp-acct-drawer{
+  position:fixed;top:0;right:0;bottom:0;width:480px;max-width:96vw;
+  background:#fff;z-index:1001;box-shadow:-4px 0 24px rgba(0,0,0,.2);
+  display:flex;flex-direction:column;
+  transform:translateX(100%);transition:transform .2s cubic-bezier(.4,0,.2,1);
+}
+#tp-acct-drawer.open{transform:translateX(0);}
+tr.tp-active td{background:#faf5ff !important;}
+tr[data-tp-row]{cursor:pointer;}
+tr[data-tp-row]:hover td{filter:brightness(.97);}
+</style>
 </head>
 <body>
 <div class="app-shell">
+
+<!-- Team Performance user drawer -->
+<div id="tp-overlay" onclick="tpCloseDrawer()"></div>
+<div id="tp-drawer">
+  <div class="tp-drawer-hdr">
+    <div style="flex:1;">
+      <h2 id="tp-drawer-name">Loading…</h2>
+      <div class="tp-meta" id="tp-drawer-meta"></div>
+    </div>
+    <button class="tp-close-btn" onclick="tpCloseDrawer()">✕</button>
+  </div>
+  <div id="tp-drawer-body"><div class="tp-loading"><div class="tp-spin"></div><br>Loading…</div></div>
+</div>
+
+<!-- Account detail sub-drawer (reuses am-activity drawer styles via inline) -->
+<div id="tp-acct-overlay" onclick="tpCloseAcct()"></div>
+<div id="tp-acct-drawer">
+  <div style="background:linear-gradient(135deg,#356ae6 0%,#1a3fa8 100%);color:#fff;padding:14px 18px;display:flex;align-items:flex-start;gap:10px;flex-shrink:0;">
+    <div style="flex:1;">
+      <div id="tp-acct-name" style="font-size:.95rem;font-weight:700;line-height:1.3;margin-bottom:4px;">Loading…</div>
+      <div id="tp-acct-meta" style="font-size:.75rem;opacity:.85;display:flex;gap:10px;flex-wrap:wrap;"></div>
+    </div>
+    <a id="tp-acct-ac-link" href="#" target="_blank" style="font-size:.72rem;background:rgba(255,255,255,.15);color:#fff;padding:3px 9px;border-radius:5px;text-decoration:none;white-space:nowrap;align-self:center;">Open in AC ↗</a>
+    <button onclick="tpCloseAcct()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;width:28px;height:28px;font-size:1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">✕</button>
+  </div>
+  <div id="tp-acct-body" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:.83rem;color:#374151;">
+    <div class="tp-loading"><div class="tp-spin"></div><br>Loading account…</div>
+  </div>
+</div>
 
 <!-- Left sidebar nav -->
 <div class="app-nav">
@@ -3007,8 +3094,8 @@ async function runPrebuilt(type) {
             <th style="padding:4px 8px;text-align:right;">Accounts</th>
             <th style="padding:4px 8px;">Last Active</th>
           </tr></thead>
-          <tbody>${records.map(r => `<tr>
-            <td style="padding:4px 8px;font-weight:500;">${esc(r.user_name)}</td>
+          <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}', this)">
+            <td style="padding:4px 8px;font-weight:500;color:#5b21b6;text-decoration:underline;cursor:pointer;">${esc(r.user_name)}</td>
             <td style="padding:4px 8px;text-align:right;">${r.notes_written}</td>
             <td style="padding:4px 8px;text-align:right;">${r.activities_logged}</td>
             <td style="padding:4px 8px;text-align:right;font-weight:600;">${r.total_actions}</td>
@@ -4749,6 +4836,179 @@ async function optimusReactConfirm(recordIds) {
     cs.textContent = '✕ ' + e.message;
   }
 }
+
+// ── Team Performance Drawer ────────────────────────────────────────────────
+let _tpFromDate = '', _tpToDate = '', _tpActiveUser = null;
+
+function tpOpenDrawer(userName, rowEl) {
+  document.querySelectorAll('tr.tp-active').forEach(r => r.classList.remove('tp-active'));
+  if (rowEl) rowEl.classList.add('tp-active');
+
+  _tpActiveUser = userName;
+  _tpFromDate   = document.getElementById('team-from')?.value || '';
+  _tpToDate     = document.getElementById('team-to')?.value   || '';
+
+  document.getElementById('tp-drawer-name').textContent = userName;
+  document.getElementById('tp-drawer-meta').textContent = [
+    _tpFromDate ? `From: ${_tpFromDate}` : '',
+    _tpToDate   ? `To: ${_tpToDate}`     : '',
+  ].filter(Boolean).join('  ·  ') || 'All time';
+  document.getElementById('tp-drawer-body').innerHTML = '<div class="tp-loading"><div class="tp-spin"></div><br>Loading…</div>';
+  document.getElementById('tp-overlay').classList.add('open');
+  document.getElementById('tp-drawer').classList.add('open');
+
+  const params = new URLSearchParams({ user_name: userName });
+  if (_tpFromDate) params.set('from_date', _tpFromDate);
+  if (_tpToDate)   params.set('to_date',   _tpToDate);
+
+  fetch(`/api/report/team-activity/breakdown?${params}`)
+    .then(r => r.json())
+    .then(data => { if (_tpActiveUser === userName) tpRenderDrawer(data); })
+    .catch(e  => {
+      if (_tpActiveUser === userName)
+        document.getElementById('tp-drawer-body').innerHTML = `<div style="padding:24px;color:#dc2626;">Error: ${esc(e.message)}</div>`;
+    });
+}
+
+function tpCloseDrawer() {
+  document.getElementById('tp-overlay').classList.remove('open');
+  document.getElementById('tp-drawer').classList.remove('open');
+  document.querySelectorAll('tr.tp-active').forEach(r => r.classList.remove('tp-active'));
+  _tpActiveUser = null;
+  tpCloseAcct();
+}
+
+function tpRenderDrawer(data) {
+  const accounts = data.accounts || [];
+  document.getElementById('tp-drawer-meta').textContent =
+    [
+      _tpFromDate ? `From: ${_tpFromDate}` : '',
+      _tpToDate   ? `To: ${_tpToDate}`     : '',
+    ].filter(Boolean).join('  ·  ') + `  ·  ${accounts.length} accounts`;
+
+  if (!accounts.length) {
+    document.getElementById('tp-drawer-body').innerHTML = '<div style="padding:32px;text-align:center;color:#9ca3af;">No account activity found in this period.</div>';
+    return;
+  }
+
+  const rows = accounts.map(a => `
+    <div class="tp-acct-row" onclick="tpOpenAcct('${a.account_id}', ${JSON.stringify(a.account_name).replace(/'/g,"\\'")})" >
+      <div style="flex:1;min-width:0;">
+        <div class="tp-acct-name" title="${esc(a.account_name)}">${esc(a.account_name)}</div>
+        <div class="tp-acct-sub">${[a.channel, a.region].filter(Boolean).join(' · ') || '—'}</div>
+      </div>
+      <div class="tp-acct-badges">
+        ${a.notes     ? `<span class="tp-badge tp-badge-note">${a.notes}N</span>` : ''}
+        ${a.activities ? `<span class="tp-badge tp-badge-act">${a.activities}A</span>` : ''}
+      </div>
+      <div class="tp-badge-date">${esc(a.latest_date || '')}</div>
+      <div style="color:#9ca3af;font-size:.8rem;margin-left:4px;">›</div>
+    </div>`).join('');
+
+  document.getElementById('tp-drawer-body').innerHTML =
+    `<div class="tp-section-hdr">Accounts Touched (${accounts.length}) — click to drill in</div>${rows}`;
+}
+
+// ── Account sub-drawer ─────────────────────────────────────────────────────
+let _tpAcctActive = null;
+
+function tpOpenAcct(accountId, accountName) {
+  _tpAcctActive = accountId;
+  document.getElementById('tp-acct-name').textContent = accountName || 'Loading…';
+  document.getElementById('tp-acct-meta').innerHTML   = '';
+  document.getElementById('tp-acct-ac-link').href     = `https://microf.activehosted.com/app/accounts/${accountId}`;
+  document.getElementById('tp-acct-body').innerHTML   = '<div class="tp-loading"><div class="tp-spin"></div><br>Loading account…</div>';
+  document.getElementById('tp-acct-overlay').classList.add('open');
+  document.getElementById('tp-acct-drawer').classList.add('open');
+
+  fetch(`/api/accounts/${accountId}/detail`)
+    .then(r => r.json())
+    .then(data => { if (_tpAcctActive === accountId) tpRenderAcct(data); })
+    .catch(e  => {
+      if (_tpAcctActive === accountId)
+        document.getElementById('tp-acct-body').innerHTML = `<div style="padding:24px;color:#dc2626;">Error: ${esc(e.message)}</div>`;
+    });
+}
+
+function tpCloseAcct() {
+  document.getElementById('tp-acct-overlay').classList.remove('open');
+  document.getElementById('tp-acct-drawer').classList.remove('open');
+  _tpAcctActive = null;
+}
+
+function tpRenderAcct(data) {
+  const acct     = data.account  || {};
+  const slps     = data.slps     || [];
+  const contacts = data.contacts || [];
+  const notes    = data.notes    || [];
+  const fields   = acct.fields   || {};
+
+  // Header meta
+  const meta = [];
+  if (fields['Sales Region'])     meta.push(`📍 ${fields['Sales Region']}`);
+  if (fields['Parent Dealer ID']) meta.push(`🆔 ${fields['Parent Dealer ID']}`);
+  document.getElementById('tp-acct-name').textContent = acct.name || '—';
+  document.getElementById('tp-acct-meta').innerHTML   = meta.map(m => `<span>${esc(m)}</span>`).join('');
+
+  // Key fields
+  const keyFields = ['Account Type','Sales Region','Parent Dealer ID','Assigned BDR','Account Status','Strategic Partners'];
+  const fieldHtml = keyFields.filter(k => fields[k]).map(k =>
+    `<div style="margin-bottom:6px;"><div style="font-size:.65rem;color:#9ca3af;text-transform:uppercase;">${esc(k)}</div>
+     <div style="font-size:.82rem;font-weight:600;">${esc(fields[k])}</div></div>`).join('');
+
+  // SLPs
+  const slpHtml = slps.length ? slps.map(s => {
+    const status  = s['slp-status-detail'] || '';
+    const channel = s['channel'] || s['platform'] || '—';
+    const actDate = (s['contractor-activated-date'] || '').slice(0,10);
+    const pillColor = status.toLowerCase().includes('activated') ? '#d1fae5;color:#065f46'
+                    : status.toLowerCase().includes('deactivat') ? '#fee2e2;color:#b91c1c'
+                    : '#fef3c7;color:#92400e';
+    return `<div style="border:1px solid #e5e7eb;border-radius:7px;padding:8px 10px;margin-bottom:6px;background:#fafafa;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-weight:700;font-size:.83rem;">${esc(channel)}</span>
+        <span style="font-size:.68rem;font-weight:700;padding:2px 7px;border-radius:99px;background:${pillColor};">${esc(status||'No Status')}</span>
+      </div>
+      <div style="font-size:.74rem;color:#6b7280;">${actDate ? `Activated: ${esc(actDate)}` : ''}</div>
+    </div>`;
+  }).join('') : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No SLPs found</div>';
+
+  // Contacts
+  const contactHtml = contacts.length ? contacts.map(c => {
+    const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(no name)';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;">
+      <div style="flex:1;">
+        <div style="font-weight:600;font-size:.82rem;">${esc(name)}</div>
+        <div style="font-size:.72rem;color:#6b7280;">${esc(c.email||'')}${c.phone?(c.email?' · ':'')+esc(c.phone):''}</div>
+      </div>
+      <a href="https://microf.activehosted.com/app/contacts/${c.id}" target="_blank" style="font-size:.72rem;color:#356ae6;text-decoration:none;">AC ↗</a>
+    </div>`;
+  }).join('') : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No contacts linked</div>';
+
+  // Recent notes
+  const notesHtml = notes.length ? notes.slice(0,6).map(n =>
+    `<div style="padding:6px 0;border-bottom:1px solid #f3f4f6;">
+      <div style="font-size:.68rem;color:#9ca3af;">${esc((n.cdate||'').slice(0,10))}</div>
+      <div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(n.note||'')}</div>
+    </div>`).join('')
+    : '<div style="color:#9ca3af;font-size:.82rem;padding:4px 0;">No recent notes</div>';
+
+  const section = (title, content) =>
+    `<div style="margin-bottom:16px;">
+      <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid #f0f0f0;">${title}</div>
+      ${content}
+    </div>`;
+
+  document.getElementById('tp-acct-body').innerHTML =
+    (fieldHtml ? section('Account Details', `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">${fieldHtml}</div>`) : '') +
+    section(`SLPs (${slps.length})`, slpHtml) +
+    section(`Contacts (${contacts.length})`, contactHtml) +
+    section('Recent Notes', notesHtml);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { tpCloseAcct() || tpCloseDrawer(); }
+});
 
 </script>
 </body>
