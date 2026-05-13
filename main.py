@@ -3309,7 +3309,7 @@ async def team_activity_account_detail(
                 if to_dt   and nd > to_dt:   continue
             except Exception:
                 continue
-        cid = str(n.get("rel_id", "") or "")
+        cid = str(n.get("relid") or n.get("rel_id") or "")
         if reltype == "customeraccount":
             note_aid = cid
         else:
@@ -3346,8 +3346,9 @@ async def team_activity_account_detail(
             continue
         activities_out.append({
             "id":          r.get("id"),
-            "type":        fmap.get("activity-type", ""),
-            "description": (fmap.get("activity-description") or fmap.get("notes") or ""),
+            "type":        fmap.get("activity-type", "") or fmap.get("subject", ""),
+            "description": (fmap.get("body") or fmap.get("activity-description") or ""),
+            "name":        fmap.get("name", ""),
             "date":        act_date,
             "performed_by": performed,
         })

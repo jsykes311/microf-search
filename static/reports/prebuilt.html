@@ -1291,12 +1291,14 @@ async function tpRenderAcct(accountId, userName) {
   if (activities.length) {
     html += `<div class="tp-sec-title">Logged Activities (${activities.length})</div>`;
     activities.forEach(a => {
+      const title = a.name || a.type || '';
       html += card(`
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${a.description?'6px':'0'};">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${(a.description||title)?'5px':'0'};">
           ${a.type ? `<span style="font-size:.7rem;font-weight:700;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;">${esc2(a.type)}</span>` : ''}
           <span style="font-size:.72rem;color:#9ca3af;">${esc2(a.date)}</span>
         </div>
-        ${a.description ? `<div style="font-size:.85rem;color:#111;white-space:pre-wrap;word-break:break-word;">${esc2(a.description)}</div>` : ''}`);
+        ${title && title !== a.type ? `<div style="font-size:.83rem;font-weight:600;color:#111;margin-bottom:4px;">${esc2(title)}</div>` : ''}
+        ${a.description ? `<div style="font-size:.85rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc2(a.description)}</div>` : ''}`);
     });
   }
 

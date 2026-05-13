@@ -4963,13 +4963,17 @@ function tpRenderAcct(data) {
 
   if (activities.length) {
     html += sectionHdr(`Logged Activities (${activities.length})`);
-    html += activities.map(a => card(`
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:${a.description ? '6px' : '0'};">
-        ${a.type ? `<span style="font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1d4ed8;">${esc(a.type)}</span>` : ''}
-        <span style="font-size:.68rem;color:#9ca3af;">${esc(a.date)}</span>
-      </div>
-      ${a.description ? `<div style="font-size:.82rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(a.description)}</div>` : ''}
-    `)).join('');
+    html += activities.map(a => {
+      const title = a.name || a.type || '';
+      return card(`
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px;">
+          ${a.type ? `<span style="font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1d4ed8;">${esc(a.type)}</span>` : ''}
+          <span style="font-size:.68rem;color:#9ca3af;">${esc(a.date)}</span>
+        </div>
+        ${title && title !== a.type ? `<div style="font-size:.82rem;font-weight:600;color:#111;margin-bottom:4px;">${esc(title)}</div>` : ''}
+        ${a.description ? `<div style="font-size:.82rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(a.description)}</div>` : ''}
+      `);
+    }).join('');
   }
 
   if (notes.length) {
