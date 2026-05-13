@@ -2940,6 +2940,24 @@ async def account_activity_report(
 # PRE-BUILT REPORT: TEAM ACTIVITY / PERFORMANCE
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _extract_performer(fmap: dict) -> str:
+    """Return the performer name from an activity record.
+
+    Tries `performed-by` first; if empty, parses the `name` field which
+    often has the pattern 'Call — Warren Neely' or 'Email — Amanda Jones'.
+    """
+    performed = (fmap.get("performed-by") or "").strip()
+    if performed:
+        return performed
+    name = (fmap.get("name") or "").strip()
+    for sep in (" — ", " – ", " - "):   # em-dash, en-dash, hyphen
+        if sep in name:
+            candidate = name.split(sep, 1)[1].strip()
+            if candidate:
+                return candidate
+    return ""
+
+
 @app.get("/api/report/team-activity")
 async def team_activity_report(
     from_date: Optional[str] = Query(None, description="YYYY-MM-DD"),
@@ -3041,7 +3059,7 @@ async def team_activity_report(
     for r in all_activity:
         fmap      = {f["id"]: f.get("value") for f in r.get("fields", [])}
         act_date  = (fmap.get("activity-date") or "")[:10]
-        performed = (fmap.get("performed-by")  or "").strip()
+        performed = _extract_performer(fmap)
         account_id = next(iter(r.get("relationships", {}).get("account", [])), "")
 
         if act_date and (from_d or to_d):
@@ -3190,7 +3208,7 @@ async def team_activity_breakdown(
     for r in all_activity:
         fmap      = {f["id"]: f.get("value") for f in r.get("fields", [])}
         act_date  = (fmap.get("activity-date") or "")[:10]
-        performed = (fmap.get("performed-by")  or "").strip()
+        performed = _extract_performer(fmap)
         account_id = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
         if not account_id:
             continue
@@ -3328,7 +3346,7 @@ async def team_activity_account_detail(
     for r in all_activity:
         fmap       = {f["id"]: f.get("value") for f in r.get("fields", [])}
         act_date   = (fmap.get("activity-date") or "")[:10]
-        performed  = (fmap.get("performed-by")  or "").strip()
+        performed  = _extract_performer(fmap)
         rec_aid    = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
         if rec_aid != account_id:
             continue
