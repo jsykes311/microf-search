@@ -3289,6 +3289,9 @@ async def team_activity_account_detail(
     from_d  = from_dt.date() if from_dt else None
     to_d    = to_dt.date()   if to_dt   else None
 
+    # Contacts that belong to this account
+    account_contact_ids = [cid for cid, aid in contact_to_account.items() if aid == account_id]
+
     notes_out = []
     for n in all_notes_raw:
         reltype = (n.get("reltype") or "").lower()
@@ -3307,7 +3310,6 @@ async def team_activity_account_detail(
             except Exception:
                 continue
         cid = str(n.get("rel_id", "") or "")
-        # Resolve note to account
         if reltype == "customeraccount":
             note_aid = cid
         else:
@@ -3316,8 +3318,9 @@ async def team_activity_account_detail(
             continue
         notes_out.append({
             "id":   n.get("id"),
-            "note": (n.get("note") or "")[:500],
+            "note": (n.get("note") or ""),
             "date": raw_date[:10] if raw_date else "",
+            "contact_id": cid if reltype != "customeraccount" else None,
         })
     notes_out.sort(key=lambda x: x["date"], reverse=True)
 
@@ -3344,18 +3347,66 @@ async def team_activity_account_detail(
         activities_out.append({
             "id":          r.get("id"),
             "type":        fmap.get("activity-type", ""),
-            "description": (fmap.get("activity-description") or fmap.get("notes") or "")[:500],
+            "description": (fmap.get("activity-description") or fmap.get("notes") or ""),
             "date":        act_date,
             "performed_by": performed,
         })
     activities_out.sort(key=lambda x: x["date"], reverse=True)
 
+    # ── Contact email activity logs (activityLogs per contact) ───────────────
+    EMAIL_TYPES = {"send", "sms", "call", "reply", "forward"}
+
+    async def _fetch_contact_logs(cid: str) -> list:
+        try:
+            data = await ac_get(f"contacts/{cid}/activityLogs", {"limit": 100})
+            return data.get("contactActivities", [])
+        except Exception:
+            return []
+
+    # Fetch concurrently for all contacts on this account (cap at 20 contacts)
+    sem = asyncio.Semaphore(10)
+    async def _fetch_with_sem(cid):
+        async with sem:
+            return await _fetch_contact_logs(cid)
+
+    logs_nested = await asyncio.gather(*[_fetch_with_sem(c) for c in account_contact_ids[:20]])
+    all_logs = [log for logs in logs_nested for log in logs]
+
+    emails_out = []
+    contact_email_map = {str(c.get("id", "")): c.get("email", "") for c in all_contacts}
+    for log in all_logs:
+        a_type  = (log.get("type") or "").lower()
+        if a_type not in EMAIL_TYPES:
+            continue
+        ts = log.get("tstamp") or log.get("cdate") or ""
+        log_date = ts[:10] if ts else ""
+        if log_date and (from_d or to_d):
+            try:
+                ld = datetime.strptime(log_date, "%Y-%m-%d").date()
+                if from_d and ld < from_d: continue
+                if to_d   and ld > to_d:   continue
+            except Exception:
+                pass
+        cid = str(log.get("contact", "") or "")
+        subject = (log.get("subject") or
+                   (log.get("campaign", {}).get("name", "") if isinstance(log.get("campaign"), dict) else "") or
+                   "")
+        emails_out.append({
+            "type":       a_type,
+            "label":      ACTIVITY_LABELS.get(a_type, a_type.title()),
+            "subject":    subject,
+            "date":       log_date,
+            "contact_email": contact_email_map.get(cid, ""),
+        })
+    emails_out.sort(key=lambda x: x["date"], reverse=True)
+
     return {
-        "user_name":   user_name,
-        "account_id":  account_id,
+        "user_name":    user_name,
+        "account_id":   account_id,
         "account_name": _account_to_name.get(account_id, f"Account {account_id}"),
-        "notes":       notes_out,
-        "activities":  activities_out,
+        "notes":        notes_out,
+        "activities":   activities_out,
+        "emails":       emails_out,
     }
 
 

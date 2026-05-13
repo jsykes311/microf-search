@@ -1278,29 +1278,48 @@ async function tpRenderAcct(accountId, userName) {
 
   const notes      = data.notes      || [];
   const activities = data.activities || [];
+  const emails     = data.emails     || [];
   let html = '';
 
-  if (!notes.length && !activities.length) {
-    html = '<div class="tp-empty">No notes or activities found for this period.</div>';
+  if (!notes.length && !activities.length && !emails.length) {
+    html = '<div class="tp-empty">No notes, activities, or emails found for this period.</div>';
   }
 
+  const card = (body) =>
+    `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px;">${body}</div>`;
+
   if (activities.length) {
-    html += `<div class="tp-sec-title">Activities (${activities.length})</div>`;
+    html += `<div class="tp-sec-title">Logged Activities (${activities.length})</div>`;
     activities.forEach(a => {
-      html += `<div class="tp-note-row">
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-          ${a.type ? `<span style="font-size:.72rem;font-weight:600;background:#dbeafe;color:#1d4ed8;padding:1px 7px;border-radius:9999px;">${esc2(a.type)}</span>` : ''}
-          <span class="tp-note-date" style="margin:0;">${esc2(a.date)}</span>
+      html += card(`
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${a.description?'6px':'0'};">
+          ${a.type ? `<span style="font-size:.7rem;font-weight:700;background:#dbeafe;color:#1d4ed8;padding:2px 8px;border-radius:9999px;">${esc2(a.type)}</span>` : ''}
+          <span style="font-size:.72rem;color:#9ca3af;">${esc2(a.date)}</span>
         </div>
-        ${a.description ? `<div>${esc2(a.description)}</div>` : ''}
-      </div>`;
+        ${a.description ? `<div style="font-size:.85rem;color:#111;white-space:pre-wrap;word-break:break-word;">${esc2(a.description)}</div>` : ''}`);
     });
   }
 
   if (notes.length) {
     html += `<div class="tp-sec-title">Notes (${notes.length})</div>`;
     notes.forEach(n => {
-      html += `<div class="tp-note-row">${esc2(n.note)}<div class="tp-note-date">${esc2(n.date)}</div></div>`;
+      html += card(`
+        <div style="font-size:.72rem;color:#9ca3af;margin-bottom:5px;">${esc2(n.date)}</div>
+        <div style="font-size:.85rem;color:#111;white-space:pre-wrap;word-break:break-word;">${esc2(n.note)}</div>`);
+    });
+  }
+
+  if (emails.length) {
+    html += `<div class="tp-sec-title">Contact Email Activity (${emails.length})</div>`;
+    emails.forEach(e => {
+      const labelColor = e.type === 'send' ? 'background:#d1fae5;color:#065f46' : 'background:#f3f4f6;color:#374151';
+      html += card(`
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:${e.subject?'5px':'0'};">
+          <span style="font-size:.7rem;font-weight:700;${labelColor};padding:2px 8px;border-radius:9999px;">${esc2(e.label)}</span>
+          <span style="font-size:.72rem;color:#9ca3af;">${esc2(e.date)}</span>
+          ${e.contact_email ? `<span style="font-size:.72rem;color:#6b7280;margin-left:auto;">${esc2(e.contact_email)}</span>` : ''}
+        </div>
+        ${e.subject ? `<div style="font-size:.83rem;color:#111;">${esc2(e.subject)}</div>` : ''}`);
     });
   }
 

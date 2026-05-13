@@ -4945,39 +4945,59 @@ function tpCloseAcct() {
 function tpRenderAcct(data) {
   const notes      = data.notes      || [];
   const activities = data.activities || [];
+  const emails     = data.emails     || [];
 
-  const section = (title, content) =>
-    `<div style="margin-bottom:16px;">
-      <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid #f0f0f0;">${title}</div>
-      ${content}
-    </div>`;
-
-  if (!notes.length && !activities.length) {
+  if (!notes.length && !activities.length && !emails.length) {
     document.getElementById('tp-acct-body').innerHTML =
-      '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:.88rem;">No notes or activities found for this period.</div>';
+      '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:.88rem;">No notes, activities, or emails found for this period.</div>';
     return;
   }
 
-  const actHtml = activities.length ? activities.map(a =>
-    `<div style="padding:7px 0;border-bottom:1px solid #f3f4f6;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
-        ${a.type ? `<span style="font-size:.68rem;font-weight:700;padding:1px 7px;border-radius:99px;background:#dbeafe;color:#1d4ed8;">${esc(a.type)}</span>` : ''}
+  const sectionHdr = (title) =>
+    `<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#6b7280;margin:14px 0 7px;padding-bottom:4px;border-bottom:1px solid #f0f0f0;">${title}</div>`;
+
+  const card = (body) =>
+    `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px;">${body}</div>`;
+
+  let html = '';
+
+  if (activities.length) {
+    html += sectionHdr(`Logged Activities (${activities.length})`);
+    html += activities.map(a => card(`
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:${a.description ? '6px' : '0'};">
+        ${a.type ? `<span style="font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:99px;background:#dbeafe;color:#1d4ed8;">${esc(a.type)}</span>` : ''}
         <span style="font-size:.68rem;color:#9ca3af;">${esc(a.date)}</span>
       </div>
-      ${a.description ? `<div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(a.description)}</div>` : ''}
-    </div>`).join('')
-    : '';
+      ${a.description ? `<div style="font-size:.82rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(a.description)}</div>` : ''}
+    `)).join('');
+  }
 
-  const notesHtml = notes.length ? notes.map(n =>
-    `<div style="padding:7px 0;border-bottom:1px solid #f3f4f6;">
-      <div style="font-size:.68rem;color:#9ca3af;">${esc(n.date)}</div>
-      <div style="font-size:.79rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(n.note)}</div>
-    </div>`).join('')
-    : '';
+  if (notes.length) {
+    html += sectionHdr(`Notes (${notes.length})`);
+    html += notes.map(n => card(`
+      <div style="font-size:.68rem;color:#9ca3af;margin-bottom:5px;">${esc(n.date)}</div>
+      <div style="font-size:.82rem;color:#374151;white-space:pre-wrap;word-break:break-word;">${esc(n.note)}</div>
+    `)).join('');
+  }
 
-  document.getElementById('tp-acct-body').innerHTML =
-    (activities.length ? section(`Activities (${activities.length})`, actHtml) : '') +
-    (notes.length      ? section(`Notes (${notes.length})`,           notesHtml) : '');
+  if (emails.length) {
+    html += sectionHdr(`Contact Email Activity (${emails.length})`);
+    html += emails.map(e => {
+      const labelStyle = e.type === 'send'
+        ? 'background:#d1fae5;color:#065f46'
+        : 'background:#f3f4f6;color:#374151';
+      return card(`
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:${e.subject ? '5px' : '0'};">
+          <span style="font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:99px;${labelStyle};">${esc(e.label)}</span>
+          <span style="font-size:.68rem;color:#9ca3af;">${esc(e.date)}</span>
+          ${e.contact_email ? `<span style="font-size:.68rem;color:#6b7280;margin-left:auto;">${esc(e.contact_email)}</span>` : ''}
+        </div>
+        ${e.subject ? `<div style="font-size:.82rem;color:#374151;">${esc(e.subject)}</div>` : ''}
+      `);
+    }).join('');
+  }
+
+  document.getElementById('tp-acct-body').innerHTML = html;
 }
 
 document.addEventListener('keydown', e => {
