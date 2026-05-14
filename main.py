@@ -3047,7 +3047,7 @@ async def team_activity_report(
                 continue
         uid = str(n.get("userid", "") or "")
         if not uid: continue
-        cid = str(n.get("rel_id", "") or "")
+        cid = str(n.get("relid") or n.get("rel_id") or "")
         aid = contact_to_account.get(cid, "")
         s   = user_stats[uid]
         s["notes"] += 1
@@ -3197,7 +3197,7 @@ async def team_activity_breakdown(
                 if to_dt   and nd > to_dt:   continue
             except Exception:
                 continue
-        cid = str(n.get("rel_id", "") or "")
+        cid = str(n.get("relid") or n.get("rel_id") or "")
         aid = contact_to_account.get(cid, "")
         if not aid:
             continue
