@@ -229,7 +229,7 @@ def require_auth(request: _Request):
 class _MSAuthMiddleware(BaseHTTPMiddleware):
     """Block unauthenticated requests. Redirects pages → /login, 401s for APIs."""
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
-               "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
+               "/api/health", "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
                "/api/accounts/nearest", "/api/accounts/by-state",
                "/webhook/deal-created", "/webhook/debug-sp", "/webhook/reset-sp-file"}
 
@@ -8875,12 +8875,25 @@ async def parent_child_report(
 
 @app.get("/api/health")
 async def health_check():
-    cache_age = round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None
+    accounts_ok  = len(_account_to_name) > 0
+    slp_ok       = len(_slp_cache_records) > 0
+    lc_ok        = bool(_lc_cache)
+    ta_ok        = bool(_ta_cache)
+
+    if accounts_ok and slp_ok and lc_ok and ta_ok:
+        status = "online"
+    elif accounts_ok or slp_ok:
+        status = "warming"
+    else:
+        status = "warming"   # server is up but indexes empty = still starting
+
     return {
-        "status":               "ok",
-        "accounts_indexed":     len(_account_to_name),
-        "slp_cache_count":      len(_slp_cache_records),
-        "slp_cache_age_seconds": cache_age,
+        "status":                status,
+        "accounts_indexed":      len(_account_to_name),
+        "slp_cache_count":       len(_slp_cache_records),
+        "slp_cache_age_seconds": round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None,
+        "lc_cache_loaded":       lc_ok,
+        "ta_cache_loaded":       ta_ok,
     }
 
 
