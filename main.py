@@ -1053,14 +1053,54 @@ async def _refresh_ta_cache() -> None:
         ac_get_all("contacts", "contacts", {}),
         ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
     )
+
+    # Pre-process contacts into two lightweight dicts instead of storing
+    # the full contact objects (100K+ contacts × ~2KB each = ~200MB saved).
+    contact_to_account: dict = {}
+    contact_email_map:  dict = {}
+    for c in all_contacts:
+        cid = str(c.get("id", ""))
+        aid = str(c.get("account", "") or "")
+        if aid and aid != "0":
+            contact_to_account[cid] = aid
+        email = c.get("email", "")
+        if email:
+            contact_email_map[cid] = email
+
+    # Slim notes — keep only fields used by the team report endpoints.
+    slim_notes = [
+        {
+            "id":      n.get("id"),
+            "userid":  n.get("userid"),
+            "relid":   n.get("relid") or n.get("rel_id"),
+            "reltype": n.get("reltype"),
+            "cdate":   n.get("cdate"),
+            "note":    n.get("note") or "",
+        }
+        for n in all_notes_raw
+        if (n.get("reltype") or "").lower() in ("contact", "customeraccount", "deal")
+    ]
+
+    # Slim activity records — drop unused nested fields.
+    slim_activity = [
+        {
+            "id":            r.get("id"),
+            "fields":        {f["id"]: f.get("value") for f in r.get("fields", [])},
+            "account":       next(iter(r.get("relationships", {}).get("account", [])), ""),
+        }
+        for r in all_activity
+    ]
+
     _ta_cache = {
-        "users_data":    users_data,
-        "all_notes_raw": all_notes_raw,
-        "all_contacts":  all_contacts,
-        "all_activity":  all_activity,
+        "users_data":         users_data,
+        "all_notes_raw":      slim_notes,
+        "contact_to_account": contact_to_account,
+        "contact_email_map":  contact_email_map,
+        "all_activity":       slim_activity,
     }
     _ta_cache_ts = _time.time()
-    print(f"[ta-cache] done — {len(all_notes_raw)} notes, {len(all_activity)} activities, {len(all_contacts)} contacts")
+    print(f"[ta-cache] done — {len(slim_notes)} notes, {len(slim_activity)} activities, "
+          f"{len(contact_to_account)} contact→account mappings (dropped raw contacts)")
 
 async def _ta_cache_loop() -> None:
     await asyncio.sleep(180)   # stagger after other startup tasks
@@ -2969,19 +3009,29 @@ async def team_activity_report(
     print("\nTeam activity report...")
 
     if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data    = _ta_cache["users_data"]
-        all_notes_raw = _ta_cache["all_notes_raw"]
-        all_contacts  = _ta_cache["all_contacts"]
-        all_activity  = _ta_cache["all_activity"]
+        users_data         = _ta_cache["users_data"]
+        all_notes_raw      = _ta_cache["all_notes_raw"]
+        contact_to_account = _ta_cache["contact_to_account"]
+        all_activity       = _ta_cache["all_activity"]
         print("[ta-cache] using cached data")
     else:
         print("[ta-cache] cache miss — fetching fresh")
-        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
             ac_get("users"),
             ac_get_all("notes", "notes", {}),
             ac_get_all("contacts", "contacts", {}),
             ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
         )
+        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
+                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
+        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
+                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
+                         for n in all_notes_raw_raw
+                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
+        all_activity = [{"id": r.get("id"),
+                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
+                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
+                        for r in all_activity_raw]
 
     # Build user map: userid → display name
     users: dict = {}
@@ -3008,13 +3058,6 @@ async def team_activity_report(
             if parts and parts[0].lower() == v: return uid
             if v in name.lower(): return uid
         return None
-
-    contact_to_account: dict = {}
-    for c in all_contacts:
-        cid = str(c.get("id", ""))
-        aid = str(c.get("account", "") or "")
-        if aid and aid != "0":
-            contact_to_account[cid] = aid
 
     # account_id → owner user_id — use pre-built startup index (no extra API call)
     account_owner = _account_to_owner
@@ -3058,10 +3101,10 @@ async def team_activity_report(
     # ── Account Activity (performed-by, fuzzy-matched to users) ──────────
     unmatched_activity: dict = defaultdict(int)   # raw performed-by → count
     for r in all_activity:
-        fmap      = {f["id"]: f.get("value") for f in r.get("fields", [])}
-        act_date  = (fmap.get("activity-date") or "")[:10]
-        performed = _extract_performer(fmap)
-        account_id = next(iter(r.get("relationships", {}).get("account", [])), "")
+        fmap       = r["fields"]
+        act_date   = (fmap.get("activity-date") or "")[:10]
+        performed  = _extract_performer(fmap)
+        account_id = str(r.get("account", "") or "")
 
         if from_d or to_d:
             if not act_date:
@@ -3131,17 +3174,27 @@ async def team_activity_breakdown(
     from datetime import timezone
 
     if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data    = _ta_cache["users_data"]
-        all_notes_raw = _ta_cache["all_notes_raw"]
-        all_contacts  = _ta_cache["all_contacts"]
-        all_activity  = _ta_cache["all_activity"]
+        users_data         = _ta_cache["users_data"]
+        all_notes_raw      = _ta_cache["all_notes_raw"]
+        contact_to_account = _ta_cache["contact_to_account"]
+        all_activity       = _ta_cache["all_activity"]
     else:
-        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
             ac_get("users"),
             ac_get_all("notes", "notes", {}),
             ac_get_all("contacts", "contacts", {}),
             ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
         )
+        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
+                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
+        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
+                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
+                         for n in all_notes_raw_raw
+                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
+        all_activity = [{"id": r.get("id"),
+                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
+                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
+                        for r in all_activity_raw]
 
     # Build user map and find target uid(s)
     users: dict = {}
@@ -3167,13 +3220,6 @@ async def team_activity_breakdown(
             if parts and parts[0].lower() == v: return uid
             if v in name.lower(): return uid
         return None
-
-    contact_to_account: dict = {}
-    for c in all_contacts:
-        cid = str(c.get("id", ""))
-        aid = str(c.get("account", "") or "")
-        if aid and aid != "0":
-            contact_to_account[cid] = aid
 
     from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if from_date else None)
     to_dt   = (datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None)
@@ -3212,10 +3258,10 @@ async def team_activity_breakdown(
         if raw_date > s["latest_date"]: s["latest_date"] = raw_date
 
     for r in all_activity:
-        fmap      = {f["id"]: f.get("value") for f in r.get("fields", [])}
-        act_date  = (fmap.get("activity-date") or "")[:10]
-        performed = _extract_performer(fmap)
-        account_id = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
+        fmap       = r["fields"]
+        act_date   = (fmap.get("activity-date") or "")[:10]
+        performed  = _extract_performer(fmap)
+        account_id = str(r.get("account", "") or "")
         if not account_id:
             continue
         if from_d or to_d:
@@ -3266,17 +3312,29 @@ async def team_activity_account_detail(
     from datetime import timezone
 
     if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data    = _ta_cache["users_data"]
-        all_notes_raw = _ta_cache["all_notes_raw"]
-        all_contacts  = _ta_cache["all_contacts"]
-        all_activity  = _ta_cache["all_activity"]
+        users_data         = _ta_cache["users_data"]
+        all_notes_raw      = _ta_cache["all_notes_raw"]
+        contact_to_account = _ta_cache["contact_to_account"]
+        contact_email_map  = _ta_cache["contact_email_map"]
+        all_activity       = _ta_cache["all_activity"]
     else:
-        users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
             ac_get("users"),
             ac_get_all("notes", "notes", {}),
             ac_get_all("contacts", "contacts", {}),
             ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
         )
+        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
+                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
+        contact_email_map  = {str(c.get("id","")): c.get("email","") for c in all_contacts_raw if c.get("email")}
+        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
+                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
+                         for n in all_notes_raw_raw
+                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
+        all_activity = [{"id": r.get("id"),
+                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
+                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
+                        for r in all_activity_raw]
 
     # Build user map and find target UIDs
     users: dict = {}
@@ -3302,13 +3360,6 @@ async def team_activity_account_detail(
             if parts and parts[0].lower() == v: return uid
             if v in name.lower(): return uid
         return None
-
-    contact_to_account: dict = {}
-    for c in all_contacts:
-        cid = str(c.get("id", ""))
-        aid = str(c.get("account", "") or "")
-        if aid and aid != "0":
-            contact_to_account[cid] = aid
 
     from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if from_date else None)
     to_dt   = (datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None)
@@ -3352,10 +3403,10 @@ async def team_activity_account_detail(
 
     activities_out = []
     for r in all_activity:
-        fmap       = {f["id"]: f.get("value") for f in r.get("fields", [])}
+        fmap       = r["fields"]
         act_date   = (fmap.get("activity-date") or "")[:10]
         performed  = _extract_performer(fmap)
-        rec_aid    = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
+        rec_aid    = str(r.get("account", "") or "")
         if rec_aid != account_id:
             continue
         if from_d or to_d:
@@ -3400,7 +3451,6 @@ async def team_activity_account_detail(
     all_logs = [log for logs in logs_nested for log in logs]
 
     emails_out = []
-    contact_email_map = {str(c.get("id", "")): c.get("email", "") for c in all_contacts}
     for log in all_logs:
         a_type  = (log.get("type") or "").lower()
         if a_type not in EMAIL_TYPES:
