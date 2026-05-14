@@ -3048,7 +3048,8 @@ async def team_activity_report(
         uid = str(n.get("userid", "") or "")
         if not uid: continue
         cid = str(n.get("relid") or n.get("rel_id") or "")
-        aid = contact_to_account.get(cid, "")
+        # Account notes use cid as the account ID directly
+        aid = cid if reltype == "customeraccount" else contact_to_account.get(cid, "")
         s   = user_stats[uid]
         s["notes"] += 1
         if aid: s["accounts"].add(aid)
@@ -3062,18 +3063,19 @@ async def team_activity_report(
         performed = _extract_performer(fmap)
         account_id = next(iter(r.get("relationships", {}).get("account", [])), "")
 
-        if act_date and (from_d or to_d):
+        if from_d or to_d:
+            if not act_date:
+                continue   # no date on record — exclude when filtering by date
             try:
                 ad = datetime.strptime(act_date, "%Y-%m-%d").date()
                 if from_d and ad < from_d: continue
                 if to_d   and ad > to_d:   continue
             except Exception:
-                pass
+                continue   # unparseable date — exclude
 
         uid = match_user(performed)
-        if not uid and account_id:
-            # Fall back to the account's owner
-            uid = account_owner.get(account_id)
+        # Removed account-owner fallback: attributing unmatched activities to the
+        # AM inflates their counts and hides activity from non-AM users like admins.
         if uid:
             s = user_stats[uid]
             s["activities"] += 1
@@ -3198,7 +3200,11 @@ async def team_activity_breakdown(
             except Exception:
                 continue
         cid = str(n.get("relid") or n.get("rel_id") or "")
-        aid = contact_to_account.get(cid, "")
+        # Account notes (customeraccount) use cid as the account ID directly
+        if reltype == "customeraccount":
+            aid = cid
+        else:
+            aid = contact_to_account.get(cid, "")
         if not aid:
             continue
         s = acct_stats[aid]
@@ -3212,16 +3218,16 @@ async def team_activity_breakdown(
         account_id = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
         if not account_id:
             continue
-        if act_date and (from_d or to_d):
+        if from_d or to_d:
+            if not act_date:
+                continue
             try:
                 ad = datetime.strptime(act_date, "%Y-%m-%d").date()
                 if from_d and ad < from_d: continue
                 if to_d   and ad > to_d:   continue
             except Exception:
-                pass
+                continue
         matched_uid = match_user(performed)
-        if not matched_uid:
-            matched_uid = _account_to_owner.get(account_id)
         if matched_uid not in target_uids:
             continue
         s = acct_stats[account_id]
@@ -3352,16 +3358,16 @@ async def team_activity_account_detail(
         rec_aid    = str(next(iter(r.get("relationships", {}).get("account", [])), "") or "")
         if rec_aid != account_id:
             continue
-        if act_date and (from_d or to_d):
+        if from_d or to_d:
+            if not act_date:
+                continue
             try:
                 ad = datetime.strptime(act_date, "%Y-%m-%d").date()
                 if from_d and ad < from_d: continue
                 if to_d   and ad > to_d:   continue
             except Exception:
-                pass
+                continue
         matched_uid = match_user(performed)
-        if not matched_uid:
-            matched_uid = _account_to_owner.get(account_id)
         if matched_uid not in target_uids:
             continue
         activities_out.append({
