@@ -8870,26 +8870,24 @@ async def parent_child_report(
 
 @app.get("/api/health")
 async def health_check():
-    accounts_ok  = len(_account_to_name) > 0
-    slp_ok       = len(_slp_cache_records) > 0
-    lc_ok        = bool(_lc_cache)
-    ta_ok        = bool(_ta_cache)
+    from fastapi.responses import JSONResponse
+    accounts_ok = len(_account_to_name) > 0
+    slp_ok      = len(_slp_cache_records) > 0
+    lc_ok       = bool(_lc_cache)
+    ta_ok       = bool(_ta_cache)
+    ready       = accounts_ok and slp_ok and lc_ok and ta_ok
 
-    if accounts_ok and slp_ok and lc_ok and ta_ok:
-        status = "online"
-    elif accounts_ok or slp_ok:
-        status = "warming"
-    else:
-        status = "warming"   # server is up but indexes empty = still starting
-
-    return {
-        "status":                status,
+    payload = {
+        "status":                "online" if ready else "warming",
         "accounts_indexed":      len(_account_to_name),
         "slp_cache_count":       len(_slp_cache_records),
         "slp_cache_age_seconds": round(_time.time() - _slp_cache_ts) if _slp_cache_ts else None,
         "lc_cache_loaded":       lc_ok,
         "ta_cache_loaded":       ta_ok,
     }
+    # Return 503 while warming so Render (and any monitoring tool) sees the
+    # service as not-yet-ready. Once all caches are loaded it flips to 200.
+    return JSONResponse(content=payload, status_code=200 if ready else 503)
 
 
 # ── SLP Cache Refresh ─────────────────────────────────────────────────────────
