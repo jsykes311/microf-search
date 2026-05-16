@@ -845,11 +845,14 @@ CACHE_TTL = 300  # seconds
 _slp_cache_records: list  = []    # list of raw SLP record dicts
 _slp_cache_ts:      float = 0.0   # epoch of last successful refresh
 _slp_cache_lock             = asyncio.Lock()
-_SLP_CACHE_TTL              = 300  # 5 minutes
+_SLP_CACHE_TTL              = 900  # 15 minutes — fetch takes ~1-2 min, no point hammering every 5
 _slp_refreshing:    bool   = False  # True while a refresh is in flight
 
 async def _refresh_slp_cache() -> None:
-    """Fetch ALL SLP records from AC and atomically swap into _slp_cache_records."""
+    """Fetch ALL SLP records from AC and atomically swap into _slp_cache_records.
+    Uses ac_client.fetch_all_slps (sequential, dedup-by-id) — stops as soon as
+    a page adds no new records, avoids the multi-pass overhead that was causing
+    the cache to run almost continuously."""
     global _slp_cache_records, _slp_cache_ts, _slp_refreshing
     async with _slp_cache_lock:
         # Double-check inside the lock — another waiter may have just refreshed
@@ -858,72 +861,18 @@ async def _refresh_slp_cache() -> None:
 
         _slp_refreshing = True
         print("[slp-cache] Refreshing SLP records…")
-
-        temp_records: list = []
-        seen_ids:     set  = set()
-        limit      = 100
-        total      = 0
-        MAX_PASSES = 5   # retry full scans until unique count == total
-
         try:
-            for pass_num in range(1, MAX_PASSES + 1):
-                offset      = 0
-                new_this_pass = 0
-
-                while True:
-                    try:
-                        resp = await ac_get(
-                            f"customObjects/records/{SLP_SCHEMA_ID}",
-                            {"limit": limit, "offset": offset},
-                        )
-                    except Exception as _e:
-                        print(f"[slp-cache] fetch error pass={pass_num} offset={offset}: {_e}")
-                        break
-
-                    batch = resp.get("records", [])
-                    meta  = resp.get("meta", {})
-                    total = int(meta.get("total", 0))
-
-                    # Empty batch = no more pages for this pass
-                    if not batch:
-                        break
-
-                    for r in batch:
-                        rid = str(r.get("id"))
-                        if rid not in seen_ids:
-                            seen_ids.add(rid)
-                            temp_records.append(r)
-                            new_this_pass += 1
-
-                    offset += len(batch)
-                    print(f"[SLP CACHE] pass={pass_num} fetched={len(temp_records)}/{total} offset={offset}")
-
-                print(f"[SLP CACHE] pass={pass_num} complete — unique={len(temp_records)} total={total} new={new_this_pass}")
-
-                # Perfect match — done
-                if total and len(temp_records) >= total:
-                    print(f"[SLP CACHE] ✓ unique count matches total after {pass_num} pass(es)")
-                    break
-
-                # No new records found this pass — AC genuinely has fewer than reported
-                if new_this_pass == 0:
-                    print(f"[SLP CACHE] WARNING: no new records on pass {pass_num}, stopping (AC may have gaps)")
-                    break
-
-                if pass_num < MAX_PASSES:
-                    print(f"[SLP CACHE] {len(temp_records)}/{total} — retrying from offset 0 to catch missed records")
-
-            if total and len(temp_records) < total:
-                print(f"[SLP CACHE] WARNING: final unique={len(temp_records)} vs AC total={total} after {pass_num} passes")
-
-            # Atomic swap — only write if we actually got records
-            print(f"[SLP CACHE FINAL] loaded={len(temp_records)} expected={total}")
+            from ac_client import fetch_all_slps as _fetch_slps
+            temp_records = await _fetch_slps(SLP_SCHEMA_ID)
+            print(f"[slp-cache] fetched {len(temp_records)} records")
             if temp_records:
                 _slp_cache_records = temp_records
                 _slp_cache_ts      = _time.time()
                 _update_app_rpa_from_slp_cache()
             else:
-                print("[SLP CACHE] WARNING: 0 records returned — keeping existing cache, will retry")
+                print("[slp-cache] WARNING: 0 records returned — keeping existing cache, will retry")
+        except Exception as _e:
+            print(f"[slp-cache] fetch failed: {_e}")
         finally:
             _slp_refreshing = False
 
