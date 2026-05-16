@@ -351,14 +351,16 @@ async def dealer_locator_page():
 
 @app.on_event("startup")
 async def _startup():
-    """Kick off background tasks. Index builders run first; SLP cache follows via loop."""
+    """Kick off background tasks.
+    Dealer index runs immediately (uses CF data, no SLP dependency at this stage).
+    SLP-dependent indexes (location, SLP state) are triggered by _slp_cache_loop after
+    the first successful SLP load — avoids a race on the _slp_cache_lock at boot.
+    """
     asyncio.create_task(_build_dealer_id_index())
     asyncio.create_task(_keep_alive())
-    asyncio.create_task(_build_slp_state_index())
-    asyncio.create_task(_build_location_index())
-    asyncio.create_task(_slp_cache_loop())  # waits 60s then fetches, avoiding rate-limit race
-    asyncio.create_task(_lc_cache_loop())   # waits 120s then builds last-contacted cache
-    asyncio.create_task(_ta_cache_loop())   # waits 180s then caches raw notes+activity for team report
+    asyncio.create_task(_slp_cache_loop())  # waits 90s, then fetches SLPs and kicks off location/state indexes
+    asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
+    asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -1114,17 +1116,28 @@ async def _ta_cache_loop() -> None:
             print(f"[ta-cache] loop error: {e}")
         await asyncio.sleep(_TA_CACHE_TTL)
 
+_slp_dependent_indexes_built: bool = False  # True after first post-SLP location/state build
+
 async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
     On failure (0 records), retries every 30s until data is loaded, then
     switches to the normal 5-minute refresh interval.
+    After the first successful SLP load, kicks off the location and SLP-state
+    index builds (which depend on SLP data) so they don't race at startup.
     """
-    await asyncio.sleep(90)   # give index builders a head-start before first fetch
+    global _slp_dependent_indexes_built
+    await asyncio.sleep(90)   # give dealer index a head-start before first SLP fetch
     while True:
         try:
             await _refresh_slp_cache()
         except Exception as _e:
             print(f"[slp-cache] loop error: {_e}")
+        # After first successful SLP load, kick off SLP-dependent index builders once
+        if _slp_cache_records and not _slp_dependent_indexes_built:
+            _slp_dependent_indexes_built = True
+            print("[slp-cache] SLP data ready — triggering location + state index builds")
+            asyncio.create_task(_build_location_index())
+            asyncio.create_task(_build_slp_state_index())
         # If cache is still empty, retry quickly; otherwise use normal TTL
         if _slp_cache_records:
             await asyncio.sleep(_SLP_CACHE_TTL)
@@ -3737,96 +3750,103 @@ async def _build_location_index() -> dict:
         return _location_index
 
     _location_index_building = True
-    # Reuse the shared qualifying-accounts cache (avoids a duplicate SLP fetch)
-    qualifying = await _get_qualifying_microf_accounts()
-
-    # Build channel map directly from SLP records (avoids dependency on
-    # _account_to_platform which may be empty on cold start)
-    slp_raw = await get_slp_cache()
-    acct_to_channel: dict = {}
-    for _r in slp_raw:
-        _flds = {_f.get("field") or _f.get("id"): _f.get("value") for _f in _r.get("fields", [])}
-        _ch = str(_flds.get("channel", "") or "").strip()
-        if not _ch:
-            continue
-        _rel = _r.get("relationships", {}).get("account", [])
-        _a0  = _rel[0] if _rel else None
-        _aid = str(_a0) if isinstance(_a0, (int, str)) else (str(_a0.get("id", "")) if _a0 else None)
-        if _aid and _aid not in acct_to_channel:
-            acct_to_channel[_aid] = _ch
-
-    import math as _math, random
-
-    # zip-level lookup for the small subset of accounts that actually have CF6
-    zip_coords: dict = {}
     try:
-        import pgeocode
-        geo  = pgeocode.Nominatim('us')
-        zips = {(_account_to_zip.get(aid, "") or "")[:5] for aid in qualifying
-                if (_account_to_zip.get(aid, "") or "")[:5].isdigit()}
-        zips.discard("")
-        if zips:
-            result = geo.query_postal_code(list(zips))
-            rows   = result if hasattr(result, 'iterrows') else result.to_frame().T
-            for idx, row in rows.iterrows():
-                try:
-                    lat, lon = float(row['latitude']), float(row['longitude'])
-                    if not (_math.isnan(lat) or _math.isnan(lon)):
-                        zip_coords[str(idx)] = (lat, lon)
-                except Exception:
-                    pass
-    except Exception:
-        pass
+        # Reuse the shared qualifying-accounts cache (avoids a duplicate SLP fetch)
+        qualifying = await _get_qualifying_microf_accounts()
 
-    index: dict = {}
-    for aid in qualifying:
-        z    = (_account_to_zip.get(aid, "") or "")[:5]
-        city = (_account_to_city.get(aid, "") or "").strip()
-        st   = (_account_to_state_prov.get(aid, "") or "").strip().upper()[:2]
+        # Build channel map directly from SLP records (avoids dependency on
+        # _account_to_platform which may be empty on cold start)
+        slp_raw = await get_slp_cache()
+        acct_to_channel: dict = {}
+        for _r in slp_raw:
+            _flds = {_f.get("field") or _f.get("id"): _f.get("value") for _f in _r.get("fields", [])}
+            _ch = str(_flds.get("channel", "") or "").strip()
+            if not _ch:
+                continue
+            _rel = _r.get("relationships", {}).get("account", [])
+            _a0  = _rel[0] if _rel else None
+            _aid = str(_a0) if isinstance(_a0, (int, str)) else (str(_a0.get("id", "")) if _a0 else None)
+            if _aid and _aid not in acct_to_channel:
+                acct_to_channel[_aid] = _ch
 
-        city_key = f"{city.upper()}|{st}"
+        import math as _math, random
 
-        if z in zip_coords:
-            lat, lon  = zip_coords[z]
-            precision = "zip"
-        elif city_key in _CITY_COORDS:
-            lat, lon  = _CITY_COORDS[city_key]
-            precision = "city"
-        elif st in _STATE_CENTROIDS:
-            # Last resort — spread pins randomly across the state
-            clat, clon = _STATE_CENTROIDS[st]
-            lat = clat + random.uniform(-1.0, 1.0)
-            lon = clon + random.uniform(-1.5, 1.5)
-            precision  = "state"
-        else:
-            continue  # no location data at all
+        # zip-level lookup for the small subset of accounts that actually have CF6
+        zip_coords: dict = {}
+        try:
+            import pgeocode
+            geo  = pgeocode.Nominatim('us')
+            zips = {(_account_to_zip.get(aid, "") or "")[:5] for aid in qualifying
+                    if (_account_to_zip.get(aid, "") or "")[:5].isdigit()}
+            zips.discard("")
+            if zips:
+                result = geo.query_postal_code(list(zips))
+                rows   = result if hasattr(result, 'iterrows') else result.to_frame().T
+                for idx, row in rows.iterrows():
+                    try:
+                        lat, lon = float(row['latitude']), float(row['longitude'])
+                        if not (_math.isnan(lat) or _math.isnan(lon)):
+                            zip_coords[str(idx)] = (lat, lon)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
-        index[aid] = {
-            "lat":       round(lat, 5),
-            "lon":       round(lon, 5),
-            "name":      _account_to_name.get(aid, ""),
-            "dealer_id": _account_to_dealer.get(aid, ""),
-            "city":      city,
-            "state":     st,
-            "zip":       z,
-            "platform":  acct_to_channel.get(aid, ""),
-            "approx":    precision != "zip",
-        }
+        index: dict = {}
+        for aid in qualifying:
+            z    = (_account_to_zip.get(aid, "") or "")[:5]
+            city = (_account_to_city.get(aid, "") or "").strip()
+            st   = (_account_to_state_prov.get(aid, "") or "").strip().upper()[:2]
 
-    _location_index          = index
-    _location_index_ts       = now
-    _location_index_building = False
-    by_prec = {"zip": 0, "city": 0, "state": 0}
-    for v in index.values():
-        if not v["approx"]:
-            by_prec["zip"] += 1
-        elif v.get("city"):
-            by_prec["city"] += 1
-        else:
-            by_prec["state"] += 1
-    print(f"[location-index] {len(index)} accounts — "
-          f"{by_prec['zip']} exact-zip, {by_prec['city']} city-centroid, {by_prec['state']} state-fallback")
-    return index
+            city_key = f"{city.upper()}|{st}"
+
+            if z in zip_coords:
+                lat, lon  = zip_coords[z]
+                precision = "zip"
+            elif city_key in _CITY_COORDS:
+                lat, lon  = _CITY_COORDS[city_key]
+                precision = "city"
+            elif st in _STATE_CENTROIDS:
+                # Last resort — spread pins randomly across the state
+                clat, clon = _STATE_CENTROIDS[st]
+                lat = clat + random.uniform(-1.0, 1.0)
+                lon = clon + random.uniform(-1.5, 1.5)
+                precision  = "state"
+            else:
+                continue  # no location data at all
+
+            index[aid] = {
+                "lat":       round(lat, 5),
+                "lon":       round(lon, 5),
+                "name":      _account_to_name.get(aid, ""),
+                "dealer_id": _account_to_dealer.get(aid, ""),
+                "city":      city,
+                "state":     st,
+                "zip":       z,
+                "platform":  acct_to_channel.get(aid, ""),
+                "approx":    precision != "zip",
+            }
+
+        _location_index    = index
+        _location_index_ts = now
+        by_prec = {"zip": 0, "city": 0, "state": 0}
+        for v in index.values():
+            if not v["approx"]:
+                by_prec["zip"] += 1
+            elif v.get("city"):
+                by_prec["city"] += 1
+            else:
+                by_prec["state"] += 1
+        print(f"[location-index] {len(index)} accounts — "
+              f"{by_prec['zip']} exact-zip, {by_prec['city']} city-centroid, {by_prec['state']} state-fallback")
+        return index
+    except Exception as _loc_exc:
+        import traceback
+        print(f"[location-index] BUILD FAILED: {_loc_exc}")
+        traceback.print_exc()
+        return _location_index  # return whatever we had before
+    finally:
+        _location_index_building = False  # always unset so dealer-locator can retry
 
 
 @app.get("/api/accounts/nearest")
@@ -3867,9 +3887,9 @@ async def accounts_nearest(address: str = "", limit: int = 10):
     if search_lat is None:
         return {"error": f"Could not geocode: {address}"}
 
-    # If the index is still warming up, kick off build in background and tell
-    # the client to retry — avoids blocking the request for 30-60 s on cold start
-    if not _location_index:
+    # If the index hasn't been built yet, tell the client to retry.
+    # Use _location_index_ts to distinguish "never built" from "built but empty".
+    if _location_index_ts == 0:
         if not _location_index_building:
             asyncio.create_task(_build_location_index())
         return {"warming_up": True, "accounts": [], "total": 0,
