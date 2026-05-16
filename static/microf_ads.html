@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Microf Ad Concepts</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f0f0; padding: 40px 20px; }
+  h1 { text-align: center; font-size: 1.1rem; color: #555; font-weight: 500; margin-bottom: 40px; letter-spacing: .05em; text-transform: uppercase; }
+
+  .ad-grid { display: flex; flex-direction: column; gap: 60px; max-width: 1100px; margin: 0 auto; }
+  .ad-label { font-size: 0.72rem; font-weight: 700; color: #999; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 10px; }
+
+  /* ── AD 1: Consumer Facebook/Instagram (1200×628) ── */
+  .ad1 {
+    width: 100%; max-width: 800px; aspect-ratio: 1200/628;
+    border-radius: 12px; overflow: hidden; position: relative;
+    display: flex; background: #fff; box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  }
+  .ad1 .photo { width: 55%; height: 100%; object-fit: cover; }
+  .ad1 .copy {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 40px 36px; background: #fff;
+  }
+  .ad1 .eyebrow {
+    font-size: 0.65rem; font-weight: 800; letter-spacing: .15em;
+    text-transform: uppercase; color: #006341; margin-bottom: 14px;
+  }
+  .ad1 h2 { font-size: 2rem; font-weight: 800; line-height: 1.1; color: #0a0a0a; margin-bottom: 14px; }
+  .ad1 h2 span { color: #006341; }
+  .ad1 p { font-size: 0.88rem; color: #555; line-height: 1.55; margin-bottom: 28px; }
+  .ad1 .cta {
+    display: inline-block; background: #006341; color: #fff;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; padding: 13px 26px; border-radius: 6px;
+    text-decoration: none; align-self: flex-start;
+  }
+
+  /* ── AD 2: Consumer Square (Instagram 1:1) ── */
+  .ad2 {
+    width: 100%; max-width: 540px; aspect-ratio: 1/1;
+    border-radius: 12px; overflow: hidden; position: relative;
+    background: #fff; box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  }
+  .ad2 .photo { width: 100%; height: 62%; object-fit: cover; display: block; }
+  .ad2 .copy { padding: 24px 28px 20px; }
+  .ad2 .eyebrow {
+    font-size: 0.6rem; font-weight: 800; letter-spacing: .14em;
+    text-transform: uppercase; color: #006341; margin-bottom: 8px;
+  }
+  .ad2 h2 { font-size: 1.55rem; font-weight: 800; line-height: 1.15; color: #0a0a0a; margin-bottom: 6px; }
+  .ad2 h2 span { color: #006341; }
+  .ad2 p { font-size: 0.78rem; color: #666; margin-bottom: 14px; line-height: 1.5; }
+  .ad2 .cta {
+    display: inline-block; background: #006341; color: #fff;
+    font-size: 0.72rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; padding: 10px 20px; border-radius: 5px;
+    text-decoration: none;
+  }
+
+  /* ── AD 3: Contractor Banner ── */
+  .ad3 {
+    width: 100%; max-width: 800px; aspect-ratio: 1200/628;
+    border-radius: 12px; overflow: hidden; position: relative;
+    box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  }
+  .ad3 .photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .ad3 .overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,.97) 44%, rgba(255,255,255,0) 80%);
+  }
+  .ad3 .copy {
+    position: absolute; top: 50%; left: 0; transform: translateY(-50%);
+    padding: 0 48px; width: 52%;
+  }
+  .ad3 .eyebrow {
+    font-size: 0.6rem; font-weight: 800; letter-spacing: .15em;
+    text-transform: uppercase; color: #006341; margin-bottom: 10px;
+  }
+  .ad3 h2 { font-size: 2rem; font-weight: 800; line-height: 1.1; color: #0a0a0a; margin-bottom: 10px; }
+  .ad3 h2 span { color: #006341; }
+  .ad3 p { font-size: 0.84rem; color: #444; line-height: 1.55; margin-bottom: 22px; }
+  .ad3 .cta {
+    display: inline-block; background: #006341; color: #fff;
+    font-size: 0.78rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; padding: 12px 24px; border-radius: 6px;
+    text-decoration: none;
+  }
+
+  /* ── AD 4: Stats Strip ── */
+  .ad4 {
+    width: 100%; max-width: 800px; aspect-ratio: 3/1;
+    border-radius: 12px; overflow: hidden; position: relative;
+    background: #fff; display: flex; align-items: stretch;
+    box-shadow: 0 8px 40px rgba(0,0,0,.12);
+  }
+  .ad4 .left {
+    width: 36%; background: #006341;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 32px 36px;
+  }
+  .ad4 .left h2 { font-size: 1.7rem; font-weight: 800; color: #fff; line-height: 1.1; margin-bottom: 10px; }
+  .ad4 .left p { font-size: 0.78rem; color: rgba(255,255,255,.8); line-height: 1.5; margin-bottom: 18px; }
+  .ad4 .left .cta {
+    display: inline-block; background: #fff; color: #006341;
+    font-size: 0.72rem; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase; padding: 10px 20px; border-radius: 5px;
+    text-decoration: none; align-self: flex-start;
+  }
+  .ad4 .mid {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+    padding: 32px 36px; border-right: 1px solid #eee;
+  }
+  .ad4 .mid .stat { margin-bottom: 14px; }
+  .ad4 .mid .stat-num { font-size: 1.8rem; font-weight: 800; color: #0a0a0a; }
+  .ad4 .mid .stat-num span { color: #006341; }
+  .ad4 .mid .stat-label { font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: .06em; }
+  .ad4 .right { width: 30%; overflow: hidden; }
+  .ad4 .right img { width: 100%; height: 100%; object-fit: cover; }
+
+  /* ── AD 5: Story / Reel (9:16) ── */
+  .ad5 {
+    width: 100%; max-width: 340px; aspect-ratio: 9/16;
+    border-radius: 16px; overflow: hidden; position: relative;
+    box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  }
+  .ad5 .photo { width: 100%; height: 100%; object-fit: cover; display: block; position: absolute; inset: 0; }
+  .ad5 .overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0) 30%, rgba(255,255,255,.96) 65%);
+  }
+  .ad5 .copy { position: absolute; bottom: 0; left: 0; right: 0; padding: 30px 28px 36px; }
+  .ad5 .eyebrow {
+    font-size: 0.6rem; font-weight: 800; letter-spacing: .14em;
+    text-transform: uppercase; color: #006341; margin-bottom: 8px;
+  }
+  .ad5 h2 { font-size: 1.9rem; font-weight: 800; line-height: 1.1; color: #0a0a0a; margin-bottom: 8px; }
+  .ad5 h2 span { color: #006341; }
+  .ad5 p { font-size: 0.8rem; color: #444; line-height: 1.5; margin-bottom: 18px; }
+  .ad5 .cta {
+    display: block; background: #006341; color: #fff; text-align: center;
+    font-size: 0.8rem; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; padding: 14px; border-radius: 8px;
+    text-decoration: none;
+  }
+  .ad5 .logo-top {
+    position: absolute; top: 20px; left: 22px;
+    background: rgba(255,255,255,.9); padding: 6px 12px; border-radius: 20px;
+    font-size: 0.72rem; font-weight: 800; color: #006341; letter-spacing: .05em;
+  }
+</style>
+</head>
+<body>
+  <div style="position:fixed;top:14px;right:16px;z-index:100;display:flex;gap:6px;">
+    <a href="#" onclick="history.back();return false;" style="padding:5px 14px;background:rgba(0,0,0,0.55);color:#fff;border-radius:6px;font-size:0.76rem;font-weight:500;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);">← Back</a>
+    <a href="/" style="padding:5px 14px;background:#007aff;color:#fff;border-radius:6px;font-size:0.76rem;font-weight:500;text-decoration:none;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);">⬡ Apps</a>
+  </div>
+
+<h1>Microf — Ad Concepts</h1>
+
+<div class="ad-grid">
+
+  <!-- AD 1: Consumer Facebook Banner -->
+  <div>
+    <div class="ad-label">Consumer — Facebook / Display Banner (1200×628)</div>
+    <div class="ad1">
+      <img class="photo" src="/generated_images/ad_consumer_family.png" alt="">
+      <div class="copy">
+        <div class="eyebrow">Home Comfort Financing</div>
+        <h2>Stay Cool.<br><span>No Credit</span><br>No Problem.</h2>
+        <p>Get the HVAC system your family deserves — even if your credit isn't perfect. Fast approvals, flexible payments.</p>
+        <a class="cta" href="https://microf.com">Apply in Minutes →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- AD 2: Consumer Instagram Square -->
+  <div>
+    <div class="ad-label">Consumer — Instagram Square (1080×1080)</div>
+    <div class="ad2">
+      <img class="photo" src="/generated_images/ad_consumer_family.png" alt="">
+      <div class="copy">
+        <div class="eyebrow">Microf Financing</div>
+        <h2>Comfort<br>is <span>Possible.</span></h2>
+        <p>New HVAC. Bad credit welcome. Get approved today.</p>
+        <a class="cta" href="https://microf.com">Start Now →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- AD 3: Contractor Recruitment Banner -->
+  <div>
+    <div class="ad-label">Contractor Enrollment — Facebook / Display (1200×628)</div>
+    <div class="ad3">
+      <img class="photo" src="/generated_images/ad_contractor_tech.png" alt="">
+      <div class="overlay"></div>
+      <div class="copy">
+        <div class="eyebrow">For HVAC Contractors</div>
+        <h2>Close More.<br><span>Lose Less.</span></h2>
+        <p>Offer financing to every customer — even the ones who've been turned down before. Microf fills the gap your other lenders can't.</p>
+        <a class="cta" href="https://microf.com">Enroll Your Business →</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- AD 4: Stats Strip -->
+  <div>
+    <div class="ad-label">Contractor — Stats Strip / Leaderboard</div>
+    <div class="ad4">
+      <div class="left">
+        <h2>Turn No's Into Yes's.</h2>
+        <p>Microf approves customers other lenders decline. Keep every sale.</p>
+        <a class="cta" href="https://microf.com">Learn More →</a>
+      </div>
+      <div class="mid">
+        <div class="stat">
+          <div class="stat-num">580<span>+</span></div>
+          <div class="stat-label">Credit Scores Approved</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num"><span>$</span>0</div>
+          <div class="stat-label">Down to Get Started</div>
+        </div>
+        <div class="stat">
+          <div class="stat-num">24<span>hr</span></div>
+          <div class="stat-label">Contractor Onboarding</div>
+        </div>
+      </div>
+      <div class="right">
+        <img src="/generated_images/ad_contractor_tech.png" alt="">
+      </div>
+    </div>
+  </div>
+
+  <!-- AD 5: Instagram Story -->
+  <div>
+    <div class="ad-label">Consumer — Instagram Story / Reel (1080×1920)</div>
+    <div class="ad5">
+      <img class="photo" src="/generated_images/ad_consumer_family.png" alt="">
+      <div class="overlay"></div>
+      <div class="logo-top">MICROF</div>
+      <div class="copy">
+        <div class="eyebrow">Home Comfort Financing</div>
+        <h2>Beat the Heat.<br>Not Your<br><span>Budget.</span></h2>
+        <p>Flexible HVAC financing for every credit score. Fast. Simple. Effortless.</p>
+        <a class="cta" href="https://microf.com">Apply Now — It's Free</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -20,6 +20,8 @@
     cursor: pointer; text-decoration: none; white-space: nowrap;
   }
   .apps-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+  .back-btn { margin-left: auto; background: rgba(255,255,255,.08); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .back-btn:hover { background: rgba(255,255,255,.18); color: #fff; }
 
   .container { padding: 20px 24px; }
 
@@ -240,7 +242,7 @@
 
 <header>
   <h1>📊 AM Activity Dashboard</h1>
-  <a class="apps-btn" href="/">⬡ Apps</a>
+  <div style="margin-left:auto;display:flex;gap:8px;"><a class="back-btn" href="#" onclick="history.back();return false;">← Back</a><a class="apps-btn" href="/">⬡ Apps</a></div>
 </header>
 
 <!-- Drawer overlay + panel -->

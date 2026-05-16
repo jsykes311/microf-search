@@ -30,9 +30,10 @@ header {
 header a {
   color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.8rem;
   padding: 6px 12px; border-radius: 6px; background: rgba(255,255,255,0.12);
-  margin-left: auto; white-space: nowrap; font-weight: 600;
+  white-space: nowrap; font-weight: 600;
 }
 header a:hover { background: rgba(255,255,255,0.22); color: white; }
+header nav { margin-left: auto; display: flex; gap: 8px; }
 
 .container { max-width: 1000px; margin: 0 auto; padding: 28px 24px; }
 
@@ -132,7 +133,10 @@ header a:hover { background: rgba(255,255,255,0.22); color: white; }
 
 <header>
   <div class="logo">AC <span>Reporter</span></div>
-  <a href="/">⬡ Apps</a>
+  <nav>
+    <a href="#" onclick="history.back();return false;">← Back</a>
+    <a href="/">⬡ Apps</a>
+  </nav>
 </header>
 
 <div class="container">
