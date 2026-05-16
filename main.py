@@ -8875,7 +8875,10 @@ async def health_check():
     slp_ok      = len(_slp_cache_records) > 0
     lc_ok       = bool(_lc_cache)
     ta_ok       = bool(_ta_cache)
-    ready       = accounts_ok and slp_ok and lc_ok and ta_ok
+    # Core ready = accounts + SLP loaded (everything most features need).
+    # LC and TA are secondary caches (last-contacted report, team-activity report)
+    # and should not block the service from being considered online.
+    ready = accounts_ok and slp_ok
 
     payload = {
         "status":                "online" if ready else "warming",
@@ -8886,7 +8889,7 @@ async def health_check():
         "ta_cache_loaded":       ta_ok,
     }
     # Return 503 while warming so Render (and any monitoring tool) sees the
-    # service as not-yet-ready. Once all caches are loaded it flips to 200.
+    # service as not-yet-ready. Flips to 200 once core caches are loaded (~2-3 min).
     return JSONResponse(content=payload, status_code=200 if ready else 503)
 
 
