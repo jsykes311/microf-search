@@ -1031,7 +1031,7 @@ async def _refresh_lc_cache() -> None:
         print(f"[lc-cache] refreshed — {len(latest)} accounts with last-contacted date")
 
 async def _lc_cache_loop() -> None:
-    await asyncio.sleep(120)   # let other startup tasks settle first
+    await asyncio.sleep(90)    # stagger slightly after SLP + dealer index
     while True:
         try:
             await _refresh_lc_cache()
@@ -1047,10 +1047,13 @@ _TA_CACHE_TTL = 900   # 15 minutes
 async def _refresh_ta_cache() -> None:
     global _ta_cache, _ta_cache_ts
     print("[ta-cache] refreshing…")
+    # contacts + notes use concurrent pagination (stable endpoints, no page-shuffling).
+    # activity (custom object) uses sequential to handle AC's non-deterministic ordering.
+    from ac_client import fetch_all_pages as _fap
     users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
         ac_get("users"),
-        ac_get_all("notes", "notes", {}),
-        ac_get_all("contacts", "contacts", {}),
+        _fap("notes", key="notes"),
+        _fap("contacts", key="contacts"),
         ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
     )
 
@@ -1103,7 +1106,7 @@ async def _refresh_ta_cache() -> None:
           f"{len(contact_to_account)} contact→account mappings (dropped raw contacts)")
 
 async def _ta_cache_loop() -> None:
-    await asyncio.sleep(180)   # stagger after other startup tasks
+    await asyncio.sleep(90)    # contacts+notes now concurrent — builds in ~10s
     while True:
         try:
             await _refresh_ta_cache()
@@ -1224,21 +1227,21 @@ async def ac_delete(path: str) -> int:
 async def ac_get_all(path: str, key: str, params: dict = None) -> list:
     """Paginate through all records, deduplicating by id.
 
-    AC's custom-objects endpoint has non-deterministic pagination: pages overlap
-    heavily and meta.total is inflated. For custom-object endpoints we run two
-    SEQUENTIAL passes and union results to catch records that slip through due
-    to AC's page reordering. Standard endpoints (accounts, contacts, etc.) only
-    need one pass.
+    For all endpoints: sequential pages, stops when a page adds no new records
+    (handles AC's non-deterministic pagination without relying on meta.total).
+    For custom-object endpoints: up to 3 full passes to catch records that shift
+    between pages, but exits early if a pass yields nothing new.
     """
     is_custom_obj = "customObjects" in path
-    num_passes    = 3 if is_custom_obj else 1
+    max_passes    = 3 if is_custom_obj else 1
 
     seen  = {}
     p     = params or {}
     limit = 100
 
-    for pass_num in range(num_passes):
-        offset = 0
+    for pass_num in range(max_passes):
+        offset        = 0
+        new_this_pass = 0
         while True:
             data = await ac_get(path, {**p, "limit": limit, "offset": offset})
             page = data.get(key, [])
@@ -1247,12 +1250,18 @@ async def ac_get_all(path: str, key: str, params: dict = None) -> list:
             for item in page:
                 item_id = item.get("id")
                 if item_id is not None:
-                    seen[item_id] = item
+                    if item_id not in seen:
+                        seen[item_id] = item
+                        new_this_pass += 1
                 else:
                     seen[len(seen)] = item
+                    new_this_pass += 1
             offset += limit
         if is_custom_obj:
-            print(f"[ac_get_all] {path} pass {pass_num+1} done, total unique={len(seen)}")
+            print(f"[ac_get_all] {path} pass {pass_num+1} done, unique={len(seen)} new={new_this_pass}")
+        # Stop early if this pass found nothing new — no point doing another
+        if new_this_pass == 0:
+            break
 
     return list(seen.values())
 
