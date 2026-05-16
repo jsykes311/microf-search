@@ -3751,12 +3751,29 @@ async def _build_location_index() -> dict:
 
     _location_index_building = True
     try:
-        # Reuse the shared qualifying-accounts cache (avoids a duplicate SLP fetch)
-        qualifying = await _get_qualifying_microf_accounts()
+        # Use whatever SLP records are in memory right now — do NOT await get_slp_cache()
+        # because that blocks on _slp_cache_lock while the background SLP fetch runs,
+        # causing warming_up to persist for minutes. If cache is empty, we build a fast
+        # empty index (so warming_up clears immediately); _slp_cache_loop will trigger a
+        # proper rebuild once SLP data is loaded.
+        slp_snapshot = list(_slp_cache_records)
 
-        # Build channel map directly from SLP records (avoids dependency on
-        # _account_to_platform which may be empty on cold start)
-        slp_raw = await get_slp_cache()
+        # Derive qualifying accounts directly from the snapshot (Contractor Activated Microf/LTO)
+        qualifying: set = set()
+        for _r in slp_snapshot:
+            _flds = {_f.get("field") or _f.get("id"): _f.get("value") for _f in _r.get("fields", [])}
+            if str(_flds.get("slp-status-detail", "")).strip() != "Contractor Activated":
+                continue
+            if not _is_microf_channel(str(_flds.get("channel", ""))):
+                continue
+            _rel = _r.get("relationships", {}).get("account", [])
+            _a0  = _rel[0] if _rel else None
+            _acc = str(_a0) if isinstance(_a0, (int, str)) else (str(_a0.get("id", "")) if _a0 else None)
+            if _acc:
+                qualifying.add(_acc)
+
+        # Build channel map directly from SLP records
+        slp_raw = slp_snapshot
         acct_to_channel: dict = {}
         for _r in slp_raw:
             _flds = {_f.get("field") or _f.get("id"): _f.get("value") for _f in _r.get("fields", [])}
