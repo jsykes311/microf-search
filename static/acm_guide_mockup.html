@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Open Sans', Arial, sans-serif; background: #f3f4f6; }
+
+/* ── shared layout ── */
+.frame { width: 860px; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin: 36px auto; box-shadow: 0 2px 10px rgba(0,0,0,0.07); }
+.frame-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; padding: 6px 14px; background: #f9fafb; border-bottom: 1px solid #f0f0f0; }
+
+/* ── top bar ── */
+.topbar { background: #1e3a5f; height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; gap: 10px; }
+.topbar .logo { color: #fff; font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
+.topbar .search-wrap { flex: 1; max-width: 420px; position: relative; }
+.topbar .search-wrap input { width: 100%; padding: 5px 10px 5px 30px; border-radius: 4px; border: none; font-size: 0.8rem; background: rgba(255,255,255,0.15); color: #fff; }
+.topbar .search-wrap input::placeholder { color: rgba(255,255,255,0.5); }
+.topbar .search-wrap .si { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: rgba(255,255,255,0.5); font-size: 0.75rem; }
+.topbar .apps-btn { background: #356ae6; color: #fff; border: none; border-radius: 4px; padding: 5px 12px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+
+/* ── app shell ── */
+.shell { display: flex; height: 480px; }
+.nav { width: 160px; background: #f9fafb; border-right: 1px solid #e5e7eb; padding: 10px 0; flex-shrink: 0; }
+.nav-item { display: flex; align-items: center; gap: 7px; padding: 7px 14px; font-size: 0.78rem; color: #6b7280; cursor: pointer; border-left: 3px solid transparent; }
+.nav-item.active { color: #356ae6; background: #eff6ff; border-left-color: #356ae6; font-weight: 600; }
+.nav-item .ni { font-size: 0.9rem; width: 16px; text-align: center; }
+.nav-divider { height: 1px; background: #e5e7eb; margin: 6px 10px; }
+.main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── account list ── */
+.acct-list { overflow-y: auto; flex: 1; }
+.acct-row { display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid #f3f4f6; cursor: pointer; gap: 10px; }
+.acct-row:hover { background: #f9fafb; }
+.acct-row.selected { background: #eff6ff; }
+.acct-avatar { width: 32px; height: 32px; border-radius: 50%; background: #356ae6; color: #fff; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.acct-info { flex: 1; min-width: 0; }
+.acct-name { font-size: 0.82rem; font-weight: 600; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acct-meta { font-size: 0.72rem; color: #6b7280; margin-top: 1px; }
+.acct-badge { font-size: 0.67rem; font-weight: 700; padding: 2px 6px; border-radius: 99px; white-space: nowrap; }
+.badge-green { background: #dcfce7; color: #166534; }
+.badge-red { background: #fee2e2; color: #991b1b; }
+.badge-gray { background: #f3f4f6; color: #6b7280; }
+.badge-yellow { background: #fef3c7; color: #92400e; }
+.badge-blue { background: #dbeafe; color: #1e40af; }
+
+/* ── search bar in main ── */
+.search-bar { padding: 10px 14px; border-bottom: 1px solid #e5e7eb; background: #fff; }
+.search-bar input { width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.8rem; color: #374151; }
+
+/* ── detail panel ── */
+.detail-panel { display: flex; flex: 1; overflow: hidden; }
+.detail-left { flex: 1; overflow-y: auto; padding: 14px; border-right: 1px solid #e5e7eb; }
+.detail-right { width: 260px; overflow-y: auto; padding: 14px; background: #fafafa; }
+.detail-name { font-size: 1rem; font-weight: 700; color: #111827; margin-bottom: 2px; }
+.detail-id { font-size: 0.76rem; color: #6b7280; margin-bottom: 10px; }
+.field-row { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; }
+.field-label { font-size: 0.72rem; color: #9ca3af; font-weight: 600; text-transform: uppercase; width: 100px; flex-shrink: 0; }
+.field-val { font-size: 0.8rem; color: #374151; }
+.section-title { font-size: 0.72rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 6px; }
+
+/* ── SLP table ── */
+.mini-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.mini-table th { background: #f3f4f6; padding: 5px 8px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; }
+.mini-table td { padding: 5px 8px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.mini-table tr:last-child td { border-bottom: none; }
+
+/* ── activity notes ── */
+.note { padding: 8px 10px; background: #f9fafb; border-radius: 6px; border-left: 3px solid #356ae6; margin-bottom: 7px; }
+.note-header { display: flex; justify-content: space-between; margin-bottom: 3px; }
+.note-type { font-size: 0.68rem; font-weight: 700; color: #356ae6; text-transform: uppercase; }
+.note-date { font-size: 0.68rem; color: #9ca3af; }
+.note-body { font-size: 0.75rem; color: #374151; line-height: 1.4; }
+
+/* ── report panels ── */
+.report-panel { padding: 16px; overflow-y: auto; flex: 1; }
+.rp-title { font-size: 1rem; font-weight: 700; color: #111827; margin-bottom: 3px; }
+.rp-sub { font-size: 0.78rem; color: #6b7280; margin-bottom: 14px; }
+.report-list { display: flex; flex-direction: column; gap: 6px; }
+.report-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; cursor: pointer; }
+.report-row:hover { border-color: #356ae6; background: #eff6ff; }
+.report-row .rr-name { font-size: 0.82rem; font-weight: 600; color: #111827; }
+.report-row .rr-desc { font-size: 0.72rem; color: #6b7280; }
+.run-btn { padding: 4px 12px; background: #356ae6; color: #fff; border: none; border-radius: 4px; font-size: 0.72rem; cursor: pointer; white-space: nowrap; }
+
+/* ── filters bar ── */
+.filters-bar { display: flex; gap: 8px; padding: 10px 14px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; align-items: center; }
+.filter-select { padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.76rem; color: #374151; background: #fff; }
+.filter-label { font-size: 0.72rem; color: #6b7280; font-weight: 600; }
+
+/* ── report results table ── */
+.results-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.results-table th { background: #1e3a5f; color: #fff; padding: 6px 10px; text-align: left; font-weight: 600; }
+.results-table td { padding: 5px 10px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.results-table tr:nth-child(even) td { background: #f9fafb; }
+.results-wrap { padding: 12px; overflow-x: auto; }
+
+/* ── builder ── */
+.builder-layout { display: flex; gap: 12px; padding: 14px; overflow-y: auto; flex: 1; }
+.builder-left { width: 200px; flex-shrink: 0; }
+.builder-right { flex: 1; }
+.obj-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.obj-btn { padding: 8px 6px; border: 1px solid #e5e7eb; border-radius: 6px; text-align: center; font-size: 0.72rem; cursor: pointer; color: #374151; }
+.obj-btn.selected { border-color: #356ae6; background: #eff6ff; color: #356ae6; font-weight: 700; }
+.obj-btn .obj-icon { font-size: 1.2rem; display: block; margin-bottom: 3px; }
+.field-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; background: #dbeafe; color: #1e40af; border-radius: 99px; font-size: 0.7rem; font-weight: 600; margin: 2px; }
+.card-sm { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+.card-sm-title { font-size: 0.72rem; font-weight: 700; color: #374151; margin-bottom: 7px; text-transform: uppercase; letter-spacing: 0.4px; }
+.field-list-sm { display: flex; flex-direction: column; gap: 3px; max-height: 120px; overflow-y: auto; }
+.field-item { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: #374151; padding: 2px 0; cursor: pointer; }
+.field-item input[type=checkbox] { width: 13px; height: 13px; accent-color: #356ae6; }
+
+/* ── smart search ── */
+.smart-panel { padding: 20px; overflow-y: auto; flex: 1; }
+.smart-input-wrap { position: relative; margin-bottom: 14px; }
+.smart-input { width: 100%; padding: 10px 14px 10px 38px; border: 2px solid #356ae6; border-radius: 8px; font-size: 0.88rem; color: #374151; }
+.smart-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 1rem; }
+.smart-result { padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 6px; }
+.smart-result .sr-name { font-size: 0.82rem; font-weight: 700; color: #111827; }
+.smart-result .sr-meta { font-size: 0.72rem; color: #6b7280; margin-top: 2px; }
+.smart-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip { padding: 4px 10px; background: #f3f4f6; border-radius: 99px; font-size: 0.72rem; color: #374151; cursor: pointer; border: 1px solid #e5e7eb; }
+.chip.active { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+
+/* ── global search ── */
+.gs-panel { padding: 16px; overflow-y: auto; flex: 1; }
+.gs-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-end; }
+.gs-select { flex: 1; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.78rem; }
+.gs-input { flex: 2; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.78rem; }
+.gs-btn { padding: 5px 16px; background: #356ae6; color: #fff; border: none; border-radius: 4px; font-size: 0.78rem; cursor: pointer; }
+.gs-result { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+.gs-result .gr-key { font-size: 0.72rem; color: #9ca3af; }
+.gs-result .gr-val { font-size: 0.8rem; font-weight: 700; color: #111827; }
+.gs-result .gr-acct { font-size: 0.75rem; color: #356ae6; }
+
+/* ── move records ── */
+.move-panel { padding: 16px; overflow-y: auto; flex: 1; }
+.move-tabs { display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 14px; }
+.move-tab { padding: 6px 16px; font-size: 0.8rem; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+.move-tab.active { color: #356ae6; border-bottom-color: #356ae6; font-weight: 600; }
+.form-row { margin-bottom: 10px; }
+.form-label { font-size: 0.72rem; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 3px; }
+.form-input { width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.8rem; color: #374151; }
+.form-hint { font-size: 0.7rem; color: #9ca3af; margin-top: 2px; }
+.move-btn { padding: 7px 18px; background: #356ae6; color: #fff; border: none; border-radius: 4px; font-size: 0.8rem; font-weight: 600; cursor: pointer; margin-top: 4px; }
+.success-inline { background: #dcfce7; border: 1px solid #86efac; border-radius: 6px; padding: 8px 12px; font-size: 0.78rem; color: #166534; margin-top: 10px; }
+
+/* callout arrow */
+.callout-arrow { font-size: 1.4rem; color: #356ae6; font-weight: 900; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+  S1 — Interface Overview
+══════════════════════════════════════ -->
+<div id="s1" class="frame">
+  <div class="frame-label">The Microf Search Interface</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts by name, dealer ID, city…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell">
+    <div class="nav">
+      <div class="nav-item active"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="main">
+      <div class="search-bar"><input value="comfort air" /></div>
+      <div class="acct-list">
+        <div class="acct-row selected">
+          <div class="acct-avatar">CA</div>
+          <div class="acct-info"><div class="acct-name">COMFORT AIR SYSTEMS LLC</div><div class="acct-meta">Dealer ID: 14230 · Southeast</div></div>
+          <span class="acct-badge badge-green">Active</span>
+        </div>
+        <div class="acct-row">
+          <div class="acct-avatar" style="background:#6b7280;">CA</div>
+          <div class="acct-info"><div class="acct-name">COMFORT AIR &amp; HEAT INC</div><div class="acct-meta">Dealer ID: 12889 · Southwest</div></div>
+          <span class="acct-badge badge-red">Deactivated</span>
+        </div>
+        <div class="acct-row">
+          <div class="acct-avatar" style="background:#16a34a;">CA</div>
+          <div class="acct-info"><div class="acct-name">COMFORT AIR SOLUTIONS INC</div><div class="acct-meta">Dealer ID: 15540 · Mid-West</div></div>
+          <span class="acct-badge badge-blue">In Progress</span>
+        </div>
+        <div class="acct-row">
+          <div class="acct-avatar" style="background:#d97706;">CA</div>
+          <div class="acct-info"><div class="acct-name">COMFORT AIRE SERVICES LLC</div><div class="acct-meta">Dealer ID: 13302 · Northeast</div></div>
+          <span class="acct-badge badge-yellow">On Hold</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S2 — Account Detail View
+══════════════════════════════════════ -->
+<div id="s2" class="frame">
+  <div class="frame-label">Account Detail View — Overview &amp; SLPs</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell">
+    <div class="nav">
+      <div class="nav-item active"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="detail-panel">
+      <div class="detail-left">
+        <div class="detail-name">COMFORT AIR SYSTEMS LLC</div>
+        <div class="detail-id">Dealer ID: 14230</div>
+        <div class="field-row"><span class="field-label">Account Type</span><span class="field-val">Contractor</span></div>
+        <div class="field-row"><span class="field-label">Region</span><span class="field-val">Southeast</span></div>
+        <div class="field-row"><span class="field-label">Status</span><span class="field-val"><span class="acct-badge badge-green">Contractor</span></span></div>
+        <div class="field-row"><span class="field-label">Phone</span><span class="field-val">(615) 555-0182</span></div>
+        <div class="field-row"><span class="field-label">City / State</span><span class="field-val">Nashville, TN</span></div>
+
+        <div class="section-title">Strategic Lending Partners (SLPs)</div>
+        <table class="mini-table">
+          <thead><tr><th>Dealer Program</th><th>Status</th><th>Activation Date</th><th>Oracle ID</th></tr></thead>
+          <tbody>
+            <tr><td>OPTIMUS</td><td><span class="acct-badge badge-green">Contractor Activated</span></td><td>2023-04-12</td><td>TN-01204</td></tr>
+            <tr><td>360 Finance</td><td><span class="acct-badge badge-green">Contractor Activated</span></td><td>2022-09-01</td><td>—</td></tr>
+            <tr><td>Microf</td><td><span class="acct-badge badge-gray">Not Started</span></td><td>—</td><td>—</td></tr>
+          </tbody>
+        </table>
+
+        <div class="section-title">Contacts</div>
+        <table class="mini-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th></tr></thead>
+          <tbody>
+            <tr><td>James Comfort</td><td>james@comfortair.com</td><td>(615) 555-0182</td></tr>
+            <tr><td>Sarah Comfort</td><td>sarah@comfortair.com</td><td>(615) 555-0199</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="detail-right">
+        <div class="section-title">Account Activity</div>
+        <div class="note">
+          <div class="note-header"><span class="note-type">OPTIMUS Activated</span><span class="note-date">Mar 18, 2026</span></div>
+          <div class="note-body">OPTIMUS SLP set to Contractor Activated via EGIA reactivation email. Activation date set to 2026-03-18.</div>
+        </div>
+        <div class="note" style="border-left-color:#d97706;">
+          <div class="note-header"><span class="note-type" style="color:#d97706;">Call Note</span><span class="note-date">Feb 4, 2026</span></div>
+          <div class="note-body">Spoke with James re: 360 Finance app. Waiting on credit approval. Follow up next week.</div>
+        </div>
+        <div class="note" style="border-left-color:#16a34a;">
+          <div class="note-header"><span class="note-type" style="color:#16a34a;">Enrolled</span><span class="note-date">Sep 1, 2022</span></div>
+          <div class="note-body">Account enrolled in 360 Finance. Contract signed and returned.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S3 — Pre-Built Reports
+══════════════════════════════════════ -->
+<div id="s3" class="frame">
+  <div class="frame-label">Pre-Built Reports — Select and Run</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item active"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="main">
+      <div class="filters-bar">
+        <span class="filter-label">Region:</span>
+        <select class="filter-select"><option>All Regions</option><option>Southeast</option><option>Southwest</option><option>Mid-West</option><option>Northeast</option><option>Northwest</option></select>
+        <span class="filter-label">Period:</span>
+        <select class="filter-select"><option>This Month</option><option>Last Month</option><option>Last 30 Days</option><option>This Quarter</option><option>This Year</option></select>
+        <span class="filter-label">BDR:</span>
+        <select class="filter-select"><option>All BDRs</option><option>jsmith</option><option>kdavis</option></select>
+      </div>
+      <div class="report-panel" style="padding:12px;">
+        <div class="rp-title">📋 Pre-Built Reports</div>
+        <div class="rp-sub">Click a report to run it with the filters above.</div>
+        <div class="report-list">
+          <div class="report-row"><div><div class="rr-name">✅ Active Contractors</div><div class="rr-desc">All accounts with at least one Contractor Activated SLP</div></div><button class="run-btn">Run</button></div>
+          <div class="report-row" style="border-color:#356ae6;background:#eff6ff;"><div><div class="rr-name">🕐 Not Activated</div><div class="rr-desc">Accounts with enrollment requests but not yet activated</div></div><button class="run-btn">Run</button></div>
+          <div class="report-row"><div><div class="rr-name">📅 Last App Date</div><div class="rr-desc">Accounts by most recent application date</div></div><button class="run-btn">Run</button></div>
+          <div class="report-row"><div><div class="rr-name">🤖 Last RPA Date</div><div class="rr-desc">Accounts by most recent RPA activity date</div></div><button class="run-btn">Run</button></div>
+          <div class="report-row"><div><div class="rr-name">📝 Account Activity</div><div class="rr-desc">All account activity notes for the period</div></div><button class="run-btn">Run</button></div>
+          <div class="report-row"><div><div class="rr-name">🏢 ARS Accounts</div><div class="rr-desc">All American Residential Services locations</div></div><button class="run-btn">Run</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S4 — Report Results
+══════════════════════════════════════ -->
+<div id="s4" class="frame">
+  <div class="frame-label">Pre-Built Reports — Results View</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell" style="height:520px;">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item active"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="main">
+      <div class="filters-bar">
+        <span style="font-size:0.78rem;font-weight:700;color:#111827;">🕐 Not Activated</span>
+        <span style="font-size:0.76rem;color:#6b7280;">— 47 results · This Month · All Regions</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:0.72rem;background:#fff;cursor:pointer;">📥 Export CSV</button>
+          <button style="padding:4px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:0.72rem;background:#fff;cursor:pointer;">← Back to Reports</button>
+        </div>
+      </div>
+      <div class="results-wrap">
+        <table class="results-table">
+          <thead><tr><th>Account Name</th><th>Dealer ID</th><th>Program</th><th>Status</th><th>Enroll Request</th><th>BDR</th><th>Region</th></tr></thead>
+          <tbody>
+            <tr><td>ACME HVAC SERVICES LLC</td><td>16104</td><td>OPTIMUS</td><td><span class="acct-badge badge-yellow">Pending Training</span></td><td>Mar 10, 2026</td><td>jsmith</td><td>Southeast</td></tr>
+            <tr><td>BLUE SKY MECHANICAL INC</td><td>15887</td><td>360 Finance</td><td><span class="acct-badge badge-blue">In Progress</span></td><td>Mar 8, 2026</td><td>kdavis</td><td>Southwest</td></tr>
+            <tr><td>COOL BREEZE SOLUTIONS LLC</td><td>16231</td><td>OPTIMUS</td><td><span class="acct-badge badge-gray">Not Started</span></td><td>Mar 5, 2026</td><td>jsmith</td><td>Mid-West</td></tr>
+            <tr><td>DELTA TEMP SERVICES INC</td><td>15990</td><td>Microf</td><td><span class="acct-badge badge-yellow">Waiting on BDR</span></td><td>Feb 28, 2026</td><td>mwilson</td><td>Northeast</td></tr>
+            <tr><td>EAGLE COMFORT SYSTEMS</td><td>16088</td><td>360 Finance</td><td><span class="acct-badge badge-blue">In Progress</span></td><td>Feb 25, 2026</td><td>kdavis</td><td>Northwest</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S5 — Report Builder
+══════════════════════════════════════ -->
+<div id="s5" class="frame">
+  <div class="frame-label">Report Builder — Custom Reports</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell" style="height:500px;">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item active"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="builder-layout">
+      <div class="builder-left">
+        <div class="card-sm">
+          <div class="card-sm-title">1 · Object</div>
+          <div class="obj-grid">
+            <div class="obj-btn"><span class="obj-icon">👥</span>Accounts</div>
+            <div class="obj-btn selected"><span class="obj-icon">🤝</span>SLPs</div>
+            <div class="obj-btn"><span class="obj-icon">👤</span>Contacts</div>
+            <div class="obj-btn"><span class="obj-icon">💼</span>Deals</div>
+          </div>
+        </div>
+        <div class="card-sm">
+          <div class="card-sm-title">2 · Fields</div>
+          <div class="field-list-sm">
+            <label class="field-item"><input type="checkbox" checked> Account Name</label>
+            <label class="field-item"><input type="checkbox" checked> Dealer ID</label>
+            <label class="field-item"><input type="checkbox" checked> Dealer Program</label>
+            <label class="field-item"><input type="checkbox" checked> Status</label>
+            <label class="field-item"><input type="checkbox"> Activation Date</label>
+            <label class="field-item"><input type="checkbox"> Oracle ID</label>
+            <label class="field-item"><input type="checkbox"> Assigned BDR</label>
+            <label class="field-item"><input type="checkbox"> Region</label>
+          </div>
+        </div>
+      </div>
+      <div class="builder-right">
+        <div class="card-sm" style="margin-bottom:8px;">
+          <div class="card-sm-title">3 · Filters</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <select class="filter-select">
+              <option>Dealer Program</option>
+            </select>
+            <select class="filter-select"><option>equals</option></select>
+            <select class="filter-select"><option>OPTIMUS</option></select>
+            <button style="padding:3px 10px;background:#356ae6;color:#fff;border:none;border-radius:4px;font-size:0.72rem;">+ Add Filter</button>
+          </div>
+        </div>
+        <div class="card-sm">
+          <div class="card-sm-title">Selected fields preview</div>
+          <div style="margin-bottom:8px;">
+            <span class="field-pill">Account Name ✕</span>
+            <span class="field-pill">Dealer ID ✕</span>
+            <span class="field-pill">Dealer Program ✕</span>
+            <span class="field-pill">Status ✕</span>
+          </div>
+          <button style="padding:6px 18px;background:#356ae6;color:#fff;border:none;border-radius:4px;font-size:0.8rem;font-weight:600;cursor:pointer;">▶ Run Report</button>
+        </div>
+        <div style="margin-top:8px;">
+          <table class="results-table">
+            <thead><tr><th>Account Name</th><th>Dealer ID</th><th>Dealer Program</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td>COMFORT AIR SYSTEMS LLC</td><td>14230</td><td>OPTIMUS</td><td><span class="acct-badge badge-green">Contractor Activated</span></td></tr>
+              <tr><td>DELTA TEMP SERVICES INC</td><td>15990</td><td>OPTIMUS</td><td><span class="acct-badge badge-yellow">Pending Training</span></td></tr>
+              <tr><td>SUNRISE HVAC LLC</td><td>16401</td><td>OPTIMUS</td><td><span class="acct-badge badge-gray">Not Started</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S6 — Smart Search
+══════════════════════════════════════ -->
+<div id="s6" class="frame">
+  <div class="frame-label">Smart Search — Natural Language Queries</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell" style="height:460px;">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item active"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="smart-panel">
+      <div style="font-size:0.9rem;font-weight:700;color:#111827;margin-bottom:4px;">💡 Smart Search</div>
+      <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px;">Ask a question in plain English — no filters needed.</div>
+      <div class="smart-input-wrap">
+        <span class="smart-icon">💡</span>
+        <input class="smart-input" value="show me active OPTIMUS accounts in the Southeast" />
+      </div>
+      <div class="smart-chips">
+        <span class="chip active">Active accounts</span>
+        <span class="chip">Deactivated this month</span>
+        <span class="chip">Pending training</span>
+        <span class="chip">Southeast region</span>
+        <span class="chip">Not activated</span>
+      </div>
+      <div style="font-size:0.72rem;color:#6b7280;font-weight:700;margin-bottom:6px;">14 RESULTS</div>
+      <div class="smart-result"><div class="sr-name">COMFORT AIR SYSTEMS LLC</div><div class="sr-meta">Dealer ID: 14230 · OPTIMUS · Contractor Activated · Nashville, TN</div></div>
+      <div class="smart-result"><div class="sr-name">SOUTHERN COMFORT HVAC INC</div><div class="sr-meta">Dealer ID: 13850 · OPTIMUS · Contractor Activated · Atlanta, GA</div></div>
+      <div class="smart-result"><div class="sr-name">GULF COAST AIR SERVICES LLC</div><div class="sr-meta">Dealer ID: 14788 · OPTIMUS · Contractor Activated · Tampa, FL</div></div>
+      <div class="smart-result"><div class="sr-name">CAROLINA COOL AIR LLC</div><div class="sr-meta">Dealer ID: 15102 · OPTIMUS · Contractor Activated · Charlotte, NC</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S7 — Global Search
+══════════════════════════════════════ -->
+<div id="s7" class="frame">
+  <div class="frame-label">Global Search — Find Any Value Across AC</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell" style="height:440px;">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item active"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="gs-panel">
+      <div style="font-size:0.9rem;font-weight:700;color:#111827;margin-bottom:4px;">🌐 Global Search</div>
+      <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px;">Search any field across accounts, SLPs, contacts, or deals.</div>
+      <div class="gs-row">
+        <select class="gs-select"><option>SLPs</option><option>Accounts</option><option>Contacts</option><option>Deals</option></select>
+        <select class="gs-select"><option>Oracle Producer ID</option><option>Dealer ID</option><option>Status</option><option>Assigned BDR</option></select>
+        <input class="gs-input" value="TN-01204" />
+        <button class="gs-btn">Search</button>
+      </div>
+      <div style="font-size:0.72rem;color:#6b7280;font-weight:700;margin:8px 0 5px;">1 RESULT</div>
+      <div class="gs-result">
+        <div><div class="gs-key">Oracle Producer ID</div><div class="gs-val">TN-01204</div></div>
+        <div><div class="gs-key">Account</div><div class="gs-val gr-acct">COMFORT AIR SYSTEMS LLC</div></div>
+        <div><div class="gs-key">Program</div><div class="gs-val">OPTIMUS</div></div>
+        <div><div class="gs-key">Status</div><div><span class="acct-badge badge-green">Contractor Activated</span></div></div>
+      </div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e5e7eb;">
+        <div style="font-size:0.8rem;font-weight:700;color:#374151;margin-bottom:6px;">Example searches:</div>
+        <div style="font-size:0.76rem;color:#6b7280;line-height:2;">
+          • Find all accounts with BDR = "kdavis" &nbsp;→&nbsp; Object: Accounts · Field: Assigned BDR<br>
+          • Find a contact by email &nbsp;→&nbsp; Object: Contacts · Field: Email<br>
+          • Find all SLPs with a specific Oracle ID &nbsp;→&nbsp; Object: SLPs · Field: Oracle Producer ID
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+  S8 — Move Records
+══════════════════════════════════════ -->
+<div id="s8" class="frame">
+  <div class="frame-label">Move Records — Move Deals, Contacts, or SLPs</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <div class="search-wrap"><span class="si">🔍</span><input placeholder="Search accounts…" /></div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="shell" style="height:400px;">
+    <div class="nav">
+      <div class="nav-item"><span class="ni">👥</span> Accounts</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">📊</span> Reports</div>
+      <div class="nav-item"><span class="ni">📋</span> Pre-Built</div>
+      <div class="nav-divider"></div>
+      <div class="nav-item"><span class="ni">💡</span> Smart Search</div>
+      <div class="nav-item"><span class="ni">🌐</span> Global Search</div>
+    </div>
+    <div class="move-panel">
+      <div style="font-size:0.9rem;font-weight:700;color:#111827;margin-bottom:2px;">🔀 Move Records</div>
+      <div style="font-size:0.76rem;color:#6b7280;margin-bottom:12px;">Move a Deal, Contact, or SLP from one account to another.</div>
+      <div class="move-tabs">
+        <div class="move-tab active">Deal</div>
+        <div class="move-tab">Contact</div>
+        <div class="move-tab">SLP</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div>
+          <div class="form-row">
+            <div class="form-label">Deal ID</div>
+            <input class="form-input" value="48821" />
+            <div class="form-hint">Find the Deal ID in the account's Deals section</div>
+          </div>
+          <div class="form-row">
+            <div class="form-label">Move to Account ID</div>
+            <input class="form-input" value="15540" />
+            <div class="form-hint">Find the Account ID in the URL when viewing an account</div>
+          </div>
+          <button class="move-btn">🔀 Move Deal</button>
+        </div>
+        <div style="background:#f9fafb;border-radius:6px;padding:12px;font-size:0.76rem;color:#6b7280;line-height:1.8;">
+          <div style="font-weight:700;color:#374151;margin-bottom:6px;">How to find IDs:</div>
+          <div>• <b>Deal ID:</b> Open the account → Deals section → click the deal → ID is in the URL</div>
+          <div style="margin-top:4px;">• <b>Account ID:</b> Search for the destination account → ID shown in the URL or account header</div>
+          <div style="margin-top:4px;">• <b>SLP ID:</b> Open account → SLPs section → ID shown next to each record</div>
+        </div>
+      </div>
+      <div class="success-inline" style="display:none;">✓ Deal #48821 successfully moved to account #15540</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

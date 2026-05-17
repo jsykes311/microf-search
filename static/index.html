@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>AC Reporter</title>
 <style>
@@ -10,9 +13,9 @@
 /* ── macOS System Tokens ── */
 :root {
   /* macOS system palette */
-  --mac-blue:       #007aff;
-  --mac-blue-hover: #0068e1;
-  --mac-blue-light: rgba(0,122,255,0.10);
+  --mac-blue:       #23A455;
+  --mac-blue-hover: #1d8e49;
+  --mac-blue-light: rgba(35,164,85,0.10);
   --mac-green:      #34c759;
   --mac-green-hov:  #28a745;
   --mac-red:        #ff3b30;
@@ -46,7 +49,7 @@
   /* ── legacy --ms-* aliases so existing code just works ── */
   --ms-blue:       var(--mac-blue);
   --ms-blue-hover: var(--mac-blue-hover);
-  --ms-blue-dark:  #004ab8;
+  --ms-blue-dark:  #16703a;
   --ms-blue-light: var(--mac-blue-light);
   --ms-green:      var(--mac-green);
   --ms-green-hov:  var(--mac-green-hov);
@@ -70,7 +73,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+  font-family: 'Open Sans', Arial, sans-serif;
   background: var(--mac-bg);
   color: var(--mac-text);
   height: 100vh;
@@ -132,7 +135,7 @@ body {
   width: 24px; height: 24px; background: var(--mac-blue);
   border-radius: 6px; display: flex; align-items: center;
   justify-content: center; font-size: 0.75rem; flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(0,122,255,0.35);
+  box-shadow: 0 1px 3px rgba(35,164,85,0.35);
 }
 .nav-logo-text { display: flex; flex-direction: column; line-height: 1.25; }
 .nav-logo-text strong { font-size: 0.79rem; font-weight: 600; color: var(--mac-text); }
@@ -248,7 +251,7 @@ body {
   font-size: 0.78rem; margin-bottom: 10px; outline: none; font-family: inherit;
   background: var(--mac-surface);
 }
-.field-search:focus { border-color: var(--mac-blue); outline: 3px solid rgba(0,122,255,0.20); outline-offset: 0; }
+.field-search:focus { border-color: var(--mac-blue); outline: 3px solid rgba(35,164,85,0.20); outline-offset: 0; }
 
 .field-list {
   max-height: 260px; overflow-y: auto; border: 1px solid var(--mac-line);
@@ -290,7 +293,7 @@ body {
   flex: 1; padding: 4px 8px; border: 1px solid var(--mac-line); border-radius: var(--r-sm);
   font-size: 0.76rem; background: var(--mac-surface); outline: none; min-width: 0; font-family: inherit;
 }
-.filter-row select:focus, .filter-row input:focus { border-color: var(--mac-blue); outline: 3px solid rgba(0,122,255,0.18); outline-offset: 0; }
+.filter-row select:focus, .filter-row input:focus { border-color: var(--mac-blue); outline: 3px solid rgba(35,164,85,0.18); outline-offset: 0; }
 .filter-row .rm-btn {
   background: none; border: none; cursor: pointer; color: var(--mac-red);
   font-size: 0.95rem; padding: 0 4px; flex-shrink: 0;
@@ -336,7 +339,7 @@ th .sort-icon { opacity: 0.4; margin-left: 4px; }
 th.sorted .sort-icon { opacity: 1; }
 td { padding: 7px 12px; border-bottom: 1px solid var(--mac-line2); color: var(--mac-text2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(0,122,255,0.04); }
+tr:hover td { background: rgba(35,164,85,0.04); }
 
 /* ── Pre-built Reports ── */
 .prebuilt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
@@ -357,7 +360,7 @@ tr:hover td { background: rgba(0,122,255,0.04); }
   font-size: 0.76rem; outline: none; font-family: inherit; background: var(--mac-surface);
 }
 .form-row input:focus, .form-row select:focus {
-  border-color: var(--mac-blue); outline: 3px solid rgba(0,122,255,0.20); outline-offset: 0;
+  border-color: var(--mac-blue); outline: 3px solid rgba(35,164,85,0.20); outline-offset: 0;
 }
 
 .btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -388,7 +391,7 @@ tr:hover td { background: rgba(0,122,255,0.04); }
   position: absolute; top: 13px; right: 13px;
   font-size: 0.57rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
   background: var(--mac-blue-light); color: var(--mac-blue);
-  padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(0,122,255,0.2);
+  padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(35,164,85,0.2);
 }
 .btn-email { background: var(--mac-surface); border-color: var(--mac-blue); color: var(--mac-blue); }
 .btn-email:hover { background: var(--mac-blue-light); }
@@ -406,7 +409,7 @@ tr:hover td { background: rgba(0,122,255,0.04); }
 .empty .big { font-size: 2.5rem; margin-bottom: 8px; }
 
 .alert { padding: 10px 14px; border-radius: var(--r-sm); font-size: 0.76rem; margin-bottom: 12px; }
-.alert-info  { background: var(--mac-blue-light); color: var(--mac-blue-hover); border: 1px solid rgba(0,122,255,0.2); }
+.alert-info  { background: var(--mac-blue-light); color: var(--mac-blue-hover); border: 1px solid rgba(35,164,85,0.2); }
 .alert-error { background: rgba(255,59,48,0.08); color: var(--mac-red); border: 1px solid rgba(255,59,48,0.2); }
 
 select, input { font-family: inherit; }
@@ -499,7 +502,7 @@ select, input { font-family: inherit; }
 }
 .top-search-bar input:focus {
   border-color: var(--mac-blue); background: var(--mac-surface);
-  outline: 3px solid rgba(0,122,255,0.18); outline-offset: 0;
+  outline: 3px solid rgba(35,164,85,0.18); outline-offset: 0;
 }
 .top-search-bar input::placeholder { color: var(--mac-text4); }
 
@@ -519,7 +522,7 @@ select, input { font-family: inherit; }
   background: var(--mac-surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23aeaeb2' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 9px center;
   font-family: inherit; color: var(--mac-text);
 }
-.ab-search:focus { border-color: var(--mac-blue); outline: 3px solid rgba(0,122,255,0.18); outline-offset: 0; }
+.ab-search:focus { border-color: var(--mac-blue); outline: 3px solid rgba(35,164,85,0.18); outline-offset: 0; }
 .ab-count { font-size: 0.62rem; color: var(--mac-text4); padding: 4px 12px; background: var(--mac-surface2); border-bottom: 1px solid var(--mac-line); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 .ab-list { flex: 1; overflow-y: auto; }
 .ab-item { padding: 8px 12px; border-bottom: 1px solid var(--mac-line2); cursor: pointer; transition: background 0.1s; }
@@ -1041,7 +1044,7 @@ tr[data-tp-row]:hover td{filter:brightness(.97);}
         <div class="ac-title">Move Records</div>
       </button>
       <button class="admin-card ac-group-admin ac-group-onboarding" id="admin-card-welcome" onclick="window.open('/welcome','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#007aff,#0051a8);">✉️</div>
+        <div class="ac-icon" style="background:linear-gradient(145deg,#23A455,#16703a);">✉️</div>
         <div class="ac-title">Welcome Email</div>
       </button>
       <button class="admin-card" id="admin-card-weather" onclick="window.open('/dealer-locator','_blank')">

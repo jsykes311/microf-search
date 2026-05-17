@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OPTIMUS Guide Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f3f4f6; }
+
+  .frame { width: 820px; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 0; margin: 40px auto; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; }
+  .frame-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #9ca3af; padding: 8px 16px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+
+  /* Fake top bar */
+  .topbar { background: #1e3a5f; height: 46px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; }
+  .topbar .logo { color: #fff; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.5px; }
+  .topbar .apps-btn { background: #356ae6; color: #fff; border: none; border-radius: 4px; padding: 5px 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+
+  /* Admin hub */
+  .hub { padding: 28px; }
+  .hub h2 { font-size: 1.1rem; font-weight: 700; color: #111827; margin-bottom: 20px; }
+  .card-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .ac-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 18px 14px; cursor: pointer; text-align: left; background: #fff; }
+  .ac-card.highlight { border-color: #356ae6; box-shadow: 0 0 0 2px #356ae620; }
+  .ac-card .ic { font-size: 1.6rem; margin-bottom: 10px; }
+  .ac-card .ic-row { display: flex; align-items: center; gap: 5px; margin-bottom: 10px; }
+  .ac-card .ic-row img { height: 18px; object-fit: contain; }
+  .ac-card .t { font-size: 0.85rem; font-weight: 700; color: #111827; margin-bottom: 3px; }
+  .ac-card .d { font-size: 0.72rem; color: #6b7280; line-height: 1.4; }
+
+  /* Panel */
+  .panel { margin: 0; background: #fff; padding: 24px 28px; border-top: 3px solid #356ae6; }
+  .panel-title { font-size: 1rem; font-weight: 700; color: #111827; margin-bottom: 6px; }
+  .panel-sub { font-size: 0.78rem; color: #6b7280; margin-bottom: 14px; line-height: 1.5; }
+  textarea.mock { width: 100%; padding: 10px; font-size: 0.78rem; border: 1px solid #d1d5db; border-radius: 6px; font-family: monospace; resize: none; color: #374151; background: #f9fafb; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .btn-blue { padding: 7px 18px; background: #356ae6; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+  .btn-green { padding: 7px 18px; background: #16a34a; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
+  .btn-gray { padding: 7px 18px; background: #6b7280; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+  .status-loading { font-size: 0.78rem; color: #6b7280; }
+  .status-done { font-size: 0.78rem; color: #16a34a; font-weight: 600; }
+
+  /* Preview table */
+  .preview-area { margin-top: 16px; }
+  .preview-area .warn { background: #fff3cd; border: 1px solid #fbbf24; border-radius: 6px; padding: 8px 12px; font-size: 0.78rem; color: #92400e; margin-bottom: 10px; }
+  .preview-area .info { background: #eff6ff; border: 1px solid #93c5fd; border-radius: 6px; padding: 8px 12px; font-size: 0.78rem; color: #1e40af; margin-bottom: 10px; }
+  table.preview-tbl { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+  table.preview-tbl th { background: #f3f4f6; padding: 7px 10px; text-align: left; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; }
+  table.preview-tbl td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+  table.preview-tbl tr:last-child td { border-bottom: none; }
+  .badge-deact { background: #fee2e2; color: #991b1b; font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 99px; }
+  .badge-act { background: #dcfce7; color: #166534; font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 99px; }
+  .badge-will { background: #fff3cd; color: #92400e; font-size: 0.68rem; font-weight: 700; padding: 2px 6px; border-radius: 99px; }
+
+  /* Success state */
+  .success-box { background: #dcfce7; border: 1px solid #86efac; border-radius: 8px; padding: 16px 18px; margin-top: 16px; }
+  .success-box .st { font-size: 0.9rem; font-weight: 700; color: #166534; margin-bottom: 8px; }
+  .success-box .sl { font-size: 0.78rem; color: #166534; line-height: 1.8; }
+
+  /* Step callout */
+  .callout { position: relative; }
+  .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #356ae6; color: #fff; border-radius: 50%; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 1 — Apps hub, click OPTIMUS Deactivation
+════════════════════════════════════════════════════════ -->
+<div id="s1" class="frame">
+  <div class="frame-label">Step 1 · Open the Apps tab and click OPTIMUS Deactivation</div>
+  <div class="topbar">
+    <div class="logo">🏠 Microf Search</div>
+    <button class="apps-btn">⚙ Apps</button>
+  </div>
+  <div class="hub">
+    <h2>Apps</h2>
+    <div class="card-grid">
+      <div class="ac-card"><div class="ic">📋</div><div class="t">Pre-Built Reports</div><div class="d">Run saved reports for activations, ARS, BDR summaries, and more.</div></div>
+      <div class="ac-card"><div class="ic">⚙</div><div class="t">Report Builder</div><div class="d">Build custom reports by filtering any AC object and field.</div></div>
+      <div class="ac-card highlight" style="border-color:#dc2626;box-shadow:0 0 0 2px #dc262620;">
+        <div class="ic-row"><img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" onerror="this.style.display='none'"> 🔴</div>
+        <div class="t">OPTIMUS Deactivation</div>
+        <div class="d">Paste EGIA suspension email to bulk-deactivate OPTIMUS SLPs/Accounts.</div>
+      </div>
+      <div class="ac-card">
+        <div class="ic-row"><img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" onerror="this.style.display='none'"> 🟢</div>
+        <div class="t">OPTIMUS Reactivation</div>
+        <div class="d">Paste EGIA reactivation email to bulk-reactivate OPTIMUS SLPs/Accounts.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 2 — Deact panel open, paste email
+════════════════════════════════════════════════════════ -->
+<div id="s2" class="frame">
+  <div class="frame-label">Step 2 · Paste the EGIA suspension email into the text box</div>
+  <div class="panel">
+    <div class="panel-title">OPTIMUS Bulk Deactivation</div>
+    <div class="panel-sub">Paste the EGIA suspension email body below. The tool will extract dealer IDs, find their OPTIMUS SLPs, and show you a preview before making any changes.</div>
+    <textarea class="mock" rows="7">Dear Contractor,
+
+We are writing to inform you that the following OPTIMUS accounts have been suspended effective immediately per EGIA policy:
+
+Dealer ID: 14707 – TRI TECH MECHANICAL LLC
+Dealer ID: 16755 – SUB ZERO MECHANICAL LLC
+Dealer ID: 15432 – COMFORT PRO SERVICES INC
+
+Please contact your BDR if you have any questions.
+
+– EGIA Compliance Team</textarea>
+    <div class="btn-row">
+      <button class="btn-blue">🔍 Preview</button>
+      <span class="status-loading"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 3 — Preview results
+════════════════════════════════════════════════════════ -->
+<div id="s3" class="frame">
+  <div class="frame-label">Step 3 · Review the preview — verify accounts before confirming</div>
+  <div class="panel">
+    <div class="panel-title">OPTIMUS Bulk Deactivation</div>
+    <div class="panel-sub">Paste the EGIA suspension email body below.</div>
+    <textarea class="mock" rows="4" style="color:#9ca3af;">[email pasted above — 3 dealer IDs found]</textarea>
+    <div class="btn-row">
+      <button class="btn-blue">🔍 Preview</button>
+      <span class="status-done">✓ Found 3 OPTIMUS SLPs</span>
+    </div>
+    <div class="preview-area">
+      <div class="info">3 OPTIMUS SLPs found. Review below, then click Confirm to deactivate.</div>
+      <table class="preview-tbl">
+        <thead><tr><th>Dealer ID</th><th>Account Name</th><th>Current Status</th><th>Will Become</th></tr></thead>
+        <tbody>
+          <tr><td>14707</td><td>TRI TECH MECHANICAL LLC</td><td><span class="badge-act">Contractor Activated</span></td><td><span class="badge-will">Deactivated</span></td></tr>
+          <tr><td>16755</td><td>SUB ZERO MECHANICAL LLC</td><td><span class="badge-act">Contractor Activated</span></td><td><span class="badge-will">Deactivated</span></td></tr>
+          <tr><td>15432</td><td>COMFORT PRO SERVICES INC</td><td><span class="badge-act">Contractor Activated</span></td><td><span class="badge-will">Deactivated</span></td></tr>
+        </tbody>
+      </table>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn-blue" style="background:#dc2626;">🚫 Confirm Deactivation</button>
+        <button class="btn-gray">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 4 — Deactivation complete
+════════════════════════════════════════════════════════ -->
+<div id="s4" class="frame">
+  <div class="frame-label">Step 4 · Deactivation complete</div>
+  <div class="panel">
+    <div class="panel-title">OPTIMUS Bulk Deactivation</div>
+    <div class="success-box">
+      <div class="st">✓ Deactivation complete — 3 of 3 SLPs updated</div>
+      <div class="sl">
+        ✓ 14707 · TRI TECH MECHANICAL LLC — Deactivated<br>
+        ✓ 16755 · SUB ZERO MECHANICAL LLC — Deactivated<br>
+        ✓ 15432 · COMFORT PRO SERVICES INC — Deactivated<br><br>
+        Account Activity notes logged. Account statuses updated where applicable.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 5 — Reactivation: click card
+════════════════════════════════════════════════════════ -->
+<div id="s5" class="frame">
+  <div class="frame-label">Reactivation · Step 1 — Click OPTIMUS Reactivation</div>
+  <div class="hub">
+    <h2>Apps</h2>
+    <div class="card-grid">
+      <div class="ac-card"><div class="ic">📋</div><div class="t">Pre-Built Reports</div><div class="d">Run saved reports.</div></div>
+      <div class="ac-card"><div class="ic">⚙</div><div class="t">Report Builder</div><div class="d">Build custom reports.</div></div>
+      <div class="ac-card">
+        <div class="ic-row"><img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" onerror="this.style.display='none'"> 🔴</div>
+        <div class="t">OPTIMUS Deactivation</div>
+        <div class="d">Paste EGIA suspension email to bulk-deactivate OPTIMUS SLPs/Accounts.</div>
+      </div>
+      <div class="ac-card highlight" style="border-color:#16a34a;box-shadow:0 0 0 2px #16a34a20;">
+        <div class="ic-row"><img src="https://egia.org/wp-content/uploads/2021/02/egiaLogo.png" onerror="this.style.display='none'"> 🟢</div>
+        <div class="t">OPTIMUS Reactivation</div>
+        <div class="d">Paste EGIA reactivation email to bulk-reactivate OPTIMUS SLPs/Accounts.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREENSHOT 6 — Reactivation preview
+════════════════════════════════════════════════════════ -->
+<div id="s6" class="frame">
+  <div class="frame-label">Reactivation · Step 2 — Paste email, preview, confirm</div>
+  <div class="panel">
+    <div class="panel-title">OPTIMUS Bulk Reactivation</div>
+    <div class="panel-sub">Paste the EGIA reactivation email body below.</div>
+    <textarea class="mock" rows="4" style="color:#9ca3af;">[email pasted — 2 dealer IDs found]</textarea>
+    <div class="btn-row">
+      <button class="btn-blue">🔍 Preview</button>
+      <span class="status-done">✓ Found 2 OPTIMUS SLPs</span>
+    </div>
+    <div class="preview-area">
+      <div class="info">2 OPTIMUS SLPs found. Review below, then click Confirm to reactivate.</div>
+      <table class="preview-tbl">
+        <thead><tr><th>Dealer ID</th><th>Account Name</th><th>Current Status</th><th>Will Become</th></tr></thead>
+        <tbody>
+          <tr><td>14707</td><td>TRI TECH MECHANICAL LLC</td><td><span class="badge-deact">Deactivated</span></td><td><span class="badge-will">Contractor Activated</span></td></tr>
+          <tr><td>15432</td><td>COMFORT PRO SERVICES INC</td><td><span class="badge-deact">Deactivated</span></td><td><span class="badge-will">Contractor Activated</span></td></tr>
+        </tbody>
+      </table>
+      <div class="btn-row" style="margin-top:14px;">
+        <button class="btn-green">✓ Confirm Reactivation</button>
+        <button class="btn-gray">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
