@@ -841,8 +841,33 @@ select, input { font-family: inherit; }
   /* Touch-friendly nav buttons in sidebar (when visible) */
   .nav-item { min-height: 44px; }
 
-  /* Accounts table: horizontal scroll */
-  #tab-accounts .ms-table-wrap,
+  /* ── Accounts page: single-panel on mobile ── */
+  .ab-layout {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: 1fr;
+  }
+  /* Default: show list only */
+  .ab-detail { display: none !important; }
+  /* detail-mode: show detail only, hide list */
+  .ab-layout.detail-mode .ab-sidebar { display: none !important; }
+  .ab-layout.detail-mode .ab-detail  { display: flex !important; flex-direction: column; }
+  /* Bigger touch targets in account list */
+  .ab-item { padding: 12px 14px; }
+  .ab-item-name { font-size: 0.85rem; }
+  .ab-item-sub  { font-size: 0.72rem; margin-top: 3px; }
+  /* Back button: taller, more prominent */
+  .detail-mode .ab-back-btn {
+    min-height: 44px; font-size: 0.9rem;
+    padding: 12px 16px; border-bottom: 1px solid var(--mac-line);
+    width: 100%; justify-content: flex-start;
+  }
+  /* Search & filters: full height touch targets */
+  .ab-search { font-size: 16px !important; padding: 10px 10px 10px 32px; }
+  #ab-program, #ab-bdr, #ab-owner, #ab-group {
+    font-size: 16px !important; padding: 10px 8px !important;
+  }
+
+  /* Tables: horizontal scroll */
   .ms-table-wrap,
   .account-table-wrap,
   table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
