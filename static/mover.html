@@ -129,18 +129,7 @@ header nav { margin-left: auto; display: flex; gap: 8px; }
   font-size: 0.72rem; padding: 3px 8px; border-radius: 4px;
   background: #f3f4f6; border: 1px solid #e5e7eb; color: #374151; cursor: pointer;
 }
-.known-field-tag:hover { background: #eff5ff; border-color: #bfdbfe; color: #356ae6; }        
-    /* ── Microf logo watermark ─── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 0.22;
-      pointer-events: none;
-      z-index: 9998;
-    }
-  </style>
+.known-field-tag:hover { background: #eff5ff; border-color: #bfdbfe; color: #356ae6; }          </style>
 </head>
 <body>
 
@@ -547,5 +536,7 @@ function clearLog() {
 }
 </script>
 <script src="/static/js/status-widget.js" defer></script>
+
+  <div aria-hidden="true" id="microf-watermark" style="position:fixed;inset:0;background:url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;opacity:0.22;pointer-events:none;z-index:9998;"></div>
 </body>
 </html>

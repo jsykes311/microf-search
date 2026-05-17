@@ -229,18 +229,7 @@ header nav { margin-left: auto; display: flex; gap: 8px; }
 }
 .badge-blue   { background: #dbeafe; color: #1d4ed8; }
 .badge-green  { background: #d1fae5; color: #065f46; }
-.badge-gray   { background: #f3f4f6; color: #374151; }        
-    /* ── Microf logo watermark ─── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 0.22;
-      pointer-events: none;
-      z-index: 9998;
-    }
-  </style>
+.badge-gray   { background: #f3f4f6; color: #374151; }          </style>
 </head>
 <body>
 
@@ -423,5 +412,7 @@ function renderProfile({ contact, activity }) {
 }
 </script>
 <script src="/static/js/status-widget.js" defer></script>
+
+  <div aria-hidden="true" id="microf-watermark" style="position:fixed;inset:0;background:url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;opacity:0.22;pointer-events:none;z-index:9998;"></div>
 </body>
 </html>

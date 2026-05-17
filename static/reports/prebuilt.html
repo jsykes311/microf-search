@@ -351,18 +351,7 @@ tbody tr:hover td { background: #f9fafb; }
 .tp-note-row{padding:7px 0;border-bottom:1px solid #f3f4f6;font-size:.82rem;color:#374151;}
 .tp-note-row:last-child{border-bottom:none;}
 .tp-note-date{font-size:.72rem;color:#9ca3af;margin-top:2px;}
-.tp-empty{font-size:.82rem;color:#9ca3af;padding:8px 0;}        
-    /* ── Microf logo watermark ─── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 0.22;
-      pointer-events: none;
-      z-index: 9998;
-    }
-  </style>
+.tp-empty{font-size:.82rem;color:#9ca3af;padding:8px 0;}          </style>
 </head>
 <body>
 
@@ -1434,5 +1423,7 @@ async function init() {
 init();
 </script>
 <script src="/static/js/status-widget.js" defer></script>
+
+  <div aria-hidden="true" id="microf-watermark" style="position:fixed;inset:0;background:url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;opacity:0.22;pointer-events:none;z-index:9998;"></div>
 </body>
 </html>

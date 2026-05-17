@@ -151,18 +151,7 @@
     position: absolute; top: 20px; left: 22px;
     background: rgba(255,255,255,.9); padding: 6px 12px; border-radius: 20px;
     font-size: 0.72rem; font-weight: 800; color: #006341; letter-spacing: .05em;
-  }        
-    /* ── Microf logo watermark ─── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 0.22;
-      pointer-events: none;
-      z-index: 9998;
-    }
-  </style>
+  }          </style>
 </head>
 <body>
   <div style="position:fixed;top:14px;right:16px;z-index:100;display:flex;gap:6px;">
@@ -263,5 +252,7 @@
   </div>
 
 </div>
+
+  <div aria-hidden="true" id="microf-watermark" style="position:fixed;inset:0;background:url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;opacity:0.22;pointer-events:none;z-index:9998;"></div>
 </body>
 </html>

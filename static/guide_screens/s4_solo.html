@@ -60,17 +60,8 @@
   .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #356ae6; color: #fff; border-radius: 50%; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }
 
 body { background:#f3f4f6; padding:20px; }
-.frame { margin: 0 auto; }        
-    /* ── Microf logo watermark ─── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 0.22;
-      pointer-events: none;
-      z-index: 9998;
-    }
-  </style></head><body><div id="s4" class="frame">
+.frame { margin: 0 auto; }          </style></head><body><div id="s4" class="frame">
   <div class="frame-label">Step 4 · Deactivation complete</div>
-  </body></html>
+  
+  <div aria-hidden="true" id="microf-watermark" style="position:fixed;inset:0;background:url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;opacity:0.22;pointer-events:none;z-index:9998;"></div>
+</body></html>
