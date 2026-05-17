@@ -72,7 +72,19 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
 
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-</style>
+
+    /* ── Microf logo watermark ─── */
+    body { isolation: isolate; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
+      opacity: 0.055;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
 </head>
 <body>
 

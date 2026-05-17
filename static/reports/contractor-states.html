@@ -45,7 +45,19 @@
   a.ac-link { color: #4f46e5; text-decoration: none; }
   a.ac-link:hover { text-decoration: underline; }
   .note { font-size: 12px; color: #888; margin-top: 8px; }
-</style>
+
+    /* ── Microf logo watermark ─── */
+    body { isolation: isolate; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
+      opacity: 0.055;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
 </head>
 <body>
 <header>
