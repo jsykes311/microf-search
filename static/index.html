@@ -5,7 +5,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>AC Reporter</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -798,6 +798,82 @@ select, input { font-family: inherit; }
   #mf-layout { flex-direction: column-reverse; }
   #mf-sidebar { width: 100%; }
   #mf-map { height: 320px; }
+}
+
+/* ── Mobile responsive ────────────────────────────────── */
+@media (max-width: 600px) {
+  body { font-size: 14px; }
+
+  /* Prevent iOS input zoom */
+  input, select, textarea, button { touch-action: manipulation; }
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Container padding */
+  .container { padding: 14px 14px; }
+
+  /* Hide desktop sidebar on mobile - users navigate via app grid */
+  .app-nav { display: none !important; }
+
+  /* Command bar: tighter on mobile */
+  .ms-cmdbar { padding: 0 10px; gap: 4px; }
+  .ms-cmdbar-breadcrumb { display: none; }
+  .sidebar-toggle-btn { display: none !important; }
+
+  /* App grid: 2 columns like iOS home screen */
+  .admin-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px 10px;
+  }
+
+  /* App icons: slightly smaller */
+  .admin-card .ac-icon {
+    width: 76px;
+    height: 76px;
+    border-radius: 17px;
+    font-size: 2.2rem;
+  }
+  .admin-card .ac-title {
+    font-size: 0.74rem;
+    max-width: 100px;
+  }
+  .admin-card { padding: 10px 6px 12px; gap: 8px; }
+
+  /* Touch-friendly nav buttons in sidebar (when visible) */
+  .nav-item { min-height: 44px; }
+
+  /* Accounts table: horizontal scroll */
+  #tab-accounts .ms-table-wrap,
+  .ms-table-wrap,
+  .account-table-wrap,
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; }
+
+  /* Report cards: single column */
+  .two-col, .three-col { grid-template-columns: 1fr !important; }
+  .report-card { min-width: 0; }
+
+  /* Drawer: full width on mobile */
+  #tp-drawer { width: 100% !important; max-width: 100% !important; }
+
+  /* Admin hub padding */
+  .admin-hub { padding: 14px; }
+  .admin-hub h2 { font-size: 1.2rem; }
+  .admin-hub .admin-subtitle { margin-bottom: 18px; }
+
+  /* Modals: full screen on mobile */
+  .gs-modal { width: 96vw !important; max-width: 96vw !important; margin: 8px; }
+
+  /* Filter panels */
+  #mf-layout { gap: 10px; }
+  #mf-sidebar { width: 100%; }
+
+  /* Tabs in cmdbar */
+  .ms-cmdbar-actions { gap: 2px; }
+}
+
+@media (max-width: 390px) {
+  .admin-card-grid { gap: 10px 8px; }
+  .admin-card .ac-icon { width: 68px; height: 68px; font-size: 2rem; border-radius: 15px; }
+  .admin-card .ac-title { font-size: 0.70rem; }
 }          </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

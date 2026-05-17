@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>Microf Search</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -255,13 +255,23 @@
       color: var(--muted);
     }
     .no-results .nr-icon { font-size: 2.5rem; margin-bottom: 12px; }
-    .no-results .nr-msg  { font-size: 1rem; }          </style>
+    .no-results .nr-msg  { font-size: 1rem; }          
+  /* ── Mobile responsive ─────────────────────────────── */
+  @media (max-width: 600px) {
+    body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
+    input, select, textarea { font-size: 16px !important; }
+    input, select, textarea, button { touch-action: manipulation; }
+    .container, .wrap, main, section { padding-left: 14px !important; padding-right: 14px !important; }
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
+  }
+  </style>
 </head>
 <body class="idle">
 
   <div style="position:fixed;top:14px;right:16px;z-index:100;display:flex;gap:6px;">
-    <a href="#" onclick="history.back();return false;" style="padding:5px 14px;background:rgba(0,0,0,0.48);color:#fff;border-radius:6px;font-size:0.76rem;font-weight:500;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">← Back</a>
-    <a href="/" style="padding:5px 14px;background:#23A455;color:#fff;border-radius:6px;font-size:0.76rem;font-weight:600;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">⬡ Apps</a>
+    <a href="#" onclick="history.back();return false;" style="padding:9px 16px;min-height:44px;background:rgba(0,0,0,0.48);color:#fff;border-radius:6px;font-size:0.76rem;font-weight:500;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">← Back</a>
+    <a href="/" style="padding:9px 16px;min-height:44px;background:#23A455;color:#fff;border-radius:6px;font-size:0.76rem;font-weight:600;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">⬡ Apps</a>
   </div>
 
   <div id="stage">

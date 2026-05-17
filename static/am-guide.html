@@ -5,7 +5,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
 <title>AC Reporter — Account Manager User Guide</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
@@ -864,7 +864,17 @@ code {
   .callout { page-break-inside: avoid; break-inside: avoid; }
   h2, h3 { page-break-after: avoid; break-after: avoid; }
   a { color: inherit; text-decoration: none; }
-}          </style>
+}          
+  /* ── Mobile responsive ─────────────────────────────── */
+  @media (max-width: 600px) {
+    body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
+    input, select, textarea { font-size: 16px !important; }
+    input, select, textarea, button { touch-action: manipulation; }
+    .container, .wrap, main, section { padding-left: 14px !important; padding-right: 14px !important; }
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
+  }
+  </style>
 </head>
 <body>
 
@@ -1384,7 +1394,7 @@ code {
               <textarea rows="2" readonly
                 style="width:100%;padding:5px 8px;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;font-family:inherit;resize:none;margin-bottom:6px;color:#374151;">Spoke with owner — interested in the summer HVAC promo. Sending materials by email.</textarea>
               <div style="display:flex;gap:6px;align-items:center;">
-                <button style="padding:5px 14px;font-size:0.78rem;font-weight:600;background:#0078d4;color:#fff;border:none;border-radius:4px;cursor:pointer;">Submit</button>
+                <button style="padding:9px 16px;min-height:44px;font-size:0.78rem;font-weight:600;background:#0078d4;color:#fff;border:none;border-radius:4px;cursor:pointer;">Submit</button>
                 <span style="font-size:0.72rem;color:#6b7280;"></span>
               </div>
             </div>
@@ -1462,7 +1472,7 @@ code {
               <textarea rows="2" readonly
                 style="width:100%;padding:5px 8px;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;font-family:inherit;resize:none;margin-bottom:6px;color:#9ca3af;">Training notes (optional)…</textarea>
               <div style="display:flex;gap:6px;align-items:center;">
-                <button style="padding:5px 14px;font-size:0.78rem;font-weight:600;background:#0078d4;color:#fff;border:none;border-radius:4px;cursor:pointer;">Submit</button>
+                <button style="padding:9px 16px;min-height:44px;font-size:0.78rem;font-weight:600;background:#0078d4;color:#fff;border:none;border-radius:4px;cursor:pointer;">Submit</button>
               </div>
             </div>
           </div>

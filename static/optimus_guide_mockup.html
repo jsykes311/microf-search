@@ -5,7 +5,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>OPTIMUS Guide Mockup</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -62,7 +62,17 @@
 
   /* Step callout */
   .callout { position: relative; }
-  .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #356ae6; color: #fff; border-radius: 50%; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }          </style>
+  .step-badge { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; background: #356ae6; color: #fff; border-radius: 50%; font-size: 0.72rem; font-weight: 700; flex-shrink: 0; }          
+  /* ── Mobile responsive ─────────────────────────────── */
+  @media (max-width: 600px) {
+    body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
+    input, select, textarea { font-size: 16px !important; }
+    input, select, textarea, button { touch-action: manipulation; }
+    .container, .wrap, main, section { padding-left: 14px !important; padding-right: 14px !important; }
+    table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
+  }
+  </style>
 </head>
 <body>
 
