@@ -44,14 +44,18 @@
   .loading { text-align: center; padding: 48px; color: #999; }
   a.ac-link { color: #4f46e5; text-decoration: none; }
   a.ac-link:hover { text-decoration: underline; }
-  .note { font-size: 12px; color: #888; margin-top: 8px; }    
+  .note { font-size: 12px; color: #888; margin-top: 8px; }      
     /* ── Microf logo watermark ─── */
     body::before {
       content: '';
       position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
-      opacity: 0.18;
+      bottom: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 26vmin;
+      height: 26vmin;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/contain no-repeat;
+      opacity: 0.22;
       pointer-events: none;
       z-index: 9998;
     }

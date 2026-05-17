@@ -64,14 +64,18 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Status bar ── */
-  .statusbar { background: #fff; border-top: 1px solid #e5e7eb; padding: 6px 16px; font-size: .78rem; color: #6b7280; flex-shrink: 0; }    
+  .statusbar { background: #fff; border-top: 1px solid #e5e7eb; padding: 6px 16px; font-size: .78rem; color: #6b7280; flex-shrink: 0; }      
     /* ── Microf logo watermark ─── */
     body::before {
       content: '';
       position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
-      opacity: 0.18;
+      bottom: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 26vmin;
+      height: 26vmin;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/contain no-repeat;
+      opacity: 0.22;
       pointer-events: none;
       z-index: 9998;
     }

@@ -177,14 +177,18 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
   body { display: block; }
   .main { overflow: visible; }
   .report { padding: 0; max-width: 100%; }
-}    
+}      
     /* ── Microf logo watermark ─── */
     body::before {
       content: '';
       position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
-      opacity: 0.18;
+      bottom: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 26vmin;
+      height: 26vmin;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/contain no-repeat;
+      opacity: 0.22;
       pointer-events: none;
       z-index: 9998;
     }

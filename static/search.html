@@ -255,14 +255,18 @@
       color: var(--muted);
     }
     .no-results .nr-icon { font-size: 2.5rem; margin-bottom: 12px; }
-    .no-results .nr-msg  { font-size: 1rem; }    
+    .no-results .nr-msg  { font-size: 1rem; }      
     /* ── Microf logo watermark ─── */
     body::before {
       content: '';
       position: fixed;
-      inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
-      opacity: 0.18;
+      bottom: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 26vmin;
+      height: 26vmin;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/contain no-repeat;
+      opacity: 0.22;
       pointer-events: none;
       z-index: 9998;
     }
