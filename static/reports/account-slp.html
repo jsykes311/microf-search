@@ -58,17 +58,16 @@
   .status-pill.ready   { background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; }
   @keyframes spin { to { transform:rotate(360deg); } }
   .spinner { width:15px; height:15px; border:2px solid #bfdbfe; border-top-color:#3b82f6;
-    border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }  
+    border-radius:50%; animation:spin .8s linear infinite; flex-shrink:0; }    
     /* ── Microf logo watermark ─── */
-    body { isolation: isolate; }
     body::before {
       content: '';
       position: fixed;
       inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 1;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
+      opacity: 0.18;
       pointer-events: none;
-      z-index: -1;
+      z-index: 9998;
     }
   </style>
 </head>

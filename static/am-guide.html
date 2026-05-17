@@ -864,17 +864,16 @@ code {
   .callout { page-break-inside: avoid; break-inside: avoid; }
   h2, h3 { page-break-after: avoid; break-after: avoid; }
   a { color: inherit; text-decoration: none; }
-}  
+}    
     /* ── Microf logo watermark ─── */
-    body { isolation: isolate; }
     body::before {
       content: '';
       position: fixed;
       inset: 0;
-      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
-      opacity: 1;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/40vmin no-repeat;
+      opacity: 0.18;
       pointer-events: none;
-      z-index: -1;
+      z-index: 9998;
     }
   </style>
 </head>
