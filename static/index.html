@@ -798,7 +798,19 @@ select, input { font-family: inherit; }
   #mf-layout { flex-direction: column-reverse; }
   #mf-sidebar { width: 100%; }
   #mf-map { height: 320px; }
-}  </style>
+}  
+    /* ── Microf logo watermark ─── */
+    body { isolation: isolate; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
+      opacity: 1;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>

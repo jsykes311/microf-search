@@ -149,7 +149,19 @@ body { font-family: 'Open Sans', Arial, sans-serif; background: #f3f4f6; }
 .success-inline { background: #dcfce7; border: 1px solid #86efac; border-radius: 6px; padding: 8px 12px; font-size: 0.78rem; color: #166534; margin-top: 10px; }
 
 /* callout arrow */
-.callout-arrow { font-size: 1.4rem; color: #356ae6; font-weight: 900; }  </style>
+.callout-arrow { font-size: 1.4rem; color: #356ae6; font-weight: 900; }  
+    /* ── Microf logo watermark ─── */
+    body { isolation: isolate; }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: url('https://microf.com/wp-content/uploads/2025/03/UpdatedLogo-Transparent.png') center/38vmin no-repeat;
+      opacity: 1;
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
 </head>
 <body>
 
