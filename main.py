@@ -125,6 +125,20 @@ def _save_logins() -> None:
     except Exception as e:
         print(f"[logins] failed to save: {e}")
 
+def _record_last_seen(email: str) -> None:
+    """Update last-seen for an authenticated user. Writes to disk only when the date changes."""
+    if not email:
+        return
+    from datetime import timezone as _tz
+    now_str = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    existing = _last_login.get(email, "")
+    # Only save to disk if the date portion has changed (at most one write per user per day)
+    if existing[:10] != now_str[:10]:
+        _last_login[email] = now_str
+        _save_logins()
+    elif not existing:
+        _last_login[email] = now_str
+
 _load_logins()
 
 
@@ -275,6 +289,8 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
             if path.startswith("/api/"):
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
             return RedirectResponse(url="/login", status_code=302)
+        # Record last-seen for authenticated users (write to disk only when date changes)
+        _record_last_seen(email)
         return await call_next(request)
 
 # Register auth middleware after the class is defined, after CORS so CORS
@@ -346,10 +362,7 @@ async def auth_callback(
     if not email.endswith(f"@{_ALLOWED_DOMAIN}"):
         return RedirectResponse(url=f"/login?error=domain&email={urllib.parse.quote(email)}")
 
-    # Record last login time
-    from datetime import timezone as _tz
-    _last_login[email] = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-    _save_logins()
+    _record_last_seen(email)
 
     session_token = _signer.dumps(email)
     response = RedirectResponse(url="/search", status_code=302)
