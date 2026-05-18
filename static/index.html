@@ -3215,7 +3215,7 @@ async function runPrebuilt(type) {
             <th style="padding:4px 8px;text-align:right;">Total</th>
             <th style="padding:4px 8px;text-align:right;">Accounts</th>
             <th style="padding:4px 8px;" title="Last note or activity logged in ActiveCampaign">Last AC Note/Activity</th>
-            <th style="padding:4px 8px;" title="Last time this user accessed Microf Reports">Last Reports Login</th>
+            <th style="padding:4px 8px;" title="Last time this user accessed Microf Reports">Last Microf-Search Login</th>
           </tr></thead>
           <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}', this)" style="${r.total_actions === 0 ? 'opacity:0.55;' : ''}">
             <td style="padding:4px 8px;font-weight:500;color:#5b21b6;text-decoration:underline;cursor:pointer;">${esc(r.user_name)}</td>
