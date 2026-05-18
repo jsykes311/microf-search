@@ -3173,12 +3173,28 @@ async def team_activity_report(
     # Build result rows — include ALL known users so zero-activity users are visible
     user_rows = []
     all_uids  = set(user_stats.keys()) | set(users.keys())
+    # Users excluded from the Team Performance report (admins, IT, inactive accounts, ghosts)
+    _TP_EXCLUDED_IDS = {
+        "1",   # Jeremy Sykes
+        "14",  # Barb Yeskey
+        "17",  # Ansley Bergen
+        "19",  # Lauren Futrell
+        "21",  # Cher Shell
+        "23",  # Microf IT
+    }
+
     for uid in all_uids:
+        if uid in _TP_EXCLUDED_IDS:
+            continue
+        name = users.get(uid, f"User {uid}")
+        # Skip ghost/deleted users (no longer in AC, show up as "User N")
+        if name.startswith("User ") and not users.get(uid):
+            continue
         s     = user_stats.get(uid, {"notes": 0, "activities": 0, "accounts": set(), "latest_date": ""})
         total = s["notes"] + s["activities"]
         email = user_emails.get(uid, "")
         user_rows.append({
-            "user_name":            users.get(uid, f"User {uid}"),
+            "user_name":            name,
             "notes_written":        s["notes"],
             "activities_logged":    s["activities"],
             "total_actions":        total,
