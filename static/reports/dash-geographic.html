@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Geographic Coverage</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #23A455; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .top-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .card-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; font-size: .85rem; font-weight: 700; color: #374151; }
+  .state-list { padding: 8px 0; }
+  .state-row { display: flex; align-items: center; gap: 10px; padding: 6px 18px; }
+  .state-row:hover { background: #f9fafb; }
+  .state-abbr { font-weight: 700; font-size: .82rem; width: 28px; color: #111827; }
+  .state-bar-wrap { flex: 1; background: #f0f0f0; border-radius: 4px; height: 6px; }
+  .state-bar { background: #23A455; border-radius: 4px; height: 6px; }
+  .state-bar.bottom { background: #e5e7eb; }
+  .state-count { font-size: .82rem; font-weight: 700; color: #374151; min-width: 24px; text-align: right; }
+  .all-states { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .all-states-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; font-size: .85rem; font-weight: 700; color: #374151; }
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; padding: 16px; }
+  .state-tile { background: #f8f9fb; border-radius: 8px; padding: 10px 8px; text-align: center; cursor: default; }
+  .state-tile-abbr { font-size: .85rem; font-weight: 700; color: #111827; }
+  .state-tile-count { font-size: .72rem; color: #6b7280; margin-top: 2px; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+  @media(max-width:600px) { .top-bottom { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Geographic Coverage</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading geographic coverage…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <div class="top-bottom">
+      <div class="card">
+        <div class="card-header">Top 10 States</div>
+        <div class="state-list" id="top-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-header">Bottom 10 States (with activity)</div>
+        <div class="state-list" id="bottom-list"></div>
+      </div>
+    </div>
+    <div class="all-states">
+      <div class="all-states-header">All States</div>
+      <div class="state-grid" id="all-grid"></div>
+    </div>
+  </div>
+</div>
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function stateColor(count, max) {
+  const pct = Math.round(count / max * 100);
+  if (pct >= 70) return '#1d8e49';
+  if (pct >= 40) return '#23A455';
+  if (pct >= 20) return '#7EBEC5';
+  return '#bde0e5';
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/geographic');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    const totalDealers = d.state_coverage.reduce((s,x)=>s+x.count, 0);
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${d.total_states}</div><div class="stat-label">States Covered</div></div>
+      <div class="stat"><div class="stat-value">${totalDealers.toLocaleString()}</div><div class="stat-label">Total Activated Dealer-States</div></div>
+      <div class="stat"><div class="stat-value">${d.top_10_states[0]?.state||'—'}</div><div class="stat-label">Top State</div></div>
+      <div class="stat"><div class="stat-value">${d.top_10_states[0]?.count||0}</div><div class="stat-label">Top State Count</div></div>`;
+
+    const maxCount = d.top_10_states[0]?.count || 1;
+
+    document.getElementById('top-list').innerHTML = d.top_10_states.map((s,i) => `
+      <div class="state-row">
+        <span style="font-size:.72rem;color:#9ca3af;width:16px;">${i+1}</span>
+        <span class="state-abbr">${esc(s.state)}</span>
+        <div class="state-bar-wrap"><div class="state-bar" style="width:${Math.round(s.count/maxCount*100)}%"></div></div>
+        <span class="state-count">${s.count}</span>
+      </div>`).join('');
+
+    const minCount = d.bottom_10_states[d.bottom_10_states.length-1]?.count || 1;
+    document.getElementById('bottom-list').innerHTML = [...d.bottom_10_states].reverse().map((s,i) => `
+      <div class="state-row">
+        <span class="state-abbr">${esc(s.state)}</span>
+        <div class="state-bar-wrap"><div class="state-bar bottom" style="width:${Math.max(5,Math.round(s.count/maxCount*100))}%"></div></div>
+        <span class="state-count">${s.count}</span>
+      </div>`).join('');
+
+    const allMax = d.state_coverage[0]?.count || 1;
+    document.getElementById('all-grid').innerHTML = d.state_coverage.map(s => `
+      <div class="state-tile" title="${s.state}: ${s.count} dealers" style="background:${stateColor(s.count, allMax)}22;border:1px solid ${stateColor(s.count,allMax)}40;">
+        <div class="state-tile-abbr" style="color:${stateColor(s.count,allMax)}">${esc(s.state)}</div>
+        <div class="state-tile-count">${s.count}</div>
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

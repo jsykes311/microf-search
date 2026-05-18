@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>AM Workload</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #23A455; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .am-grid { display: grid; gap: 14px; }
+  .am-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .am-header { padding: 14px 18px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .am-header:hover { background: #fafafa; }
+  .am-name { font-weight: 700; color: #111827; font-size: .9rem; flex: 1; }
+  .am-bars { display: flex; gap: 6px; align-items: center; }
+  .bar-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .bar-outer { width: 40px; background: #f0f0f0; border-radius: 3px; height: 28px; display: flex; align-items: flex-end; overflow: hidden; }
+  .bar-inner { width: 100%; border-radius: 3px; }
+  .bar-label { font-size: .6rem; color: #9ca3af; font-weight: 600; }
+  .bar-val   { font-size: .75rem; font-weight: 700; }
+  .c-active  { background: #23A455; }
+  .c-stale   { background: #d97706; }
+  .c-never   { background: #d1d5db; }
+  .ph-arrow { color: #9ca3af; font-size: .8rem; transition: transform .2s; }
+  .am-card.open .ph-arrow { transform: rotate(90deg); }
+  .am-body { display: none; overflow-x: auto; }
+  .am-card.open .am-body { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: .68rem; font-weight: 700; }
+  .badge-active { background: #d1fae5; color: #065f46; }
+  .badge-stale  { background: #fef3c7; color: #92400e; }
+  .badge-never  { background: #f3f4f6; color: #4b5563; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AM Workload</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading AM workload data…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <p style="font-size:.75rem;color:#9ca3af;margin-bottom:14px;">Active = app within <span id="stale-label">90</span> days. Stale = app older than threshold. Never Active = no app on record.</p>
+    <div class="am-grid" id="am-grid"></div>
+  </div>
+</div>
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/am-workload');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+    document.getElementById('stale-label').textContent = d.stale_threshold_days;
+
+    const totalActive = d.am_workload.reduce((s,a)=>s+a.active,0);
+    const totalStale  = d.am_workload.reduce((s,a)=>s+a.stale,0);
+    const totalNever  = d.am_workload.reduce((s,a)=>s+a.never_active,0);
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${d.total_accounts.toLocaleString()}</div><div class="stat-label">Total Accounts</div></div>
+      <div class="stat"><div class="stat-value">${totalActive.toLocaleString()}</div><div class="stat-label">Active</div></div>
+      <div class="stat"><div class="stat-value" style="color:#d97706;">${totalStale.toLocaleString()}</div><div class="stat-label">Stale</div></div>
+      <div class="stat"><div class="stat-value" style="color:#9ca3af;">${totalNever.toLocaleString()}</div><div class="stat-label">Never Active</div></div>`;
+
+    const maxTotal = Math.max(...d.am_workload.map(a=>a.total_accounts), 1);
+    const grid = document.getElementById('am-grid');
+    d.am_workload.forEach(am => {
+      const aH = Math.round(am.active  / maxTotal * 28);
+      const sH = Math.round(am.stale   / maxTotal * 28);
+      const nH = Math.round(am.never_active / maxTotal * 28);
+      const card = document.createElement('div');
+      card.className = 'am-card';
+      card.innerHTML = `
+        <div class="am-header" onclick="toggle(this.parentElement)">
+          <div class="am-name">${esc(am.am)}</div>
+          <div style="font-size:.78rem;color:#6b7280;">${am.total_accounts} accounts</div>
+          <div class="am-bars">
+            <div class="bar-group">
+              <div class="bar-outer"><div class="bar-inner c-active" style="height:${aH}px"></div></div>
+              <div class="bar-val" style="color:#23A455;">${am.active}</div>
+              <div class="bar-label">Active</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-outer"><div class="bar-inner c-stale" style="height:${sH}px"></div></div>
+              <div class="bar-val" style="color:#d97706;">${am.stale}</div>
+              <div class="bar-label">Stale</div>
+            </div>
+            <div class="bar-group">
+              <div class="bar-outer"><div class="bar-inner c-never" style="height:${nH}px"></div></div>
+              <div class="bar-val" style="color:#9ca3af;">${am.never_active}</div>
+              <div class="bar-label">Never</div>
+            </div>
+          </div>
+          <span class="ph-arrow">▶</span>
+        </div>
+        <div class="am-body">
+          <table>
+            <thead><tr><th>Account</th><th>Region</th><th>Status</th><th>Last App Date</th></tr></thead>
+            <tbody>
+              ${(am.account_list||[]).map(a=>`
+                <tr>
+                  <td><a href="https://microf.activehosted.com/app/accounts/${a.account_id}" target="_blank" style="color:#23A455;text-decoration:none;">${esc(a.account_name)}</a></td>
+                  <td>${esc(a.region)}</td>
+                  <td><span class="badge badge-${a.activity_status}">${a.activity_status.replace('_',' ')}</span></td>
+                  <td>${esc(a.last_app_date||'—')}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      grid.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+function toggle(card) { card.classList.toggle('open'); }
+load();
+</script>
+</body>
+</html>

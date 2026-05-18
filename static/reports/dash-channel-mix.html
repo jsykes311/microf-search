@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Channel / Program Mix</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1000px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #23A455; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .results { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .results-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+  .results-title { font-size: .85rem; font-weight: 700; color: #374151; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8f9fb; text-align: left; padding: 9px 14px; font-size: .7rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid #f3f4f6; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+  .bar-wrap { background: #f0f0f0; border-radius: 4px; height: 6px; width: 120px; display: inline-block; vertical-align: middle; margin-right: 8px; }
+  .bar-fill { background: #23A455; border-radius: 4px; height: 6px; }
+  .mom-up   { color: #16a34a; font-weight: 700; }
+  .mom-down { color: #dc2626; font-weight: 700; }
+  .mom-flat { color: #9ca3af; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Channel / Program Mix</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading channel mix data…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <div class="results">
+      <div class="results-header">
+        <span class="results-title">Activated SLPs by Platform</span>
+        <span id="period-label" style="font-size:.78rem;color:#6b7280;"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead><tr>
+            <th>Platform</th>
+            <th>Total Activated</th>
+            <th>This Month</th>
+            <th>Prev Month</th>
+            <th>MoM Change</th>
+            <th>Share</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/channel-mix');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    document.getElementById('period-label').textContent = `${d.prev_month} → ${d.this_month}`;
+    const total = d.channel_mix.reduce((s,c)=>s+c.total_activated,0);
+    const thisMonthTotal = d.channel_mix.reduce((s,c)=>s+c.this_month,0);
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${total.toLocaleString()}</div><div class="stat-label">Total Activated</div></div>
+      <div class="stat"><div class="stat-value">${thisMonthTotal}</div><div class="stat-label">This Month</div></div>
+      <div class="stat"><div class="stat-value">${d.channel_mix.length}</div><div class="stat-label">Platforms</div></div>`;
+
+    const maxTotal = Math.max(...d.channel_mix.map(c=>c.total_activated), 1);
+    document.getElementById('tbody').innerHTML = d.channel_mix.map(c => {
+      const share = total > 0 ? Math.round(c.total_activated / total * 100) : 0;
+      const barW  = Math.round(c.total_activated / maxTotal * 100);
+      let momHtml = '—';
+      if (c.mom_change_pct != null) {
+        const cls = c.mom_change_pct > 0 ? 'mom-up' : c.mom_change_pct < 0 ? 'mom-down' : 'mom-flat';
+        const sign = c.mom_change_pct > 0 ? '+' : '';
+        momHtml = `<span class="${cls}">${sign}${c.mom_change_pct}%</span>`;
+      }
+      return `<tr>
+        <td style="font-weight:600;">${esc(c.platform)}</td>
+        <td>${c.total_activated.toLocaleString()}</td>
+        <td>${c.this_month}</td>
+        <td>${c.prev_month}</td>
+        <td>${momHtml}</td>
+        <td><span class="bar-wrap"><span class="bar-fill" style="width:${barW}%"></span></span>${share}%</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

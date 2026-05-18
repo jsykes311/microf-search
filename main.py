@@ -10293,6 +10293,957 @@ async def apex_export_csv(period: str, table: str = "production", admin=Depends(
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Admin Analytics Dashboards (admin-only)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _slp_get_field(slp: dict, field_id: str) -> str:
+    """Extract a field value from a raw SLP record."""
+    for f in slp.get("fields", []):
+        if f.get("id") == field_id:
+            return (f.get("value") or "").strip()
+    return ""
+
+def _parse_iso_date(s: str):
+    """Parse an ISO8601 date string, returning a date object or None."""
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(str(s)[:10])
+    except Exception:
+        return None
+
+def _days_since(d) -> Optional[int]:
+    """Return days since a date (date object or ISO string). None if unparseable."""
+    if d is None:
+        return None
+    if isinstance(d, str):
+        d = _parse_iso_date(d)
+    if d is None:
+        return None
+    try:
+        return (date.today() - d).days
+    except Exception:
+        return None
+
+
+# ── Page route ────────────────────────────────────────────────────────────────
+
+@app.get("/admin/dashboards")
+async def admin_dashboards_page(admin=Depends(_require_admin)):
+    return FileResponse("static/admin-dashboards.html")
+
+
+# ── 1. Onboarding Pipeline ────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/onboarding-pipeline")
+async def dash_onboarding_pipeline(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    STATUS_ORDER = [
+        "Not Started",
+        "In Progress – Signed Contract Needed",
+        "In Progress – Other",
+        "Pending - Training Not Completed",
+        "Pending - Waiting on Online Reviews",
+        "Waiting_on_BDR_Approval",
+        "On Indefinite Hold - Agreement/Docs Not Signed",
+        "Account on Hold (Suspended)",
+        "Contractor Activated",
+        "Deactivated",
+        "Deactivated for Dormancy",
+        "Declined by Onboarding",
+        "Not Active",
+    ]
+
+    buckets: dict = {s: {"count": 0, "days_list": [], "accounts": []} for s in STATUS_ORDER}
+    buckets["(other)"] = {"count": 0, "days_list": [], "accounts": []}
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        status = _slp_get_field(slp, "slp-status-detail") or "(other)"
+        if status not in buckets:
+            status = "(other)"
+
+        activation_date = _slp_get_field(slp, "contractor-activated-date")
+        created_raw = slp.get("cdate") or slp.get("created_at") or ""
+        ref_date = _parse_iso_date(activation_date) or _parse_iso_date(created_raw)
+        days = _days_since(ref_date)
+
+        aid = get_account_id(slp)
+        account_name = _account_to_name.get(str(aid), "") if aid else ""
+        platform = _slp_get_field(slp, "platform")
+        bdr = _slp_get_field(slp, "assigned-bdr")
+
+        buckets[status]["count"] += 1
+        if days is not None:
+            buckets[status]["days_list"].append(days)
+        buckets[status]["accounts"].append({
+            "account_id":   str(aid) if aid else "",
+            "account_name": account_name,
+            "platform":     platform,
+            "bdr":          bdr,
+            "days_in_status": days,
+            "activation_date": activation_date,
+        })
+
+    pipeline = []
+    for status in STATUS_ORDER + ["(other)"]:
+        b = buckets[status]
+        if b["count"] == 0:
+            continue
+        dl = b["days_list"]
+        pipeline.append({
+            "status":       status,
+            "count":        b["count"],
+            "avg_days":     round(sum(dl) / len(dl)) if dl else None,
+            "min_days":     min(dl) if dl else None,
+            "max_days":     max(dl) if dl else None,
+            "accounts":     sorted(b["accounts"], key=lambda x: (x["days_in_status"] or 0), reverse=True)[:50],
+        })
+
+    total = sum(b["count"] for b in buckets.values())
+    activated = buckets.get("Contractor Activated", {}).get("count", 0)
+    return {
+        "total_slps":       total,
+        "total_activated":  activated,
+        "pipeline":         pipeline,
+        "generated_at":     today.isoformat(),
+    }
+
+
+# ── 2. BDR Performance ────────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/bdr-performance")
+async def dash_bdr_performance(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    admin=Depends(_require_admin),
+):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    # Default range: YTD
+    from_d = _parse_iso_date(from_date) or date(today.year, 1, 1)
+    to_d   = _parse_iso_date(to_date)   or today
+
+    this_month_start = date(today.year, today.month, 1)
+    this_q = ((today.month - 1) // 3) * 3 + 1
+    this_q_start = date(today.year, this_q, 1)
+    this_year_start = date(today.year, 1, 1)
+
+    bdr_data: dict = {}
+
+    def _get_bdr(bdr_raw: str) -> str:
+        return bdr_raw.strip() if bdr_raw.strip() else "(Unassigned)"
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        bdr = _get_bdr(_slp_get_field(slp, "assigned-bdr"))
+        status = _slp_get_field(slp, "slp-status-detail")
+        activation_date_str = _slp_get_field(slp, "contractor-activated-date")
+        activation_date = _parse_iso_date(activation_date_str)
+
+        if bdr not in bdr_data:
+            bdr_data[bdr] = {
+                "bdr": bdr,
+                "activations_custom_range": 0,
+                "activations_this_month":   0,
+                "activations_this_quarter": 0,
+                "activations_this_year":    0,
+                "pipeline_count":           0,
+                "waiting_approval":         0,
+                "pending_statuses": [],
+            }
+
+        # Count activations in various windows
+        if activation_date:
+            if from_d <= activation_date <= to_d:
+                bdr_data[bdr]["activations_custom_range"] += 1
+            if activation_date >= this_month_start:
+                bdr_data[bdr]["activations_this_month"] += 1
+            if activation_date >= this_q_start:
+                bdr_data[bdr]["activations_this_quarter"] += 1
+            if activation_date >= this_year_start:
+                bdr_data[bdr]["activations_this_year"] += 1
+
+        # Pipeline (pending/in-progress)
+        PIPELINE_STATUSES = {
+            "Not Started", "In Progress – Signed Contract Needed", "In Progress – Other",
+            "Pending - Training Not Completed", "Pending - Waiting on Online Reviews",
+            "On Indefinite Hold - Agreement/Docs Not Signed",
+        }
+        if status in PIPELINE_STATUSES:
+            bdr_data[bdr]["pipeline_count"] += 1
+
+        if status == "Waiting_on_BDR_Approval":
+            aid = get_account_id(slp)
+            name = _account_to_name.get(str(aid), "") if aid else ""
+            bdr_data[bdr]["waiting_approval"] += 1
+            bdr_data[bdr]["pending_statuses"].append({
+                "account_id":   str(aid) if aid else "",
+                "account_name": name,
+                "platform":     _slp_get_field(slp, "platform"),
+            })
+
+    results = sorted(bdr_data.values(), key=lambda x: x["activations_this_year"], reverse=True)
+    return {
+        "from_date":       from_d.isoformat(),
+        "to_date":         to_d.isoformat(),
+        "bdr_performance": results,
+        "generated_at":    today.isoformat(),
+    }
+
+
+# ── 3. Dormancy Risk ──────────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/dormancy-risk")
+async def dash_dormancy_risk(
+    threshold: int = Query(90, ge=1),
+    admin=Depends(_require_admin),
+):
+    today = date.today()
+    results = []
+
+    # Use _account_to_last_app which is built from SLP data + CF140 fallback
+    for aid, last_app_str in _account_to_last_app.items():
+        if not last_app_str:
+            continue
+        d = _parse_iso_date(last_app_str)
+        if d is None:
+            continue
+        days = (today - d).days
+        if days < threshold:
+            continue
+        owner_uid = _account_to_owner.get(aid, "")
+        results.append({
+            "account_id":   aid,
+            "account_name": _account_to_name.get(aid, f"Account {aid}"),
+            "owner":        _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "",
+            "region":       _account_to_region.get(aid, ""),
+            "platform":     _account_to_platform.get(aid, ""),
+            "dealer_id":    _account_to_dealer.get(aid, ""),
+            "last_app_date": last_app_str,
+            "days_since_app": days,
+        })
+
+    results.sort(key=lambda x: x["days_since_app"], reverse=True)
+
+    over60  = sum(1 for r in results if r["days_since_app"] > 60)
+    over90  = sum(1 for r in results if r["days_since_app"] > 90)
+    over180 = sum(1 for r in results if r["days_since_app"] > 180)
+
+    return {
+        "threshold_days": threshold,
+        "total_at_risk":  len(results),
+        "over_60_days":   over60,
+        "over_90_days":   over90,
+        "over_180_days":  over180,
+        "accounts":       results,
+        "generated_at":   today.isoformat(),
+    }
+
+
+# ── 4. AM Workload ────────────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/am-workload")
+async def dash_am_workload(admin=Depends(_require_admin)):
+    today = date.today()
+    STALE_DAYS = 90
+
+    am_data: dict = {}
+
+    for aid, name in _account_to_name.items():
+        owner_uid = _account_to_owner.get(aid, "")
+        owner_name = _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "(Unassigned)"
+
+        last_app_str = _account_to_last_app.get(aid, "")
+        last_app_d   = _parse_iso_date(last_app_str)
+
+        if last_app_d is None:
+            activity_status = "never_active"
+        elif (today - last_app_d).days > STALE_DAYS:
+            activity_status = "stale"
+        else:
+            activity_status = "active"
+
+        if owner_name not in am_data:
+            am_data[owner_name] = {
+                "am": owner_name,
+                "total_accounts": 0,
+                "active":         0,
+                "stale":          0,
+                "never_active":   0,
+                "account_list":   [],
+            }
+
+        am_data[owner_name]["total_accounts"] += 1
+        am_data[owner_name][activity_status]  += 1
+        am_data[owner_name]["account_list"].append({
+            "account_id":     aid,
+            "account_name":   name,
+            "activity_status": activity_status,
+            "last_app_date":   last_app_str,
+            "region":          _account_to_region.get(aid, ""),
+        })
+
+    results = sorted(am_data.values(), key=lambda x: x["total_accounts"], reverse=True)
+    # Trim account lists to top 100 per AM to keep response size reasonable
+    for r in results:
+        r["account_list"] = sorted(r["account_list"], key=lambda a: a["last_app_date"] or "", reverse=True)[:100]
+
+    return {
+        "stale_threshold_days": STALE_DAYS,
+        "total_accounts":        len(_account_to_name),
+        "am_workload":           results,
+        "generated_at":          today.isoformat(),
+    }
+
+
+# ── 5. Activation Trends ──────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/activation-trends")
+async def dash_activation_trends(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    # Build last 12 month labels
+    months = []
+    for i in range(11, -1, -1):
+        m = today.month - i
+        y = today.year
+        while m <= 0:
+            m += 12
+            y -= 1
+        months.append(f"{y}-{m:02d}")
+
+    # month_key → platform → count
+    by_month: dict = {m: {} for m in months}
+    months_set = set(months)
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        act_str = _slp_get_field(slp, "contractor-activated-date")
+        if not act_str:
+            continue
+
+        d = _parse_iso_date(act_str)
+        if d is None:
+            continue
+
+        month_key = f"{d.year}-{d.month:02d}"
+        if month_key not in months_set:
+            continue
+
+        platform = _slp_get_field(slp, "platform") or "Unknown"
+        by_month[month_key][platform] = by_month[month_key].get(platform, 0) + 1
+
+    # All platforms seen
+    all_platforms: set = set()
+    for v in by_month.values():
+        all_platforms |= set(v.keys())
+    all_platforms = sorted(all_platforms)
+
+    trend = []
+    for m in months:
+        row = {"month": m, "total": sum(by_month[m].values())}
+        for p in all_platforms:
+            row[p] = by_month[m].get(p, 0)
+        trend.append(row)
+
+    return {
+        "months":       months,
+        "platforms":    all_platforms,
+        "trend":        trend,
+        "generated_at": today.isoformat(),
+    }
+
+
+# ── 6. Channel / Program Mix ──────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/channel-mix")
+async def dash_channel_mix(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    this_month = f"{today.year}-{today.month:02d}"
+    prev_m = today.month - 1 or 12
+    prev_y = today.year - (1 if today.month == 1 else 0)
+    prev_month = f"{prev_y}-{prev_m:02d}"
+
+    platform_data: dict = {}
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        platform = _slp_get_field(slp, "platform") or "Unknown"
+        act_str  = _slp_get_field(slp, "contractor-activated-date")
+        act_d    = _parse_iso_date(act_str)
+
+        if platform not in platform_data:
+            platform_data[platform] = {
+                "platform":       platform,
+                "total_activated": 0,
+                "this_month":      0,
+                "prev_month":      0,
+            }
+
+        platform_data[platform]["total_activated"] += 1
+        if act_d:
+            mk = f"{act_d.year}-{act_d.month:02d}"
+            if mk == this_month:
+                platform_data[platform]["this_month"] += 1
+            elif mk == prev_month:
+                platform_data[platform]["prev_month"] += 1
+
+    results = sorted(platform_data.values(), key=lambda x: x["total_activated"], reverse=True)
+    for r in results:
+        prev = r["prev_month"]
+        curr = r["this_month"]
+        if prev > 0:
+            r["mom_change_pct"] = round((curr - prev) / prev * 100, 1)
+        else:
+            r["mom_change_pct"] = None
+
+    return {
+        "this_month":   this_month,
+        "prev_month":   prev_month,
+        "channel_mix":  results,
+        "generated_at": today.isoformat(),
+    }
+
+
+# ── 7. Dealer ID Integrity ────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/dealer-id-integrity")
+async def dash_dealer_id_integrity(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    # Build set of all SLP dealer IDs
+    slp_dealer_ids: set = set()
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+        d = _slp_get_field(slp, "dealer-id")
+        if d:
+            slp_dealer_ids.add(d)
+
+    missing_cf18: list = []
+    mismatch: list = []
+    dealer_id_count: dict = {}
+
+    for aid, name in _account_to_name.items():
+        cf18 = _account_to_dealer.get(aid, "").strip()
+        owner_uid = _account_to_owner.get(aid, "")
+        owner = _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else ""
+
+        if not cf18:
+            missing_cf18.append({
+                "account_id":   aid,
+                "account_name": name,
+                "owner":        owner,
+                "region":       _account_to_region.get(aid, ""),
+            })
+        else:
+            # Track duplicates
+            dealer_id_count[cf18] = dealer_id_count.get(cf18, [])
+            dealer_id_count[cf18].append({"account_id": aid, "account_name": name, "owner": owner})
+
+            # Check if CF18 matches any SLP dealer-id
+            if cf18 not in slp_dealer_ids:
+                mismatch.append({
+                    "account_id":   aid,
+                    "account_name": name,
+                    "dealer_id":    cf18,
+                    "owner":        owner,
+                    "region":       _account_to_region.get(aid, ""),
+                })
+
+    duplicates = [
+        {"dealer_id": did, "accounts": accts}
+        for did, accts in dealer_id_count.items()
+        if len(accts) > 1
+    ]
+    duplicates.sort(key=lambda x: len(x["accounts"]), reverse=True)
+
+    return {
+        "missing_dealer_id":        len(missing_cf18),
+        "dealer_id_mismatch":       len(mismatch),
+        "duplicate_dealer_ids":     len(duplicates),
+        "missing_cf18_accounts":    sorted(missing_cf18, key=lambda x: x["account_name"])[:200],
+        "mismatch_accounts":        sorted(mismatch, key=lambda x: x["account_name"])[:200],
+        "duplicate_dealer_id_list": duplicates[:100],
+        "generated_at":             today.isoformat(),
+    }
+
+
+# ── 8. Oracle ID Coverage ─────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/oracle-coverage")
+async def dash_oracle_coverage(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    missing_by_platform: dict = {}
+    total_activated = 0
+    total_missing   = 0
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        total_activated += 1
+        oracle = _slp_get_field(slp, "oracle-producer-ids")
+        if oracle:
+            continue
+
+        total_missing += 1
+        platform = _slp_get_field(slp, "platform") or "Unknown"
+        if platform not in missing_by_platform:
+            missing_by_platform[platform] = {"platform": platform, "count": 0, "accounts": []}
+
+        aid = get_account_id(slp)
+        name = _account_to_name.get(str(aid), "") if aid else ""
+        missing_by_platform[platform]["count"] += 1
+        missing_by_platform[platform]["accounts"].append({
+            "account_id":   str(aid) if aid else "",
+            "account_name": name,
+            "dealer_id":    _slp_get_field(slp, "dealer-id"),
+            "bdr":          _slp_get_field(slp, "assigned-bdr"),
+            "region":       _account_to_region.get(str(aid), "") if aid else "",
+        })
+
+    results = sorted(missing_by_platform.values(), key=lambda x: x["count"], reverse=True)
+    pct_missing = round(total_missing / total_activated * 100, 1) if total_activated else 0
+
+    return {
+        "total_activated":      total_activated,
+        "total_missing_oracle": total_missing,
+        "pct_missing":          pct_missing,
+        "by_platform":          results,
+        "generated_at":         today.isoformat(),
+    }
+
+
+# ── 9. Contact Coverage ───────────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/contact-coverage")
+async def dash_contact_coverage(admin=Depends(_require_admin)):
+    today = date.today()
+
+    # Fetch account contacts in parallel with contact details
+    ac_contacts_raw, contacts_raw = await asyncio.gather(
+        ac_get_all("accountContacts", "accountContacts", {"limit": 100}),
+        ac_get_all("contacts", "contacts", {"limit": 100}),
+    )
+
+    # Map contact_id → email
+    contact_email: dict = {}
+    for c in contacts_raw:
+        cid  = str(c.get("id", ""))
+        em   = (c.get("email") or "").strip()
+        contact_email[cid] = em
+
+    # Map account_id → list of contact_ids
+    acct_contacts: dict = defaultdict(list)
+    for ac in ac_contacts_raw:
+        aid = str(ac.get("account", "") or "")
+        cid = str(ac.get("contact", "") or "")
+        if aid and aid != "0" and cid and cid != "0":
+            acct_contacts[aid].append(cid)
+
+    no_contacts: list = []
+    contacts_no_email: list = []
+
+    for aid, name in _account_to_name.items():
+        owner_uid = _account_to_owner.get(aid, "")
+        owner = _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else ""
+        region = _account_to_region.get(aid, "")
+        cids = acct_contacts.get(aid, [])
+
+        if not cids:
+            no_contacts.append({
+                "account_id":   aid,
+                "account_name": name,
+                "owner":        owner,
+                "region":       region,
+            })
+        else:
+            has_email = any(contact_email.get(cid, "") for cid in cids)
+            if not has_email:
+                contacts_no_email.append({
+                    "account_id":     aid,
+                    "account_name":   name,
+                    "owner":          owner,
+                    "region":         region,
+                    "contact_count":  len(cids),
+                })
+
+    total_accounts = len(_account_to_name)
+    return {
+        "total_accounts":          total_accounts,
+        "no_contacts_count":       len(no_contacts),
+        "contacts_no_email_count": len(contacts_no_email),
+        "no_contacts":             sorted(no_contacts, key=lambda x: x["account_name"])[:300],
+        "contacts_no_email":       sorted(contacts_no_email, key=lambda x: x["account_name"])[:300],
+        "generated_at":            today.isoformat(),
+    }
+
+
+# ── 10. New Account Velocity ──────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/new-account-velocity")
+async def dash_new_account_velocity(
+    days: int = Query(90, ge=1, le=365),
+    admin=Depends(_require_admin),
+):
+    today = date.today()
+    cutoff = today - timedelta(days=days)
+
+    # Fetch all accounts with cdate
+    all_accounts_raw = await ac_get_all("accounts", "accounts", {"limit": 100})
+
+    # Build cdate map
+    acct_cdate: dict = {}
+    for a in all_accounts_raw:
+        aid = str(a.get("id", ""))
+        cdate_raw = a.get("cdate") or ""
+        d = _parse_iso_date(cdate_raw)
+        if d:
+            acct_cdate[aid] = d
+
+    # SLP map: account_id → earliest SLP creation date + earliest activation date
+    all_slps = list(await get_slp_cache())
+    acct_first_slp: dict = {}
+    acct_first_activation: dict = {}
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        aid = get_account_id(slp)
+        if not aid:
+            continue
+        aid = str(aid)
+
+        slp_cdate = _parse_iso_date(slp.get("cdate") or "")
+        act_date  = _parse_iso_date(_slp_get_field(slp, "contractor-activated-date"))
+
+        if slp_cdate:
+            if aid not in acct_first_slp or slp_cdate < acct_first_slp[aid]:
+                acct_first_slp[aid] = slp_cdate
+        if act_date:
+            if aid not in acct_first_activation or act_date < acct_first_activation[aid]:
+                acct_first_activation[aid] = act_date
+
+    new_accounts = []
+    for aid, cdate in acct_cdate.items():
+        if cdate < cutoff:
+            continue
+        first_slp  = acct_first_slp.get(aid)
+        first_act  = acct_first_activation.get(aid)
+
+        days_to_slp  = (first_slp  - cdate).days if first_slp  and first_slp  >= cdate else None
+        days_to_act  = (first_act  - cdate).days if first_act  and first_act  >= cdate else None
+
+        owner_uid = _account_to_owner.get(aid, "")
+        new_accounts.append({
+            "account_id":      aid,
+            "account_name":    _account_to_name.get(aid, f"Account {aid}"),
+            "created_date":    cdate.isoformat(),
+            "days_ago":        (today - cdate).days,
+            "owner":           _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "",
+            "region":          _account_to_region.get(aid, ""),
+            "first_slp_date":  first_slp.isoformat() if first_slp else None,
+            "first_act_date":  first_act.isoformat() if first_act else None,
+            "days_to_first_slp": days_to_slp,
+            "days_to_activation": days_to_act,
+        })
+
+    new_accounts.sort(key=lambda x: x["created_date"], reverse=True)
+
+    days_to_slp_vals = [x["days_to_first_slp"] for x in new_accounts if x["days_to_first_slp"] is not None]
+    days_to_act_vals = [x["days_to_activation"] for x in new_accounts if x["days_to_activation"] is not None]
+
+    return {
+        "window_days":          days,
+        "new_accounts_count":   len(new_accounts),
+        "with_slp_count":       sum(1 for x in new_accounts if x["first_slp_date"]),
+        "activated_count":      sum(1 for x in new_accounts if x["first_act_date"]),
+        "avg_days_to_slp":      round(sum(days_to_slp_vals)/len(days_to_slp_vals), 1) if days_to_slp_vals else None,
+        "avg_days_to_act":      round(sum(days_to_act_vals)/len(days_to_act_vals), 1) if days_to_act_vals else None,
+        "accounts":             new_accounts[:500],
+        "generated_at":         today.isoformat(),
+    }
+
+
+# ── 11. Multi-Channel Opportunity ─────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/multi-channel")
+async def dash_multi_channel(
+    base_platform: str = Query("360 Finance"),
+    target_platform: str = Query("Microf"),
+    admin=Depends(_require_admin),
+):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    # Map account_id → set of activated platforms
+    acct_platforms: dict = defaultdict(set)
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        aid = get_account_id(slp)
+        if not aid:
+            continue
+
+        platform = _slp_get_field(slp, "platform")
+        if platform:
+            acct_platforms[str(aid)].add(platform)
+
+    opportunities = []
+    for aid, platforms in acct_platforms.items():
+        # Has base_platform activated but NOT target_platform
+        has_base   = any(base_platform.lower() in p.lower() for p in platforms)
+        has_target = any(target_platform.lower() in p.lower() for p in platforms)
+        if has_base and not has_target:
+            owner_uid = _account_to_owner.get(aid, "")
+            opportunities.append({
+                "account_id":        aid,
+                "account_name":      _account_to_name.get(aid, f"Account {aid}"),
+                "owner":             _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "",
+                "region":            _account_to_region.get(aid, ""),
+                "activated_platforms": sorted(platforms),
+                "dealer_id":         _account_to_dealer.get(aid, ""),
+            })
+
+    opportunities.sort(key=lambda x: x["account_name"])
+
+    # Build unique platform list from all activated SLPs
+    all_platforms: set = set()
+    seen_ids2: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids2:
+            continue
+        seen_ids2.add(sid)
+        if _slp_get_field(slp, "slp-status-detail") == "Contractor Activated":
+            p = _slp_get_field(slp, "platform")
+            if p:
+                all_platforms.add(p)
+
+    return {
+        "base_platform":    base_platform,
+        "target_platform":  target_platform,
+        "opportunity_count": len(opportunities),
+        "opportunities":    opportunities[:500],
+        "available_platforms": sorted(all_platforms),
+        "generated_at":     today.isoformat(),
+    }
+
+
+# ── 12. Geographic Coverage ───────────────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/geographic")
+async def dash_geographic(admin=Depends(_require_admin)):
+    all_slps = list(await get_slp_cache())
+    today = date.today()
+
+    # Count activated dealers by state (using SLP doing-business-in-states field)
+    state_counts: dict = {}
+
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        states_str = _slp_get_field(slp, "doing-business-in-states")
+        if not states_str:
+            # Fall back to account state_prov
+            aid = get_account_id(slp)
+            if aid:
+                states_str = _account_to_state_prov.get(str(aid), "")
+
+        if states_str:
+            for st in states_str.replace(",", " ").split():
+                st = st.strip().upper()
+                if len(st) == 2 and st.isalpha():
+                    state_counts[st] = state_counts.get(st, 0) + 1
+
+    sorted_states = sorted(state_counts.items(), key=lambda x: x[1], reverse=True)
+
+    return {
+        "state_coverage":  [{"state": s, "count": c} for s, c in sorted_states],
+        "total_states":    len(state_counts),
+        "top_10_states":   [{"state": s, "count": c} for s, c in sorted_states[:10]],
+        "bottom_10_states": [{"state": s, "count": c} for s, c in sorted_states[-10:]],
+        "generated_at":    today.isoformat(),
+    }
+
+
+# ── 13. Training-to-Activation Funnel ────────────────────────────────────────
+
+@app.get("/api/admin/dashboard/training-funnel")
+async def dash_training_funnel(admin=Depends(_require_admin)):
+    today = date.today()
+
+    # Fetch training records
+    training_records_raw = await ac_get_all(
+        f"customObjects/records/{TRAINING_SCHEMA_ID}", "records", {}
+    )
+
+    # Build account → latest training date
+    acct_training: dict = {}
+    for r in training_records_raw:
+        fmap = {f["id"]: (f.get("value") or "").strip() for f in r.get("fields", [])}
+        train_date_str = fmap.get("date-of-training", "")
+        train_date = _parse_iso_date(train_date_str)
+        if not train_date:
+            continue
+
+        for aid in r.get("relationships", {}).get("account", []):
+            aid = str(aid)
+            if aid not in acct_training or train_date > acct_training[aid]["date"]:
+                acct_training[aid] = {
+                    "date":          train_date,
+                    "date_str":      train_date.isoformat(),
+                    "training_type": fmap.get("training-type", ""),
+                    "trained_by":    fmap.get("trained-by", ""),
+                }
+
+    # Build account → first activation date from SLP cache
+    all_slps = list(await get_slp_cache())
+    acct_activation: dict = {}
+    seen_ids: set = set()
+    for slp in all_slps:
+        sid = slp.get("id", "")
+        if sid in seen_ids:
+            continue
+        seen_ids.add(sid)
+
+        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+            continue
+
+        aid = get_account_id(slp)
+        if not aid:
+            continue
+        aid = str(aid)
+
+        act_date = _parse_iso_date(_slp_get_field(slp, "contractor-activated-date"))
+        if act_date:
+            if aid not in acct_activation or act_date < acct_activation[aid]:
+                acct_activation[aid] = act_date
+
+    trained_and_activated  = []
+    trained_not_activated  = []
+    activated_not_trained  = []
+    days_to_act_vals = []
+
+    for aid, train_info in acct_training.items():
+        owner_uid = _account_to_owner.get(aid, "")
+        row = {
+            "account_id":    aid,
+            "account_name":  _account_to_name.get(aid, f"Account {aid}"),
+            "owner":         _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "",
+            "region":        _account_to_region.get(aid, ""),
+            "training_date": train_info["date_str"],
+            "training_type": train_info["training_type"],
+            "trained_by":    train_info["trained_by"],
+        }
+        act_d = acct_activation.get(aid)
+        if act_d:
+            days = (act_d - train_info["date"]).days
+            row["activation_date"]     = act_d.isoformat()
+            row["days_train_to_act"]   = days
+            row["days_since_training"] = (today - train_info["date"]).days
+            trained_and_activated.append(row)
+            if days >= 0:
+                days_to_act_vals.append(days)
+        else:
+            row["activation_date"]     = None
+            row["days_train_to_act"]   = None
+            row["days_since_training"] = (today - train_info["date"]).days
+            trained_not_activated.append(row)
+
+    # Activated but never trained
+    for aid, act_d in acct_activation.items():
+        if aid not in acct_training:
+            owner_uid = _account_to_owner.get(aid, "")
+            activated_not_trained.append({
+                "account_id":       aid,
+                "account_name":     _account_to_name.get(aid, f"Account {aid}"),
+                "owner":            _user_id_to_name.get(owner_uid, owner_uid) if owner_uid else "",
+                "region":           _account_to_region.get(aid, ""),
+                "activation_date":  act_d.isoformat(),
+            })
+
+    trained_not_activated.sort(key=lambda x: x["days_since_training"], reverse=True)
+    trained_and_activated.sort(key=lambda x: x["days_train_to_act"] or 0, reverse=True)
+
+    return {
+        "trained_and_activated_count": len(trained_and_activated),
+        "trained_not_activated_count": len(trained_not_activated),
+        "activated_not_trained_count": len(activated_not_trained),
+        "avg_days_train_to_activation": round(sum(days_to_act_vals)/len(days_to_act_vals), 1) if days_to_act_vals else None,
+        "trained_and_activated":  trained_and_activated[:200],
+        "trained_not_activated":  trained_not_activated[:200],
+        "activated_not_trained":  activated_not_trained[:200],
+        "generated_at":           today.isoformat(),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

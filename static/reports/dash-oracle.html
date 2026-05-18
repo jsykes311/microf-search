@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Oracle ID Coverage</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #dc2626; line-height: 1; }
+  .stat-value.green { color: #23A455; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .platform-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 14px; }
+  .platform-header { padding: 12px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .platform-header:hover { background: #fafafa; }
+  .ph-name { font-weight: 700; color: #111827; flex: 1; }
+  .ph-count { font-size: .85rem; color: #dc2626; font-weight: 700; }
+  .ph-arrow { color: #9ca3af; font-size: .8rem; transition: transform .2s; }
+  .platform-card.open .ph-arrow { transform: rotate(90deg); }
+  .platform-body { display: none; overflow-x: auto; }
+  .platform-card.open .platform-body { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Oracle ID Coverage</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading Oracle ID coverage…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <div id="platforms"></div>
+  </div>
+</div>
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/oracle-coverage');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value green">${d.total_activated.toLocaleString()}</div><div class="stat-label">Total Activated SLPs</div></div>
+      <div class="stat"><div class="stat-value">${d.total_missing_oracle.toLocaleString()}</div><div class="stat-label">Missing Oracle ID</div></div>
+      <div class="stat"><div class="stat-value">${d.pct_missing}%</div><div class="stat-label">% Missing</div></div>
+      <div class="stat"><div class="stat-value green">${(100-d.pct_missing).toFixed(1)}%</div><div class="stat-label">Coverage</div></div>`;
+
+    const plEl = document.getElementById('platforms');
+    d.by_platform.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'platform-card';
+      card.innerHTML = `
+        <div class="platform-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="ph-name">${esc(p.platform)}</span>
+          <span class="ph-count">${p.count} missing</span>
+          <span class="ph-arrow">▶</span>
+        </div>
+        <div class="platform-body">
+          <table>
+            <thead><tr><th>Account</th><th>Dealer ID</th><th>BDR</th><th>Region</th></tr></thead>
+            <tbody>${(p.accounts||[]).map(a => `
+              <tr>
+                <td><a href="https://microf.activehosted.com/app/accounts/${a.account_id}" target="_blank" style="color:#23A455;text-decoration:none;">${esc(a.account_name||a.account_id)}</a></td>
+                <td style="font-family:monospace;">${esc(a.dealer_id)}</td>
+                <td>${esc(a.bdr)}</td>
+                <td>${esc(a.region)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      plEl.appendChild(card);
+    });
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Dealer ID Integrity</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .tabs { display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 0; }
+  .tab-btn { padding: 8px 18px; font-size: .82rem; font-weight: 600; border: none; background: none; cursor: pointer; color: #6b7280; border-bottom: 2px solid transparent; margin-bottom: -2px; font-family: inherit; }
+  .tab-btn.active { color: #23A455; border-bottom-color: #23A455; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; margin-top: 20px; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; cursor: pointer; transition: box-shadow .15s; }
+  .stat:hover { box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #dc2626; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .results { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; margin-top: 0; }
+  .results-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+  .results-title { font-size: .85rem; font-weight: 700; color: #374151; }
+  .results-count { font-size: .8rem; color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8f9fb; text-align: left; padding: 9px 14px; font-size: .7rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; }
+  td { padding: 9px 14px; border-bottom: 1px solid #f3f4f6; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+  .sub-accounts { font-size: .75rem; color: #6b7280; margin-top: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Dealer ID Integrity</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading dealer ID data…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats">
+      <div class="stat" onclick="showTab('missing')">
+        <div class="stat-value" id="stat-missing">—</div>
+        <div class="stat-label">Missing CF18</div>
+      </div>
+      <div class="stat" onclick="showTab('mismatch')">
+        <div class="stat-value" id="stat-mismatch">—</div>
+        <div class="stat-label">CF18 ≠ SLP Dealer ID</div>
+      </div>
+      <div class="stat" onclick="showTab('dupes')">
+        <div class="stat-value" id="stat-dupes">—</div>
+        <div class="stat-label">Duplicate Dealer IDs</div>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="showTab('missing')">Missing CF18</button>
+      <button class="tab-btn" onclick="showTab('mismatch')">Mismatch</button>
+      <button class="tab-btn" onclick="showTab('dupes')">Duplicates</button>
+    </div>
+    <div id="tab-missing" class="tab-panel active">
+      <div class="results">
+        <div class="results-header"><span class="results-title">Accounts Missing Dealer ID (CF18)</span><span class="results-count" id="cnt-missing"></span></div>
+        <div style="overflow-x:auto;"><table><thead><tr><th>Account</th><th>Owner</th><th>Region</th></tr></thead><tbody id="tb-missing"></tbody></table></div>
+      </div>
+    </div>
+    <div id="tab-mismatch" class="tab-panel">
+      <div class="results">
+        <div class="results-header"><span class="results-title">CF18 Doesn't Match Any SLP</span><span class="results-count" id="cnt-mismatch"></span></div>
+        <div style="overflow-x:auto;"><table><thead><tr><th>Account</th><th>CF18 Dealer ID</th><th>Owner</th><th>Region</th></tr></thead><tbody id="tb-mismatch"></tbody></table></div>
+      </div>
+    </div>
+    <div id="tab-dupes" class="tab-panel">
+      <div class="results">
+        <div class="results-header"><span class="results-title">Duplicate Dealer IDs</span><span class="results-count" id="cnt-dupes"></span></div>
+        <div style="overflow-x:auto;"><table><thead><tr><th>Dealer ID</th><th>Accounts</th></tr></thead><tbody id="tb-dupes"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function acLink(id, name) { return `<a href="https://microf.activehosted.com/app/accounts/${id}" target="_blank" style="color:#23A455;text-decoration:none;">${esc(name||id)}</a>`; }
+
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    if (b.textContent.toLowerCase().includes(tab === 'missing' ? 'missing' : tab === 'mismatch' ? 'mismatch' : 'duplic'))
+      b.classList.add('active');
+  });
+}
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/dealer-id-integrity');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    document.getElementById('stat-missing').textContent = d.missing_dealer_id;
+    document.getElementById('stat-mismatch').textContent = d.dealer_id_mismatch;
+    document.getElementById('stat-dupes').textContent = d.duplicate_dealer_ids;
+
+    document.getElementById('cnt-missing').textContent = `${d.missing_cf18_accounts.length} shown`;
+    document.getElementById('tb-missing').innerHTML = d.missing_cf18_accounts.map(a =>
+      `<tr><td>${acLink(a.account_id, a.account_name)}</td><td>${esc(a.owner)}</td><td>${esc(a.region)}</td></tr>`
+    ).join('');
+
+    document.getElementById('cnt-mismatch').textContent = `${d.mismatch_accounts.length} shown`;
+    document.getElementById('tb-mismatch').innerHTML = d.mismatch_accounts.map(a =>
+      `<tr><td>${acLink(a.account_id, a.account_name)}</td><td style="font-family:monospace;">${esc(a.dealer_id)}</td><td>${esc(a.owner)}</td><td>${esc(a.region)}</td></tr>`
+    ).join('');
+
+    document.getElementById('cnt-dupes').textContent = `${d.duplicate_dealer_id_list.length} shown`;
+    document.getElementById('tb-dupes').innerHTML = d.duplicate_dealer_id_list.map(g =>
+      `<tr><td style="font-family:monospace;font-weight:600;">${esc(g.dealer_id)}</td><td>${g.accounts.map(a=>acLink(a.account_id,a.account_name)).join('<br>')}</td></tr>`
+    ).join('');
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

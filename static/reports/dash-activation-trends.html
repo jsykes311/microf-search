@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Activation Trends</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #23A455; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .chart-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 20px; margin-bottom: 20px; }
+  .chart-title { font-size: .85rem; font-weight: 700; color: #374151; margin-bottom: 16px; }
+  .bar-chart { display: flex; gap: 8px; align-items: flex-end; height: 200px; overflow-x: auto; padding-bottom: 24px; }
+  .month-col { display: flex; flex-direction: column; align-items: center; gap: 0; flex: 1; min-width: 50px; }
+  .stacked-bars { display: flex; flex-direction: column; align-items: center; width: 100%; gap: 1px; flex: 1; justify-content: flex-end; }
+  .stack-seg { width: 100%; border-radius: 2px 2px 0 0; min-height: 1px; }
+  .month-label { font-size: .65rem; color: #9ca3af; margin-top: 4px; white-space: nowrap; }
+  .month-total { font-size: .72rem; font-weight: 700; color: #374151; margin-top: 2px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: .75rem; color: #374151; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .results { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .results-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; }
+  .results-title { font-size: .85rem; font-weight: 700; color: #374151; }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th { background: #f8f9fb; text-align: left; padding: 9px 14px; font-size: .7rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; }
+  td { padding: 9px 14px; border-bottom: 1px solid #f3f4f6; text-align: right; }
+  td:first-child { text-align: left; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Activation Trends</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading activation trends…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <div class="chart-card">
+      <div class="chart-title">Monthly Activations — Last 12 Months</div>
+      <div class="bar-chart" id="bar-chart"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="results">
+      <div class="results-header"><span class="results-title">Monthly Detail Table</span></div>
+      <div style="overflow-x:auto;"><table><thead id="thead"></thead><tbody id="tbody"></tbody></table></div>
+    </div>
+  </div>
+</div>
+<script>
+const PALETTE = ['#23A455','#E78F4A','#7EBEC5','#5856d6','#ff9f0a','#ff3b30','#30b0c7','#bf5af2','#636366','#30d158','#ff6b35','#0ea5e9','#8b5cf6'];
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/activation-trends');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    const totals = d.trend.map(t => t.total);
+    const grandTotal = totals.reduce((a,b)=>a+b,0);
+    const maxTotal = Math.max(...totals, 1);
+    const thisMonth = totals[totals.length-1] || 0;
+    const prevMonth = totals[totals.length-2] || 0;
+    const mom = prevMonth ? Math.round((thisMonth-prevMonth)/prevMonth*100) : null;
+
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="stat-value">${grandTotal.toLocaleString()}</div><div class="stat-label">Total (12 Months)</div></div>
+      <div class="stat"><div class="stat-value">${thisMonth}</div><div class="stat-label">This Month</div></div>
+      <div class="stat"><div class="stat-value" style="color:${mom>=0?'#23A455':'#dc2626'}">${mom!=null?(mom>=0?'+':'')+mom+'%':'—'}</div><div class="stat-label">Month-over-Month</div></div>
+      <div class="stat"><div class="stat-value">${d.platforms.length}</div><div class="stat-label">Platforms</div></div>`;
+
+    // Bar chart
+    const chartEl = document.getElementById('bar-chart');
+    const HEIGHT = 180;
+    d.trend.forEach(t => {
+      const col = document.createElement('div');
+      col.className = 'month-col';
+      const barsDiv = document.createElement('div');
+      barsDiv.className = 'stacked-bars';
+      barsDiv.style.height = HEIGHT + 'px';
+      d.platforms.forEach((p,i) => {
+        const v = t[p] || 0;
+        if (!v) return;
+        const h = Math.max(2, Math.round(v / maxTotal * HEIGHT));
+        const seg = document.createElement('div');
+        seg.className = 'stack-seg';
+        seg.style.background = PALETTE[i % PALETTE.length];
+        seg.style.height = h + 'px';
+        seg.title = `${p}: ${v}`;
+        barsDiv.appendChild(seg);
+      });
+      col.appendChild(barsDiv);
+      const lbl = document.createElement('div');
+      lbl.className = 'month-label';
+      lbl.textContent = t.month.slice(5); // MM
+      col.appendChild(lbl);
+      const tot = document.createElement('div');
+      tot.className = 'month-total';
+      tot.textContent = t.total;
+      col.appendChild(tot);
+      chartEl.appendChild(col);
+    });
+
+    // Legend
+    const legendEl = document.getElementById('legend');
+    d.platforms.forEach((p,i) => {
+      legendEl.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${PALETTE[i%PALETTE.length]}"></div>${esc(p)}</div>`;
+    });
+
+    // Table
+    document.getElementById('thead').innerHTML = `<tr><th>Month</th>${d.platforms.map(p=>`<th>${esc(p)}</th>`).join('')}<th>Total</th></tr>`;
+    document.getElementById('tbody').innerHTML = [...d.trend].reverse().map(t =>
+      `<tr><td>${t.month}</td>${d.platforms.map(p=>`<td>${t[p]||0}</td>`).join('')}<td style="font-weight:700;color:#23A455;">${t.total}</td></tr>`
+    ).join('');
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Onboarding Pipeline</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header {
+    background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%);
+    color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px;
+    box-shadow: 0 2px 10px rgba(35,164,85,.3);
+  }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .back-btn:hover { background: rgba(255,255,255,.22); }
+  .container { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 130px; flex: 1; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; color: #23A455; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .pipeline-grid { display: grid; gap: 14px; }
+  .pipeline-row { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .pipeline-header {
+    padding: 12px 18px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid #f0f0f0; cursor: pointer;
+  }
+  .pipeline-header:hover { background: #fafafa; }
+  .status-badge {
+    display: inline-block; padding: 3px 10px; border-radius: 99px;
+    font-size: .72rem; font-weight: 700;
+  }
+  .status-activated   { background: #d1fae5; color: #065f46; }
+  .status-pending     { background: #fef3c7; color: #92400e; }
+  .status-waiting     { background: #fee2e2; color: #991b1b; }
+  .status-deactivated { background: #f3f4f6; color: #4b5563; }
+  .status-progress    { background: #dbeafe; color: #1e40af; }
+  .ph-count { font-size: 1.1rem; font-weight: 700; color: #111827; min-width: 40px; }
+  .ph-meta { font-size: .78rem; color: #6b7280; flex: 1; }
+  .ph-arrow { color: #9ca3af; font-size: .8rem; transition: transform .2s; }
+  .pipeline-row.open .ph-arrow { transform: rotate(90deg); }
+  .pipeline-body { display: none; overflow-x: auto; }
+  .pipeline-row.open .pipeline-body { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  .bar-wrap { background: #f0f0f0; border-radius: 4px; height: 6px; width: 100px; display: inline-block; vertical-align: middle; }
+  .bar-fill { background: #23A455; border-radius: 4px; height: 6px; }
+  .loading { text-align: center; padding: 40px; color: #9ca3af; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Onboarding Pipeline</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+  <div id="loading" class="loading">Loading pipeline data…</div>
+  <div id="error" class="error" style="display:none;"></div>
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+    <div class="pipeline-grid" id="pipeline"></div>
+  </div>
+</div>
+<script>
+function statusClass(s) {
+  s = (s || '').toLowerCase();
+  if (s.includes('activated')) return 'status-activated';
+  if (s.includes('pending') || s.includes('progress') || s.includes('waiting on online')) return 'status-pending';
+  if (s.includes('waiting_on_bdr') || s.includes('hold') || s.includes('suspended')) return 'status-waiting';
+  if (s.includes('deactivat') || s.includes('declined') || s.includes('not active') || s.includes('not started') || s.includes('dormancy')) return 'status-deactivated';
+  return 'status-progress';
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function load() {
+  try {
+    const r = await fetch('/api/admin/dashboard/onboarding-pipeline');
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+
+    const statsEl = document.getElementById('stats');
+    const maxCount = Math.max(...d.pipeline.map(p => p.count), 1);
+    statsEl.innerHTML = `
+      <div class="stat"><div class="stat-value">${d.total_slps.toLocaleString()}</div><div class="stat-label">Total SLPs</div></div>
+      <div class="stat"><div class="stat-value">${d.total_activated.toLocaleString()}</div><div class="stat-label">Activated</div></div>
+      <div class="stat"><div class="stat-value">${d.pipeline.length}</div><div class="stat-label">Status Buckets</div></div>
+      <div class="stat"><div class="stat-value">${d.generated_at}</div><div class="stat-label">As of</div></div>
+    `;
+
+    const pipelineEl = document.getElementById('pipeline');
+    d.pipeline.forEach((p, i) => {
+      const barW = Math.round(p.count / maxCount * 100);
+      const sClass = statusClass(p.status);
+      const avgDays = p.avg_days != null ? `avg ${p.avg_days}d in status` : '';
+      const row = document.createElement('div');
+      row.className = 'pipeline-row';
+      row.innerHTML = `
+        <div class="pipeline-header" onclick="toggle(this.parentElement)">
+          <span class="ph-count">${p.count}</span>
+          <span class="status-badge ${sClass}">${esc(p.status)}</span>
+          <span class="ph-meta">${avgDays} <span class="bar-wrap"><span class="bar-fill" style="width:${barW}%"></span></span></span>
+          <span class="ph-arrow">▶</span>
+        </div>
+        <div class="pipeline-body">
+          <table>
+            <thead><tr>
+              <th>Account</th><th>Platform</th><th>BDR</th>
+              <th>Days in Status</th><th>Activation Date</th>
+            </tr></thead>
+            <tbody>
+              ${(p.accounts||[]).map(a => `
+                <tr>
+                  <td>${a.account_name ? `<a href="https://microf.activehosted.com/app/accounts/${a.account_id}" target="_blank">${esc(a.account_name)}</a>` : esc(a.account_id)}</td>
+                  <td>${esc(a.platform)}</td>
+                  <td>${esc(a.bdr)}</td>
+                  <td>${a.days_in_status != null ? a.days_in_status + 'd' : '—'}</td>
+                  <td>${esc(a.activation_date||'—').slice(0,10)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      pipelineEl.appendChild(row);
+    });
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error: ' + e.message;
+  }
+}
+function toggle(row) {
+  row.classList.toggle('open');
+}
+load();
+</script>
+</body>
+</html>
