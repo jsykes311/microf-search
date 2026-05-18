@@ -3176,11 +3176,15 @@ async def team_activity_report(
     # Users excluded from the Team Performance report (admins, IT, inactive accounts, ghosts)
     _TP_EXCLUDED_IDS = {
         "1",   # Jeremy Sykes
+        "5",   # Charles Posey
         "14",  # Barb Yeskey
+        "15",  # Renee Mitchell
         "17",  # Ansley Bergen
+        "18",  # Tristen Smithey
         "19",  # Lauren Futrell
         "21",  # Cher Shell
         "23",  # Microf IT
+        "24",  # Dallas Munkus
     }
 
     for uid in all_uids:
