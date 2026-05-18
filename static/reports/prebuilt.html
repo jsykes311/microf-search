@@ -1146,20 +1146,29 @@ function renderTeam(data) {
   document.getElementById('tbl-body').innerHTML = '';
   document.getElementById('result-count').textContent = records.length;
 
+  const today = new Date().toISOString().slice(0,10);
+  function tpActivityBadge(dateStr) {
+    if (!dateStr) return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fee2e2;color:#b91c1c;">No activity</span>`;
+    const days = Math.floor((new Date(today) - new Date(dateStr)) / 86400000);
+    if (days <= 30) return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#d1fae5;color:#065f46;">${dateStr}</span>`;
+    if (days <= 60) return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fef3c7;color:#92400e;">${dateStr}</span>`;
+    return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fee2e2;color:#b91c1c;">${dateStr}</span>`;
+  }
+
   let html = '';
   if (records.length) {
     html = `<div class="table-wrap"><table>
       <thead><tr>
         <th>Name</th><th style="text-align:right;">Notes</th><th style="text-align:right;">Activities</th>
-        <th style="text-align:right;">Total</th><th style="text-align:right;">Accounts</th><th>Last Active</th>
+        <th style="text-align:right;">Total</th><th style="text-align:right;">Accounts</th><th>Last AC Activity</th>
       </tr></thead>
-      <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}',this)" style="cursor:pointer;">
+      <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}',this)" style="cursor:pointer;${r.total_actions === 0 ? 'opacity:0.55;' : ''}">
         <td style="font-weight:500;color:#5b21b6;text-decoration:underline;">${esc(r.user_name)}</td>
         <td style="text-align:right;">${r.notes_written}</td>
         <td style="text-align:right;">${r.activities_logged}</td>
         <td style="text-align:right;font-weight:600;">${r.total_actions}</td>
         <td style="text-align:right;">${r.accounts_touched}</td>
-        <td style="color:var(--text3);">${esc(r.latest_activity_date)}</td>
+        <td>${tpActivityBadge(r.latest_activity_date)}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
   }

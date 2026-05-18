@@ -3106,13 +3106,12 @@ async def team_activity_report(
         elif performed:
             unmatched_activity[performed] += 1
 
-    # Build result rows
+    # Build result rows — include ALL known users so zero-activity users are visible
     user_rows = []
     all_uids  = set(user_stats.keys()) | set(users.keys())
     for uid in all_uids:
         s = user_stats.get(uid, {"notes": 0, "activities": 0, "accounts": set(), "latest_date": ""})
         total = s["notes"] + s["activities"]
-        if total == 0: continue
         user_rows.append({
             "user_name":            users.get(uid, f"User {uid}"),
             "notes_written":        s["notes"],
@@ -3121,7 +3120,7 @@ async def team_activity_report(
             "accounts_touched":     len(s["accounts"]),
             "latest_activity_date": s["latest_date"][:10] if s["latest_date"] else "",
         })
-    user_rows.sort(key=lambda x: -x["total_actions"])
+    user_rows.sort(key=lambda x: (-x["total_actions"], x["user_name"]))
 
     # Unmatched performed-by values (couldn't tie to a user)
     unmatched = sorted(

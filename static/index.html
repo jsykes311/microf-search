@@ -3196,6 +3196,15 @@ async function runPrebuilt(type) {
     if (type === 'team') {
       const records   = data.records   || [];
       const unmatched = data.unmatched_activity || [];
+      const today = new Date().toISOString().slice(0,10);
+      function tpActivityBadge(dateStr) {
+        if (!dateStr) return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fee2e2;color:#b91c1c;">No activity</span>`;
+        const days = Math.floor((new Date(today) - new Date(dateStr)) / 86400000);
+        if (days <= 14)  return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#d1fae5;color:#065f46;">${dateStr}</span>`;
+        if (days <= 30)  return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#d1fae5;color:#065f46;">${dateStr}</span>`;
+        if (days <= 60)  return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fef3c7;color:#92400e;">${dateStr}</span>`;
+        return `<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:.72rem;font-weight:700;background:#fee2e2;color:#b91c1c;">${dateStr}</span>`;
+      }
       let html = `<div style="font-size:0.82rem; color:#059669; margin-bottom:8px;">✓ ${records.length} team members</div>`;
       if (records.length) {
         html += `<table style="width:100%; border-collapse:collapse; font-size:0.8rem; margin-bottom:12px;">
@@ -3205,15 +3214,15 @@ async function runPrebuilt(type) {
             <th style="padding:4px 8px;text-align:right;" title="Account Activity records matched to this user">Activities</th>
             <th style="padding:4px 8px;text-align:right;">Total</th>
             <th style="padding:4px 8px;text-align:right;">Accounts</th>
-            <th style="padding:4px 8px;">Last Active</th>
+            <th style="padding:4px 8px;">Last AC Activity</th>
           </tr></thead>
-          <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}', this)">
+          <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}', this)" style="${r.total_actions === 0 ? 'opacity:0.55;' : ''}">
             <td style="padding:4px 8px;font-weight:500;color:#5b21b6;text-decoration:underline;cursor:pointer;">${esc(r.user_name)}</td>
             <td style="padding:4px 8px;text-align:right;">${r.notes_written}</td>
             <td style="padding:4px 8px;text-align:right;">${r.activities_logged}</td>
             <td style="padding:4px 8px;text-align:right;font-weight:600;">${r.total_actions}</td>
             <td style="padding:4px 8px;text-align:right;">${r.accounts_touched}</td>
-            <td style="padding:4px 8px;color:#6b7280;">${esc(r.latest_activity_date)}</td>
+            <td style="padding:4px 8px;">${tpActivityBadge(r.latest_activity_date)}</td>
           </tr>`).join('')}</tbody>
         </table>`;
       }
