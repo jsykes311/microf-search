@@ -2960,10 +2960,11 @@ async def account_activity_report(
 def _extract_performer(fmap: dict) -> str:
     """Return the performer name from an activity record.
 
-    Tries `performed-by` first; if empty, parses the `name` field which
-    often has the pattern 'Call — Warren Neely' or 'Email — Amanda Jones'.
+    Tries `performed-by` and `performed-by-1` (actual AC field ID) first;
+    if empty, parses the `name` field which often has the pattern
+    'Call — Warren Neely' or 'Email — Amanda Jones'.
     """
-    performed = (fmap.get("performed-by") or "").strip()
+    performed = (fmap.get("performed-by") or fmap.get("performed-by-1") or "").strip()
     if performed:
         return performed
     name = (fmap.get("name") or "").strip()
