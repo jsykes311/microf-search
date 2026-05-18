@@ -99,10 +99,33 @@ _ONBOARDING_EMAILS  = {e.strip().lower() for e in os.getenv("ONBOARDING_EMAIL", 
 _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",   "jtiplady@microf.com,ajones@microf.com,lfutrell@microf.com,abergen@microf.com,wneely@microf.com,charden@microf.com,zolbrys@microf.com,rolbrys@microf.com,ctwiggs@microf.com").split(",") if e.strip()}
 # All groups that can access the Apps tab
 _APPS_EMAILS        = _ADMIN_EMAILS | _CONTRACTOR_SUPPORT_EMAILS | _ONBOARDING_EMAILS | _ACCT_MGMT_EMAILS | _SALES_ADMIN_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
-_SCHEDULES_FILE = os.getenv("SCHEDULES_FILE", os.path.join(os.path.dirname(__file__), "schedules.json"))
-_APEX_FILE      = os.getenv("APEX_DATA_FILE",  os.path.join(os.path.dirname(__file__), "apex_data.json"))
+_SCHEDULES_FILE  = os.getenv("SCHEDULES_FILE",  os.path.join(os.path.dirname(__file__), "schedules.json"))
+_APEX_FILE       = os.getenv("APEX_DATA_FILE",  os.path.join(os.path.dirname(__file__), "apex_data.json"))
+_LOGINS_FILE     = os.getenv("LOGINS_FILE",     os.path.join(os.path.dirname(__file__), "logins.json"))
 _scheduler      = AsyncIOScheduler()
 _schedules: dict = {}   # job_id → schedule dict
+
+# ── Last-login tracker ────────────────────────────────────────────────────
+# Persisted to logins.json so it survives restarts.
+# Format: { "email@microf.com": "2026-05-18T14:32:00+00:00", ... }
+_last_login: dict = {}
+
+def _load_logins() -> None:
+    global _last_login
+    try:
+        with open(_LOGINS_FILE) as f:
+            _last_login = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        _last_login = {}
+
+def _save_logins() -> None:
+    try:
+        with open(_LOGINS_FILE, "w") as f:
+            json.dump(_last_login, f, indent=2)
+    except Exception as e:
+        print(f"[logins] failed to save: {e}")
+
+_load_logins()
 
 
 def _load_schedules_from_disk():
@@ -322,6 +345,11 @@ async def auth_callback(
 
     if not email.endswith(f"@{_ALLOWED_DOMAIN}"):
         return RedirectResponse(url=f"/login?error=domain&email={urllib.parse.quote(email)}")
+
+    # Record last login time
+    from datetime import timezone as _tz
+    _last_login[email] = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    _save_logins()
 
     session_token = _signer.dumps(email)
     response = RedirectResponse(url="/search", status_code=302)
@@ -3040,6 +3068,29 @@ async def team_activity_report(
     # account_id → owner user_id — use pre-built startup index (no extra API call)
     account_owner = _account_to_owner
 
+    # Build user email map: uid → email (for matching last-login records)
+    user_emails: dict = {}
+    for u in (users_data.get("users", []) if isinstance(users_data, dict) else []):
+        uid   = str(u.get("id", ""))
+        email = (u.get("email") or "").lower()
+        if uid and email:
+            user_emails[uid] = email
+
+    # ── All-time latest activity (unfiltered) — computed once before date window loop ──
+    all_time_latest: dict = {}   # uid → "YYYY-MM-DD"
+    for n in all_notes_raw:
+        uid = str(n.get("userid", "") or "")
+        d   = (n.get("cdate") or "")[:10]
+        if uid and d and d > all_time_latest.get(uid, ""):
+            all_time_latest[uid] = d
+    for r in all_activity:
+        fmap      = r["fields"]
+        act_date  = (fmap.get("activity-date") or "")[:10]
+        performed = _extract_performer(fmap)
+        uid = match_user(performed)
+        if uid and act_date and act_date > all_time_latest.get(uid, ""):
+            all_time_latest[uid] = act_date
+
     from_dt = (datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
                if from_date else None)
     to_dt   = (datetime.strptime(to_date, "%Y-%m-%d").replace(
@@ -3110,15 +3161,17 @@ async def team_activity_report(
     user_rows = []
     all_uids  = set(user_stats.keys()) | set(users.keys())
     for uid in all_uids:
-        s = user_stats.get(uid, {"notes": 0, "activities": 0, "accounts": set(), "latest_date": ""})
+        s     = user_stats.get(uid, {"notes": 0, "activities": 0, "accounts": set(), "latest_date": ""})
         total = s["notes"] + s["activities"]
+        email = user_emails.get(uid, "")
         user_rows.append({
             "user_name":            users.get(uid, f"User {uid}"),
             "notes_written":        s["notes"],
             "activities_logged":    s["activities"],
             "total_actions":        total,
             "accounts_touched":     len(s["accounts"]),
-            "latest_activity_date": s["latest_date"][:10] if s["latest_date"] else "",
+            "latest_activity_date": all_time_latest.get(uid, ""),   # always all-time, regardless of date filter
+            "last_login":           (_last_login.get(email, "")[:10] if email else ""),
         })
     user_rows.sort(key=lambda x: (-x["total_actions"], x["user_name"]))
 

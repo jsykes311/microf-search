@@ -1160,7 +1160,7 @@ function renderTeam(data) {
     html = `<div class="table-wrap"><table>
       <thead><tr>
         <th>Name</th><th style="text-align:right;">Notes</th><th style="text-align:right;">Activities</th>
-        <th style="text-align:right;">Total</th><th style="text-align:right;">Accounts</th><th>Last AC Activity</th>
+        <th style="text-align:right;">Total</th><th style="text-align:right;">Accounts</th><th>Last AC Activity</th><th>Last Login</th>
       </tr></thead>
       <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}',this)" style="cursor:pointer;${r.total_actions === 0 ? 'opacity:0.55;' : ''}">
         <td style="font-weight:500;color:#5b21b6;text-decoration:underline;">${esc(r.user_name)}</td>
@@ -1169,6 +1169,7 @@ function renderTeam(data) {
         <td style="text-align:right;font-weight:600;">${r.total_actions}</td>
         <td style="text-align:right;">${r.accounts_touched}</td>
         <td>${tpActivityBadge(r.latest_activity_date)}</td>
+        <td>${tpActivityBadge(r.last_login || '')}</td>
       </tr>`).join('')}</tbody>
     </table></div>`;
   }

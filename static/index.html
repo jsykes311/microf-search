@@ -3215,6 +3215,7 @@ async function runPrebuilt(type) {
             <th style="padding:4px 8px;text-align:right;">Total</th>
             <th style="padding:4px 8px;text-align:right;">Accounts</th>
             <th style="padding:4px 8px;">Last AC Activity</th>
+            <th style="padding:4px 8px;">Last Login</th>
           </tr></thead>
           <tbody>${records.map(r => `<tr data-tp-row="${esc(r.user_name)}" onclick="tpOpenDrawer('${esc(r.user_name)}', this)" style="${r.total_actions === 0 ? 'opacity:0.55;' : ''}">
             <td style="padding:4px 8px;font-weight:500;color:#5b21b6;text-decoration:underline;cursor:pointer;">${esc(r.user_name)}</td>
@@ -3223,6 +3224,7 @@ async function runPrebuilt(type) {
             <td style="padding:4px 8px;text-align:right;font-weight:600;">${r.total_actions}</td>
             <td style="padding:4px 8px;text-align:right;">${r.accounts_touched}</td>
             <td style="padding:4px 8px;">${tpActivityBadge(r.latest_activity_date)}</td>
+            <td style="padding:4px 8px;">${tpActivityBadge(r.last_login || '')}</td>
           </tr>`).join('')}</tbody>
         </table>`;
       }
