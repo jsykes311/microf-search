@@ -101,10 +101,37 @@ async def fetch_all_pages(
     base_params["limit"] = page_size
 
     if sequential:
+        import math
         seen: set = set()
         records: list = []
-        offset = 0
-        while True:
+
+        # First, get the total count so we know how many pages to fetch
+        async with _client() as c:
+            for attempt in range(3):
+                try:
+                    r = await c.get(f"/api/3/{endpoint}", params={**base_params, "offset": 0})
+                    r.raise_for_status()
+                    first = r.json()
+                    total = int(first.get("meta", {}).get("total", 0))
+                    for rec in first.get(key, []):
+                        if rec.get("id") not in seen:
+                            seen.add(rec.get("id"))
+                            records.append(rec)
+                    break
+                except Exception:
+                    if attempt == 2:
+                        total = 0
+                    await asyncio.sleep(1)
+
+        if not total:
+            return records
+
+        # Fetch remaining pages — iterate all offsets up to total
+        # AC's pagination is non-deterministic, so we must visit every offset
+        # rather than stopping on partial pages.
+        num_pages = math.ceil(total / page_size)
+        for page_num in range(1, num_pages + 1):
+            offset = page_num * page_size
             async with _client() as c:
                 for attempt in range(3):
                     try:
@@ -119,12 +146,12 @@ async def fetch_all_pages(
                         if attempt == 2:
                             page = []
                         await asyncio.sleep(1)
-            new = [rec for rec in page if rec.get("id") not in seen]
-            seen.update(rec.get("id") for rec in new)
-            records.extend(new)
-            if len(page) < page_size or not new:
-                break  # last page or entirely duplicate page — done
-            offset += page_size
+            for rec in page:
+                if rec.get("id") not in seen:
+                    seen.add(rec.get("id"))
+                    records.append(rec)
+            if not page:
+                break  # truly empty — done
         return records
 
     # ── Concurrent path ────────────────────────────────────────────────────────
@@ -171,9 +198,19 @@ async def fetch_all_pages(
 
 async def fetch_all_slps(schema_id: str) -> list:
     """Fetch all SLP custom object records, deduped by ID.
-    Uses sequential pagination to avoid gaps from AC's non-deterministic page ordering."""
-    return await fetch_all_pages(
+    Uses concurrent pagination (fast) + dedup — AC's offset pagination returns
+    duplicates at different offsets, so sequential dedup misses some records
+    while concurrent fetch captures them all before deduplication."""
+    raw = await fetch_all_pages(
         f"customObjects/records/{schema_id}",
         key="records",
-        sequential=True,
+        sequential=False,
     )
+    seen: set = set()
+    deduped: list = []
+    for rec in raw:
+        rid = rec.get("id")
+        if rid and rid not in seen:
+            seen.add(rid)
+            deduped.append(rec)
+    return deduped
