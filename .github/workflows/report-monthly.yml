@@ -12,7 +12,7 @@ jobs:
       - name: Trigger stale/untrained dealers report
         run: |
           curl -f --max-time 180 \
-            -u "${{ secrets.APP_USER }}:${{ secrets.APP_PASS }}" \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
             "https://microf-search.onrender.com/api/send-report/stale-untrained"
 
   partner-activation:
@@ -21,5 +21,5 @@ jobs:
       - name: Trigger partner activation report
         run: |
           curl -f --max-time 120 \
-            -u "${{ secrets.APP_USER }}:${{ secrets.APP_PASS }}" \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
             "https://microf-search.onrender.com/api/send-report/partner-activation?preset=last_month"

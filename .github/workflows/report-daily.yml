@@ -12,5 +12,5 @@ jobs:
       - name: Trigger activations report
         run: |
           curl -f --max-time 120 \
-            -u "${{ secrets.APP_USER }}:${{ secrets.APP_PASS }}" \
+            -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
             "https://microf-search.onrender.com/api/send-report/activations"
