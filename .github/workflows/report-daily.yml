@@ -1,8 +1,6 @@
 name: Daily Activations Report
 
 on:
-  schedule:
-    - cron: '0 12 * * 1-5'   # Mon–Fri 7:00am ET (12:00 UTC)
   workflow_dispatch:
 
 jobs:
