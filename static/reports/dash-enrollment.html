@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Enrollment Report</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .back-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+
+  .container { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
+
+  /* Filters */
+  .filters { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 16px 20px; margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+  .filter-group select, .filter-group input { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: .82rem; font-family: inherit; background: #fff; color: #111827; min-width: 140px; }
+  .filter-group select:focus, .filter-group input:focus { outline: none; border-color: #23A455; box-shadow: 0 0 0 2px rgba(35,164,85,.15); }
+  .filter-actions { display: flex; gap: 8px; margin-left: auto; }
+  .btn { border: none; border-radius: 7px; padding: 7px 18px; font-size: .82rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .btn-primary { background: #23A455; color: #fff; }
+  .btn-primary:hover { background: #1d8e49; }
+  .btn-secondary { background: #f0f9f4; color: #23A455; border: 1px solid #a7f3d0; }
+  .btn-secondary:hover { background: #d1fae5; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Stats */
+  .stats { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 120px; flex: 1; border-left: 3px solid transparent; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .stat-sub { font-size: .7rem; color: #9ca3af; margin-top: 3px; }
+
+  /* Status pipeline */
+  .pipeline-grid { display: grid; gap: 10px; margin-bottom: 18px; }
+  .pipeline-row { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .pipeline-header { padding: 11px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; user-select: none; }
+  .pipeline-header:hover { background: #fafafa; }
+  .ph-count { font-size: 1.1rem; font-weight: 700; color: #111827; min-width: 42px; }
+  .ph-bar-wrap { flex: 1; background: #f0f0f0; border-radius: 4px; height: 7px; max-width: 200px; }
+  .ph-bar-fill { height: 7px; border-radius: 4px; }
+  .ph-pct { font-size: .75rem; color: #6b7280; min-width: 36px; text-align: right; }
+  .ph-arrow { color: #9ca3af; font-size: .75rem; transition: transform .2s; margin-left: 4px; }
+  .pipeline-row.open .ph-arrow { transform: rotate(90deg); }
+  .pipeline-body { display: none; overflow-x: auto; }
+  .pipeline-row.open .pipeline-body { display: block; }
+
+  /* Status badges */
+  .status-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+  .s-activated   { background: #d1fae5; color: #065f46; }
+  .s-deactivated { background: #f3f4f6; color: #4b5563; }
+  .s-hold        { background: #fee2e2; color: #991b1b; }
+  .s-pending     { background: #fef3c7; color: #92400e; }
+  .s-progress    { background: #dbeafe; color: #1e40af; }
+  .s-declined    { background: #fce7f3; color: #831843; }
+  .s-dormancy    { background: #f5f3ff; color: #5b21b6; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; cursor: pointer; }
+  th:hover { color: #374151; }
+  th.sort-asc::after { content: ' ↑'; }
+  th.sort-desc::after { content: ' ↓'; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+
+  .results-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .results-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 12px; }
+  .results-title { font-size: .85rem; font-weight: 700; color: #374151; flex: 1; }
+  .results-count { font-size: .8rem; color: #6b7280; }
+
+  .loading { text-align: center; padding: 48px; color: #9ca3af; font-size: .9rem; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 16px 0; }
+  .empty { text-align: center; padding: 40px; color: #9ca3af; font-size: .88rem; }
+
+  .ac-link { color: #23A455; text-decoration: none; font-weight: 600; }
+  .ac-link:hover { text-decoration: underline; }
+
+  @media (max-width: 700px) {
+    .filters { flex-direction: column; }
+    .filter-actions { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Enrollment Report</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+
+  <!-- Filters -->
+  <div class="filters">
+    <div class="filter-group">
+      <label>Preset</label>
+      <select id="preset" onchange="applyPreset()">
+        <option value="">Custom range</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="last_7_days">Last 7 days</option>
+        <option value="last_30_days" selected>Last 30 days</option>
+        <option value="last_90_days">Last 90 days</option>
+        <option value="this_week">This week</option>
+        <option value="this_month">This month</option>
+        <option value="last_week">Last week</option>
+        <option value="last_month">Last month</option>
+        <option value="all">All time</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>From Date</label>
+      <input type="date" id="from_date"/>
+    </div>
+    <div class="filter-group">
+      <label>To Date</label>
+      <input type="date" id="to_date"/>
+    </div>
+    <div class="filter-group">
+      <label>SLP Status</label>
+      <select id="slp_status">
+        <option value="">All Statuses</option>
+        <option>Contractor Activated</option>
+        <option>Deactivated</option>
+        <option>Not Active</option>
+        <option>Deactivated for Dormancy</option>
+        <option>Account on Hold (Suspended)</option>
+        <option>Not Started</option>
+        <option>Declined by Onboarding</option>
+        <option>Pending - Training Not Completed</option>
+        <option>Waiting_on_BDR_Approval</option>
+        <option>On Indefinite Hold - Agreement/Docs Not Signed</option>
+        <option>Pending - Waiting on Online Reviews</option>
+        <option>In Progress – Other</option>
+        <option>In Progress – Signed Contract Needed</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Platform</label>
+      <select id="platform">
+        <option value="">All Platforms</option>
+        <option>Microf Direct</option>
+        <option>Optimus</option>
+        <option>360 Finance</option>
+        <option>LTO</option>
+        <option>SpectrumAC</option>
+        <option>ComfortConnect</option>
+        <option>GoodLeap</option>
+        <option>Microf (LTO Only)</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>BDR</label>
+      <select id="bdr">
+        <option value="">All BDRs</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-primary" onclick="runReport()" id="run-btn">Run Report</button>
+      <button class="btn btn-secondary" onclick="exportCsv()" id="csv-btn">CSV</button>
+    </div>
+  </div>
+
+  <div id="loading" class="loading" style="display:none;">Loading enrollments…</div>
+  <div id="error" class="error" style="display:none;"></div>
+
+  <div id="content" style="display:none;">
+    <!-- Stats -->
+    <div class="stats" id="stats"></div>
+
+    <!-- Status breakdown -->
+    <div class="pipeline-grid" id="pipeline"></div>
+
+    <!-- Records table -->
+    <div class="results-card">
+      <div class="results-header">
+        <span class="results-title">All Records</span>
+        <span class="results-count" id="rec-count"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortBy('account_name')">Account</th>
+              <th onclick="sortBy('dealer_id')">Dealer ID</th>
+              <th onclick="sortBy('channel')">Platform</th>
+              <th onclick="sortBy('assigned_bdr')">BDR</th>
+              <th onclick="sortBy('slp_status')">Status</th>
+              <th onclick="sortBy('contractor_activated_date')">Activated</th>
+              <th onclick="sortBy('enrollment_request_date')">Enrolled</th>
+              <th onclick="sortBy('doing_business_in_states')">States</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+const STATUSES = [
+  'Contractor Activated','Deactivated','Not Active','Deactivated for Dormancy',
+  'Account on Hold (Suspended)','Not Started','Declined by Onboarding',
+  'Pending - Training Not Completed','Waiting_on_BDR_Approval',
+  'On Indefinite Hold - Agreement/Docs Not Signed',
+  'Pending - Waiting on Online Reviews','In Progress – Other',
+  'In Progress – Signed Contract Needed'
+];
+
+const STATUS_COLORS = {
+  'Contractor Activated':  '#23A455',
+  'Deactivated':           '#9ca3af',
+  'Not Active':            '#6b7280',
+  'Deactivated for Dormancy': '#8b5cf6',
+  'Account on Hold (Suspended)': '#ef4444',
+  'Not Started':           '#f59e0b',
+  'Declined by Onboarding': '#ec4899',
+  'Pending - Training Not Completed': '#f59e0b',
+  'Waiting_on_BDR_Approval': '#f97316',
+  'On Indefinite Hold - Agreement/Docs Not Signed': '#ef4444',
+  'Pending - Waiting on Online Reviews': '#f59e0b',
+  'In Progress – Other':   '#3b82f6',
+  'In Progress – Signed Contract Needed': '#3b82f6',
+};
+
+function statusBadgeClass(s) {
+  const l = (s||'').toLowerCase();
+  if (l.includes('contractor activated')) return 's-activated';
+  if (l.includes('deactivat') || l.includes('not active')) return 's-deactivated';
+  if (l.includes('dormancy')) return 's-dormancy';
+  if (l.includes('hold') || l.includes('suspended')) return 's-hold';
+  if (l.includes('declined')) return 's-declined';
+  if (l.includes('pending') || l.includes('waiting') || l.includes('not started')) return 's-pending';
+  if (l.includes('progress')) return 's-progress';
+  return 's-pending';
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmt(s) { return (s||'').replace('T',' ').slice(0,10) || '—'; }
+
+let allRecords = [], sortCol = 'contractor_activated_date', sortDir = -1;
+
+function applyPreset() {
+  const p = document.getElementById('preset').value;
+  const today = new Date();
+  const ymd = d => d.toISOString().slice(0,10);
+  const addDays = (d,n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+  const startOfWeek = d => { const r=new Date(d); r.setDate(r.getDate()-r.getDay()+1); return r; };
+  const startOfMonth = d => new Date(d.getFullYear(), d.getMonth(), 1);
+  const endOfMonth   = d => new Date(d.getFullYear(), d.getMonth()+1, 0);
+
+  document.getElementById('from_date').value = '';
+  document.getElementById('to_date').value   = '';
+
+  if (p === 'yesterday')    { const y=addDays(today,-1); document.getElementById('from_date').value=ymd(y); document.getElementById('to_date').value=ymd(y); }
+  else if (p === 'last_7_days')  { document.getElementById('from_date').value=ymd(addDays(today,-7)); document.getElementById('to_date').value=ymd(today); }
+  else if (p === 'last_30_days') { document.getElementById('from_date').value=ymd(addDays(today,-30)); document.getElementById('to_date').value=ymd(today); }
+  else if (p === 'last_90_days') { document.getElementById('from_date').value=ymd(addDays(today,-90)); document.getElementById('to_date').value=ymd(today); }
+  else if (p === 'this_week')  { document.getElementById('from_date').value=ymd(startOfWeek(today)); document.getElementById('to_date').value=ymd(today); }
+  else if (p === 'this_month') { document.getElementById('from_date').value=ymd(startOfMonth(today)); document.getElementById('to_date').value=ymd(today); }
+  else if (p === 'last_week')  { const sw=startOfWeek(addDays(today,-7)); document.getElementById('from_date').value=ymd(sw); document.getElementById('to_date').value=ymd(addDays(sw,6)); }
+  else if (p === 'last_month') { const lm=new Date(today.getFullYear(),today.getMonth()-1,1); document.getElementById('from_date').value=ymd(lm); document.getElementById('to_date').value=ymd(endOfMonth(lm)); }
+}
+
+function buildUrl(fmt_param) {
+  const params = new URLSearchParams();
+  const from   = document.getElementById('from_date').value;
+  const to     = document.getElementById('to_date').value;
+  const status = document.getElementById('slp_status').value;
+  const plat   = document.getElementById('platform').value;
+  const bdr    = document.getElementById('bdr').value;
+  if (from)   params.set('from_date', from);
+  if (to)     params.set('to_date', to);
+  if (status) params.set('slp_status', status);
+  if (plat)   params.set('platform', plat);
+  if (bdr)    params.set('bdr', bdr);
+  if (fmt_param) params.set('format', fmt_param);
+  return `/api/report/enrollment?${params}`;
+}
+
+async function runReport() {
+  document.getElementById('loading').style.display = '';
+  document.getElementById('content').style.display  = 'none';
+  document.getElementById('error').style.display    = 'none';
+  document.getElementById('run-btn').disabled = true;
+
+  try {
+    const r = await fetch(buildUrl());
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    allRecords = d.records || [];
+
+    // Populate BDR dropdown from data
+    const bdrs = [...new Set(allRecords.map(r => r.assigned_bdr).filter(Boolean))].sort();
+    const bdrSel = document.getElementById('bdr');
+    const curBdr = bdrSel.value;
+    bdrSel.innerHTML = '<option value="">All BDRs</option>' + bdrs.map(b => `<option${b===curBdr?' selected':''}>${esc(b)}</option>`).join('');
+
+    renderStats(allRecords);
+    renderPipeline(allRecords);
+    renderTable(allRecords);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error loading data: ' + e.message;
+  } finally {
+    document.getElementById('run-btn').disabled = false;
+  }
+}
+
+function renderStats(records) {
+  const total     = records.length;
+  const activated = records.filter(r => r.slp_status === 'Contractor Activated').length;
+  const inProg    = records.filter(r => (r.slp_status||'').toLowerCase().includes('progress') || (r.slp_status||'').toLowerCase().includes('pending') || (r.slp_status||'').toLowerCase().includes('waiting')).length;
+  const inactive  = records.filter(r => ['Deactivated','Not Active','Deactivated for Dormancy'].includes(r.slp_status)).length;
+  const platforms = [...new Set(records.map(r => r.channel).filter(Boolean))].length;
+
+  const pct = (n) => total ? Math.round(n/total*100) + '%' : '—';
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat" style="border-left-color:#23A455;">
+      <div class="stat-value" style="color:#23A455;">${total.toLocaleString()}</div>
+      <div class="stat-label">Total Enrollments</div>
+    </div>
+    <div class="stat" style="border-left-color:#23A455;">
+      <div class="stat-value" style="color:#23A455;">${activated.toLocaleString()}</div>
+      <div class="stat-label">Contractor Activated</div>
+      <div class="stat-sub">${pct(activated)} of total</div>
+    </div>
+    <div class="stat" style="border-left-color:#3b82f6;">
+      <div class="stat-value" style="color:#3b82f6;">${inProg.toLocaleString()}</div>
+      <div class="stat-label">In Progress / Pending</div>
+      <div class="stat-sub">${pct(inProg)} of total</div>
+    </div>
+    <div class="stat" style="border-left-color:#9ca3af;">
+      <div class="stat-value" style="color:#6b7280;">${inactive.toLocaleString()}</div>
+      <div class="stat-label">Deactivated / Not Active</div>
+      <div class="stat-sub">${pct(inactive)} of total</div>
+    </div>
+    <div class="stat" style="border-left-color:#f59e0b;">
+      <div class="stat-value" style="color:#f59e0b;">${platforms}</div>
+      <div class="stat-label">Platforms Represented</div>
+    </div>
+  `;
+}
+
+function renderPipeline(records) {
+  const counts = {};
+  records.forEach(r => { counts[r.slp_status||'Unknown'] = (counts[r.slp_status||'Unknown']||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const maxCount = Math.max(...sorted.map(s=>s[1]),1);
+  const total = records.length || 1;
+
+  const el = document.getElementById('pipeline');
+  el.innerHTML = sorted.map(([status, count]) => {
+    const color = STATUS_COLORS[status] || '#6b7280';
+    const pct   = Math.round(count/total*100);
+    const barW  = Math.round(count/maxCount*100);
+    const recs  = records.filter(r => (r.slp_status||'Unknown') === status);
+    const rows  = recs.slice(0,200).map(r => `
+      <tr>
+        <td><a class="ac-link" href="https://microf.activehosted.com/app/contacts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+        <td>${esc(r.dealer_id)}</td>
+        <td>${esc(r.channel)}</td>
+        <td>${esc(r.assigned_bdr)}</td>
+        <td>${fmt(r.contractor_activated_date)}</td>
+        <td>${fmt(r.enrollment_request_date)}</td>
+        <td>${esc(r.doing_business_in_states)}</td>
+      </tr>`).join('');
+
+    return `
+      <div class="pipeline-row">
+        <div class="pipeline-header" onclick="toggle(this.parentElement)">
+          <span class="ph-count">${count}</span>
+          <span class="status-badge ${statusBadgeClass(status)}">${esc(status)}</span>
+          <span class="ph-bar-wrap" style="margin-left:12px;"><span class="ph-bar-fill" style="width:${barW}%;background:${color};"></span></span>
+          <span class="ph-pct">${pct}%</span>
+          <span class="ph-arrow">▶</span>
+        </div>
+        <div class="pipeline-body">
+          <table>
+            <thead><tr>
+              <th>Account</th><th>Dealer ID</th><th>Platform</th>
+              <th>BDR</th><th>Activated</th><th>Enrolled</th><th>States</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${recs.length>200 ? `<div style="padding:8px 16px;font-size:.75rem;color:#9ca3af;">Showing 200 of ${recs.length} — export CSV for full list.</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+let sortAsc = false;
+function sortBy(col) {
+  if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = false; }
+  document.querySelectorAll('th').forEach(th => { th.classList.remove('sort-asc','sort-desc'); });
+  event.target.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+  const sorted = [...allRecords].sort((a,b) => {
+    const av = a[col]||'', bv = b[col]||'';
+    return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  renderTable(sorted);
+}
+
+function renderTable(records) {
+  document.getElementById('rec-count').textContent = `${records.length.toLocaleString()} records`;
+  const tbody = document.getElementById('tbody');
+  if (!records.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.slice(0,500).map(r => `
+    <tr>
+      <td><a class="ac-link" href="https://microf.activehosted.com/app/contacts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+      <td>${esc(r.dealer_id)}</td>
+      <td>${esc(r.channel)}</td>
+      <td>${esc(r.assigned_bdr)}</td>
+      <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span></td>
+      <td>${fmt(r.contractor_activated_date)}</td>
+      <td>${fmt(r.enrollment_request_date)}</td>
+      <td>${esc(r.doing_business_in_states)}</td>
+    </tr>`).join('');
+  if (records.length > 500) {
+    tbody.innerHTML += `<tr><td colspan="8" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${records.length} — export CSV for full list</td></tr>`;
+  }
+}
+
+function toggle(row) { row.classList.toggle('open'); }
+
+function exportCsv() {
+  window.location.href = buildUrl('csv');
+}
+
+// Init — apply preset and run
+applyPreset();
+runReport();
+</script>
+</body>
+</html>
