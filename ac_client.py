@@ -196,21 +196,38 @@ async def fetch_all_pages(
     return records
 
 
-async def fetch_all_slps(schema_id: str) -> list:
+async def fetch_all_slps(schema_id: str, passes: int = 3) -> list:
     """Fetch all SLP custom object records, deduped by ID.
-    Uses concurrent pagination (fast) + dedup — AC's offset pagination returns
-    duplicates at different offsets, so sequential dedup misses some records
-    while concurrent fetch captures them all before deduplication."""
-    raw = await fetch_all_pages(
-        f"customObjects/records/{schema_id}",
-        key="records",
-        sequential=False,
-    )
+
+    AC's offset-based pagination for custom objects is non-deterministic —
+    different pages appear at different offsets on each request, so a single
+    pass always misses some records.  Running multiple concurrent passes and
+    unioning the unique IDs gives a much more complete result set.
+
+    passes=3 is the default; set higher if you need exhaustive accuracy.
+    """
     seen: set = set()
     deduped: list = []
-    for rec in raw:
-        rid = rec.get("id")
-        if rid and rid not in seen:
-            seen.add(rid)
-            deduped.append(rec)
+
+    async def one_pass():
+        raw = await fetch_all_pages(
+            f"customObjects/records/{schema_id}",
+            key="records",
+            sequential=False,
+        )
+        new_count = 0
+        for rec in raw:
+            rid = rec.get("id")
+            if rid and rid not in seen:
+                seen.add(rid)
+                deduped.append(rec)
+                new_count += 1
+        return new_count
+
+    for i in range(passes):
+        new = await one_pass()
+        # Early exit if last pass found nothing new
+        if new == 0 and i > 0:
+            break
+
     return deduped
