@@ -2543,18 +2543,25 @@ async def enrollment_report(
             account_ids.add(acc_id)
         candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
 
-    print(f"  {len(candidates)} candidates")
+    print(f"  {len(candidates)} candidates, {len(account_ids)} unique accounts")
 
-    acct_cache: dict = {}
-    for aid in account_ids:
+    async def _fetch_enroll_acct(aid: str) -> tuple:
         try:
-            ad  = await ac_get(f"accounts/{aid}")
-            acd = await ac_get(f"accounts/{aid}/accountCustomFieldData")
-            cfs = {str(cf["custom_field_id"]): cf.get("custom_field_text_value") or ""
-                   for cf in acd.get("customerAccountCustomFieldData", [])}
-            acct_cache[aid] = {"name": ad.get("account", {}).get("name", ""), "cfs": cfs}
+            ad, acd = await asyncio.gather(
+                ac_get(f"accounts/{aid}"),
+                ac_get(f"accounts/{aid}/accountCustomFieldData"),
+                return_exceptions=True,
+            )
+            name = ad.get("account", {}).get("name", "") if isinstance(ad, dict) else ""
+            cfs: dict = {}
+            if isinstance(acd, dict):
+                for cf in acd.get("customerAccountCustomFieldData", []):
+                    cfs[str(cf.get("custom_field_id", ""))] = cf.get("custom_field_text_value") or ""
+            return aid, {"name": name, "cfs": cfs}
         except Exception:
-            acct_cache[aid] = {"name": "", "cfs": {}}
+            return aid, {"name": "", "cfs": {}}
+
+    acct_cache: dict = dict(await asyncio.gather(*[_fetch_enroll_acct(aid) for aid in account_ids]))
 
     results = []
     for c in candidates:
