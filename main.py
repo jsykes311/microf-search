@@ -2500,6 +2500,8 @@ async def enrollment_report(
 
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
 
         # Status filter
         rec_status = fields.get("slp-status-detail", "")
@@ -2545,8 +2547,6 @@ async def enrollment_report(
             if to_dt and rec_dt > to_dt:
                 continue
 
-        rel    = r.get("relationships", {}).get("account", [])
-        acc_id = str(rel[0]) if rel else None
         if acc_id:
             account_ids.add(acc_id)
         candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
