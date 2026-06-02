@@ -2374,7 +2374,8 @@ async def activations_report(
         acc_id = str(rel[0]) if rel else None
 
         slp_bdr = str(fields.get("assigned-bdr", "")).strip()
-        eff_bdr = slp_bdr
+        # Fall back to account-level BDR (CF119) when SLP has none
+        eff_bdr = slp_bdr or _account_to_bdr.get(acc_id or "", "")
         if bdr and eff_bdr != bdr:
             continue
 
@@ -2510,9 +2511,10 @@ async def enrollment_report(
         if plat_norm in exclude_set or plat in exclude_set:
             continue
 
-        # BDR filter
+        # BDR filter — check SLP field first, fall back to account-level BDR cache
         slp_bdr = str(fields.get("assigned-bdr", "")).strip()
-        if bdr and slp_bdr != bdr:
+        eff_bdr = slp_bdr or _account_to_bdr.get(acc_id or "", "")
+        if bdr and eff_bdr != bdr:
             continue
 
         # State filter
