@@ -2376,7 +2376,10 @@ async def activations_report(
         slp_bdr = str(fields.get("assigned-bdr", "")).strip()
         # Fall back to account-level BDR (CF119) when SLP has none
         eff_bdr = slp_bdr or _account_to_bdr.get(acc_id or "", "")
-        if bdr and eff_bdr != bdr:
+        if bdr == "__unassigned__":
+            if eff_bdr:
+                continue   # skip records that DO have a BDR
+        elif bdr and eff_bdr != bdr:
             continue
 
         if state:
@@ -2514,7 +2517,10 @@ async def enrollment_report(
         # BDR filter — check SLP field first, fall back to account-level BDR cache
         slp_bdr = str(fields.get("assigned-bdr", "")).strip()
         eff_bdr = slp_bdr or _account_to_bdr.get(acc_id or "", "")
-        if bdr and eff_bdr != bdr:
+        if bdr == "__unassigned__":
+            if eff_bdr:
+                continue
+        elif bdr and eff_bdr != bdr:
             continue
 
         # State filter

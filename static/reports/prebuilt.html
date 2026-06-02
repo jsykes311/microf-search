@@ -976,6 +976,9 @@ function buildForm() {
         const blankOpt = document.createElement('option');
         blankOpt.value = ''; blankOpt.textContent = '— all BDRs —';
         el.appendChild(blankOpt);
+        const unassignedOpt = document.createElement('option');
+        unassignedOpt.value = '__unassigned__'; unassignedOpt.textContent = '— Unassigned —';
+        el.appendChild(unassignedOpt);
         _bdrs.forEach(b => {
           const opt = document.createElement('option');
           opt.value = b; opt.textContent = b;
@@ -1397,6 +1400,9 @@ async function init() {
           const blank = document.createElement('option');
           blank.value = ''; blank.textContent = '— all BDRs —';
           sel.appendChild(blank);
+          const unassigned = document.createElement('option');
+          unassigned.value = '__unassigned__'; unassigned.textContent = '— Unassigned —';
+          sel.appendChild(unassigned);
           _bdrs.forEach(b => {
             const o = document.createElement('option');
             o.value = b; o.textContent = b;

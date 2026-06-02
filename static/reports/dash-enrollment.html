@@ -177,6 +177,7 @@
       <label>BDR</label>
       <select id="bdr" onchange="applyClientFilters()">
         <option value="">All BDRs</option>
+        <option value="__unassigned__">— Unassigned —</option>
       </select>
     </div>
     <div class="filter-actions">
@@ -325,7 +326,7 @@ function applyClientFilters() {
   activeChannelFilter = null;
   const filtered = allRecords.filter(r =>
     (!plat || normalizeChannel(r.channel) === plat) &&
-    (!bdr  || r.assigned_bdr === bdr)
+    (bdr === '__unassigned__' ? !r.assigned_bdr : (!bdr || r.assigned_bdr === bdr))
   );
   renderStats(filtered);
   renderPipeline(filtered);
@@ -527,7 +528,7 @@ function filterByChannel(ch) {
   const bdr  = document.getElementById('bdr').value;
   const base = allRecords.filter(r =>
     (!plat || normalizeChannel(r.channel) === plat) &&
-    (!bdr  || r.assigned_bdr === bdr)
+    (bdr === '__unassigned__' ? !r.assigned_bdr : (!bdr || r.assigned_bdr === bdr))
   );
   const filtered = activeChannelFilter
     ? base.filter(r => normalizeChannel(r.channel) === activeChannelFilter)
