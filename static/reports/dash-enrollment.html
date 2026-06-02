@@ -161,9 +161,9 @@
       </select>
     </div>
     <div class="filter-group">
-      <label>Platform</label>
+      <label>Channel</label>
       <select id="platform" onchange="applyClientFilters()">
-        <option value="">All Platforms</option>
+        <option value="">All Channels</option>
         <option>Microf Direct</option>
         <option>Optimus</option>
         <option>360 Finance</option>
@@ -171,7 +171,6 @@
         <option>SpectrumAC</option>
         <option>ComfortConnect</option>
         <option>GoodLeap</option>
-        <option>Microf (LTO Only)</option>
       </select>
     </div>
     <div class="filter-group">
@@ -214,7 +213,7 @@
             <tr>
               <th onclick="sortBy('account_name')">Account</th>
               <th onclick="sortBy('dealer_id')">Dealer ID</th>
-              <th onclick="sortBy('channel')">Platform</th>
+              <th onclick="sortBy('channel')">Channel</th>
               <th onclick="sortBy('assigned_bdr')">BDR</th>
               <th onclick="sortBy('slp_status')">Status</th>
               <th onclick="sortBy('contractor_activated_date')">Activated</th>
@@ -230,6 +229,11 @@
 
 </div>
 <script>
+// Normalize channel — anything with "microf" becomes "Microf Direct"
+function normalizeChannel(ch) {
+  return (ch || 'Unknown').toLowerCase().includes('microf') ? 'Microf Direct' : (ch || 'Unknown');
+}
+
 const STATUSES = [
   'Contractor Activated','Deactivated','Not Active','Deactivated for Dormancy',
   'Account on Hold (Suspended)','Not Started','Declined by Onboarding',
@@ -320,7 +324,7 @@ function applyClientFilters() {
   const bdr  = document.getElementById('bdr').value;
   activeChannelFilter = null;
   const filtered = allRecords.filter(r =>
-    (!plat || r.channel === plat) &&
+    (!plat || normalizeChannel(r.channel) === plat) &&
     (!bdr  || r.assigned_bdr === bdr)
   );
   renderStats(filtered);
@@ -367,7 +371,7 @@ function renderStats(records) {
   const activated = records.filter(r => r.slp_status === 'Contractor Activated').length;
   const inProg    = records.filter(r => (r.slp_status||'').toLowerCase().includes('progress') || (r.slp_status||'').toLowerCase().includes('pending') || (r.slp_status||'').toLowerCase().includes('waiting')).length;
   const inactive  = records.filter(r => ['Deactivated','Not Active','Deactivated for Dormancy'].includes(r.slp_status)).length;
-  const platforms = [...new Set(records.map(r => r.channel).filter(Boolean))].length;
+  const platforms = [...new Set(records.map(r => normalizeChannel(r.channel)))].length;
 
   const pct = (n) => total ? Math.round(n/total*100) + '%' : '—';
 
@@ -393,7 +397,7 @@ function renderStats(records) {
     </div>
     <div class="stat" style="border-left-color:#f59e0b;">
       <div class="stat-value" style="color:#f59e0b;">${platforms}</div>
-      <div class="stat-label">Platforms Represented</div>
+      <div class="stat-label">Channels Represented</div>
     </div>
   `;
 }
@@ -491,7 +495,7 @@ let activeChannelFilter = null;
 
 function renderChannel(records) {
   const counts = {};
-  records.forEach(r => { const ch = r.channel||'Unknown'; counts[ch]=(counts[ch]||0)+1; });
+  records.forEach(r => { const ch = normalizeChannel(r.channel); counts[ch]=(counts[ch]||0)+1; });
   const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
   const total  = records.length || 1;
   const max    = Math.max(...sorted.map(s=>s[1]),1);
@@ -501,6 +505,7 @@ function renderChannel(records) {
     const pct   = Math.round(n/total*100);
     const barW  = Math.round(n/max*100);
     const isActive = activeChannelFilter === ch;
+    // eslint-disable-next-line no-unused-vars
     return `
       <div class="channel-row${isActive?' active-filter':''}" onclick="filterByChannel('${ch.replace(/'/,"\\'")}')" title="Click to filter table">
         <span class="ch-dot" style="background:${color};"></span>
@@ -518,9 +523,15 @@ function filterByChannel(ch) {
   } else {
     activeChannelFilter = ch;
   }
+  const plat = document.getElementById('platform').value;
+  const bdr  = document.getElementById('bdr').value;
+  const base = allRecords.filter(r =>
+    (!plat || normalizeChannel(r.channel) === plat) &&
+    (!bdr  || r.assigned_bdr === bdr)
+  );
   const filtered = activeChannelFilter
-    ? allRecords.filter(r => (r.channel||'Unknown') === activeChannelFilter)
-    : allRecords;
+    ? base.filter(r => normalizeChannel(r.channel) === activeChannelFilter)
+    : base;
   renderChannel(allRecords); // re-render to update active highlight
   renderTable(filtered);
   document.getElementById('rec-count').textContent =
