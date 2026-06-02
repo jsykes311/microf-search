@@ -162,7 +162,7 @@
     </div>
     <div class="filter-group">
       <label>Platform</label>
-      <select id="platform">
+      <select id="platform" onchange="applyClientFilters()">
         <option value="">All Platforms</option>
         <option>Microf Direct</option>
         <option>Optimus</option>
@@ -176,7 +176,7 @@
     </div>
     <div class="filter-group">
       <label>BDR</label>
-      <select id="bdr">
+      <select id="bdr" onchange="applyClientFilters()">
         <option value="">All BDRs</option>
       </select>
     </div>
@@ -295,19 +295,38 @@ function applyPreset() {
 }
 
 function buildUrl(fmt_param) {
+  // Date range + SLP status are server-side (require re-run).
+  // Platform + BDR are client-side (instant, no re-run needed) — excluded here.
   const params = new URLSearchParams();
   const from   = document.getElementById('from_date').value;
   const to     = document.getElementById('to_date').value;
   const status = document.getElementById('slp_status').value;
-  const plat   = document.getElementById('platform').value;
-  const bdr    = document.getElementById('bdr').value;
   if (from)   params.set('from_date', from);
   if (to)     params.set('to_date', to);
   if (status) params.set('slp_status', status);
-  if (plat)   params.set('platform', plat);
-  if (bdr)    params.set('bdr', bdr);
-  if (fmt_param) params.set('format', fmt_param);
+  if (fmt_param) {
+    // For CSV export, include client-side filters server-side too
+    const plat = document.getElementById('platform').value;
+    const bdr  = document.getElementById('bdr').value;
+    if (plat) params.set('platform', plat);
+    if (bdr)  params.set('bdr', bdr);
+    params.set('format', fmt_param);
+  }
   return `/api/report/enrollment?${params}`;
+}
+
+function applyClientFilters() {
+  const plat = document.getElementById('platform').value;
+  const bdr  = document.getElementById('bdr').value;
+  activeChannelFilter = null;
+  const filtered = allRecords.filter(r =>
+    (!plat || r.channel === plat) &&
+    (!bdr  || r.assigned_bdr === bdr)
+  );
+  renderStats(filtered);
+  renderPipeline(filtered);
+  renderChannel(filtered);
+  renderTable(filtered);
 }
 
 async function runReport() {
@@ -322,17 +341,15 @@ async function runReport() {
     const d = await r.json();
     allRecords = d.records || [];
 
-    // Populate BDR dropdown from data
+    // Populate BDR dropdown from data, preserve current selection if still valid
     const bdrs = [...new Set(allRecords.map(r => r.assigned_bdr).filter(Boolean))].sort();
     const bdrSel = document.getElementById('bdr');
     const curBdr = bdrSel.value;
-    bdrSel.innerHTML = '<option value="">All BDRs</option>' + bdrs.map(b => `<option${b===curBdr?' selected':''}>${esc(b)}</option>`).join('');
+    bdrSel.innerHTML = '<option value="">All BDRs</option>' +
+      bdrs.map(b => `<option value="${esc(b)}"${b===curBdr?' selected':''}>${esc(b)}</option>`).join('');
 
     activeChannelFilter = null;
-    renderStats(allRecords);
-    renderPipeline(allRecords);
-    renderChannel(allRecords);
-    renderTable(allRecords);
+    applyClientFilters(); // apply any platform/bdr already selected
 
     document.getElementById('loading').style.display = 'none';
     document.getElementById('content').style.display = '';
