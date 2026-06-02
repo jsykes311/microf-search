@@ -2452,6 +2452,148 @@ async def activations_report(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# PRE-BUILT REPORT: ENROLLMENT (all SLP statuses, same date filters as activations)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SLP_STATUSES = [
+    "Contractor Activated",
+    "Deactivated",
+    "Account on Hold (Suspended)",
+    "Not Started",
+    "Declined by Onboarding",
+    "Not Active",
+    "Deactivated for Dormancy",
+    "Pending - Training Not Completed",
+    "Waiting_on_BDR_Approval",
+    "On Indefinite Hold - Agreement/Docs Not Signed",
+    "Pending - Waiting on Online Reviews",
+    "In Progress – Other",
+    "In Progress – Signed Contract Needed",
+]
+
+@app.get("/api/report/enrollment")
+async def enrollment_report(
+    from_date:         Optional[str] = Query(None, description="YYYY-MM-DD — filter by contractor-activated-date or enrollment-request-date"),
+    to_date:           Optional[str] = Query(None, description="YYYY-MM-DD"),
+    slp_status:        Optional[str] = Query(None, description="Filter to a specific SLP status (leave blank for all)"),
+    platform:          Optional[str] = Query(None),
+    bdr:               Optional[str] = Query(None),
+    state:             Optional[str] = Query(None, description="2-letter state abbreviation"),
+    exclude_platforms: Optional[str] = Query(None, description="Comma-separated platforms to exclude"),
+    format:            str           = Query("json"),
+):
+    """All SLP enrollments regardless of status, with optional status filter. Date range filters
+    on contractor-activated-date when set, falling back to enrollment-request-date."""
+    from datetime import timezone
+    print("\nEnrollment report...")
+    exclude_set = {p.strip() for p in exclude_platforms.split(",")} if exclude_platforms else set()
+    from_dt = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if from_date else None
+    to_dt   = datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None
+
+    slp_records = await get_slp_cache()
+    account_ids: set = set()
+    candidates  = []
+
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+
+        # Status filter
+        rec_status = fields.get("slp-status-detail", "")
+        if slp_status and rec_status != slp_status:
+            continue
+
+        # Platform filter
+        plat      = str(fields.get("channel", "")).strip()
+        plat_norm = _normalize_platform(plat)
+        if platform and plat_norm != _normalize_platform(platform):
+            continue
+        if plat_norm in exclude_set or plat in exclude_set:
+            continue
+
+        # BDR filter
+        slp_bdr = str(fields.get("assigned-bdr", "")).strip()
+        if bdr and slp_bdr != bdr:
+            continue
+
+        # State filter
+        if state:
+            states_val = str(fields.get("doing-business-in-states", "") or "").upper()
+            if state.upper() not in [s.strip() for s in states_val.split(",")]:
+                continue
+
+        # Date filter — use contractor-activated-date, fall back to enrollment-request-date
+        if from_dt or to_dt:
+            date_str = (str(fields.get("contractor-activated-date", "")).strip() or
+                        str(fields.get("enrollment-request-date", "")).strip())
+            if not date_str:
+                continue
+            try:
+                rec_dt = (datetime.fromisoformat(date_str.replace("Z", "+00:00")) if "T" in date_str
+                          else datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc))
+            except Exception:
+                continue
+            if from_dt and rec_dt < from_dt:
+                continue
+            if to_dt and rec_dt > to_dt:
+                continue
+
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if acc_id:
+            account_ids.add(acc_id)
+        candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
+
+    print(f"  {len(candidates)} candidates")
+
+    acct_cache: dict = {}
+    for aid in account_ids:
+        try:
+            ad  = await ac_get(f"accounts/{aid}")
+            acd = await ac_get(f"accounts/{aid}/accountCustomFieldData")
+            cfs = {str(cf["custom_field_id"]): cf.get("custom_field_text_value") or ""
+                   for cf in acd.get("customerAccountCustomFieldData", [])}
+            acct_cache[aid] = {"name": ad.get("account", {}).get("name", ""), "cfs": cfs}
+        except Exception:
+            acct_cache[aid] = {"name": "", "cfs": {}}
+
+    results = []
+    for c in candidates:
+        f   = c["fields"]
+        acc = acct_cache.get(c["account_id"], {"name": "", "cfs": {}}) if c["account_id"] else {"name": "", "cfs": {}}
+        cfs = acc["cfs"]
+        results.append({
+            "slp_id":                    c["slp_id"],
+            "account_id":                c["account_id"],
+            "account_name":              acc["name"],
+            "dba_name":                  cfs.get(ACCT_FIELD["dba_name"], ""),
+            "dealer_id":                 f.get("dealer-id", ""),
+            "channel":                   f.get("channel", ""),
+            "slp_status":                f.get("slp-status-detail", ""),
+            "contractor_activated_date": f.get("contractor-activated-date", ""),
+            "enrollment_request_date":   f.get("enrollment-request-date", ""),
+            "original_owner":            f.get("original-owner", ""),
+            "assigned_bdr":              f.get("assigned-bdr", ""),
+            "sales_region":              cfs.get(ACCT_FIELD["sales_region"], ""),
+            "oracle_producer_id":        cfs.get(ACCT_FIELD["oracle_producer_id"], ""),
+            "doing_business_in_states":  cfs.get(ACCT_FIELD["doing_business_in"], "") or f.get("doing-business-in-states", ""),
+            "ein":                       f.get("ein", ""),
+            "contractor_reactivation":   f.get("contractor-reactivation", ""),
+        })
+
+    results.sort(key=lambda x: (x.get("contractor_activated_date") or x.get("enrollment_request_date") or ""), reverse=True)
+
+    if format == "csv":
+        out = io.StringIO()
+        if results:
+            w = csv.DictWriter(out, fieldnames=results[0].keys())
+            w.writeheader(); w.writerows(results)
+        fn = f"enrollment_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return StreamingResponse(iter([out.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": f"attachment; filename={fn}"})
+    return {"count": len(results), "records": results, "valid_statuses": _SLP_STATUSES}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PRE-BUILT REPORT: NOT ACTIVATED (SLPs without Contractor Activated status)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -5606,6 +5748,113 @@ async def _job_activations(start_date: Optional[date] = None, end_date: Optional
     )
 
 
+# ── Enrollment Report (all statuses, optional status filter) ─────────────
+
+async def _job_enrollment(start_date: Optional[date] = None, end_date: Optional[date] = None,
+                          preset: Optional[str] = None, recipients: list = None,
+                          slp_status: Optional[str] = None):
+    """Email all SLP enrollment records for a date range, optionally filtered by status."""
+    from datetime import timezone
+    tz_utc = timezone.utc
+    today  = date.today()
+    _start, _end = _resolve_date_range(start_date, end_date, preset,
+                                       default_start=today - timedelta(days=1))
+    if _start is None: _start = today - timedelta(days=1)
+    if _end   is None: _end   = _start
+    from_dt    = datetime(_start.year, _start.month, _start.day, tzinfo=tz_utc)
+    to_dt      = datetime(_end.year,   _end.month,   _end.day,   23, 59, 59, tzinfo=tz_utc)
+    date_label = str(_start) if _start == _end else f"{_start} to {_end}"
+    status_label = slp_status or "All Statuses"
+    print(f"[reports] Enrollment report for {date_label} | status={status_label}")
+
+    slp_records = await get_slp_cache()
+    account_ids: set = set()
+    candidates = []
+    for r in slp_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+
+        if slp_status and fields.get("slp-status-detail") != slp_status:
+            continue
+
+        # Date filter on contractor-activated-date, fall back to enrollment-request-date
+        date_str = (str(fields.get("contractor-activated-date", "")).strip() or
+                    str(fields.get("enrollment-request-date", "")).strip())
+        if not date_str:
+            continue
+        try:
+            rec_dt = (datetime.fromisoformat(date_str.replace("Z", "+00:00")) if "T" in date_str
+                      else datetime.strptime(date_str[:10], "%Y-%m-%d").replace(tzinfo=tz_utc))
+        except Exception:
+            continue
+        if not (from_dt <= rec_dt <= to_dt):
+            continue
+
+        rel    = r.get("relationships", {}).get("account", [])
+        acc_id = str(rel[0]) if rel else None
+        if acc_id:
+            account_ids.add(acc_id)
+        candidates.append({"fields": fields, "account_id": acc_id})
+
+    async def _fetch_acct(aid: str) -> tuple:
+        try:
+            name_r, cf_r = await asyncio.gather(
+                ac_get(f"accounts/{aid}"),
+                ac_get(f"accounts/{aid}/accountCustomFieldData"),
+                return_exceptions=True,
+            )
+            name = name_r.get("account", {}).get("name", "") if isinstance(name_r, dict) else ""
+            bdr  = ""
+            if isinstance(cf_r, dict):
+                for item in cf_r.get("customerAccountCustomFieldData", []):
+                    if str(item.get("custom_field_id", "")) == "119":
+                        bdr = (item.get("custom_field_text_value") or "").strip()
+            return aid, {"name": name, "bdr": bdr}
+        except Exception:
+            return aid, {"name": "", "bdr": ""}
+
+    acct_cache: dict = dict(await asyncio.gather(*[_fetch_acct(aid) for aid in account_ids]))
+
+    records = []
+    for c in candidates:
+        f    = c["fields"]
+        acct = acct_cache.get(c["account_id"]) or {}
+        aid  = c["account_id"] or ""
+        rec  = {
+            "Account":                   acct.get("name") or f.get("name", ""),
+            "Dealer ID":                 f.get("dealer-id") or _account_to_dealer.get(aid, ""),
+            "Channel":                   f.get("channel", ""),
+            "BDR":                       f.get("assigned-bdr") or acct.get("bdr", ""),
+            "SLP Status":                f.get("slp-status-detail", ""),
+            "Activated":                 str(f.get("contractor-activated-date", "") or "")[:10],
+            "Enrollment Request Date":   str(f.get("enrollment-request-date", "") or "")[:10],
+            "Oracle Producer IDs":       f.get("oracle-producer-ids", ""),
+            "Doing Business In States":  f.get("doing-business-in-states", ""),
+            "EIN":                       f.get("ein", ""),
+            "Original Owner":            f.get("original-owner", ""),
+        }
+        _enrich_record(rec, aid)
+        records.append(rec)
+    records.sort(key=lambda x: (x["Activated"] or x["Enrollment Request Date"]), reverse=True)
+
+    cols = [("Account","Account"), ("Dealer ID","Dealer ID"), ("Channel","Channel"),
+            ("BDR","BDR"), ("SLP Status","SLP Status"), ("Activated","Activated")]
+    subtitle = f"{len(records)} enrollment{'s' if len(records) != 1 else ''} — {status_label}"
+    html = _HTML_WRAPPER.format(
+        title=f"Enrollment Report — {date_label}",
+        subtitle=subtitle,
+        table=_html_table(records, cols),
+        timestamp=datetime.now().strftime("%b %d %Y %H:%M"),
+    )
+    csv_label = str(_start) if _start == _end else f"{_start}_{_end}"
+    await _send_email(
+        subject=f"Enrollment Report — {date_label} ({len(records)} records, {status_label})",
+        html=html,
+        csv_data=_csv_bytes(records),
+        csv_name=f"enrollment_{csv_label}.csv",
+        recipients=recipients,
+    )
+
+
 # ── License Expiration (weekly Monday) ───────────────────────────────────
 
 async def _job_license_expiration(start_date: Optional[date] = None, end_date: Optional[date] = None,
@@ -6789,6 +7038,7 @@ async def _job_verdata_inactive(start_date=None, end_date=None,
 
 _REPORT_JOBS = {
     "activations":          _job_activations,
+    "enrollment":           _job_enrollment,
     "license-expiration":   _job_license_expiration,
     "bdr-summary":          _job_bdr_summary,
     "training-activity":    _job_training_activity,
@@ -6816,6 +7066,9 @@ async def trigger_report(
                     "last_90_days | this_week | this_month | last_month"),
     to:          Optional[str]  = Query(None,
         description="Override recipients — comma-separated email addresses"),
+    slp_status:  Optional[str]  = Query(None,
+        description="(Enrollment report only) Filter to a specific SLP status. "
+                    f"Valid values: {', '.join(_SLP_STATUSES)}"),
     _: None = Depends(require_auth),
 ):
     """Manually trigger a report email. Also called by GitHub Actions on schedule.
@@ -6834,8 +7087,11 @@ async def trigger_report(
     if not final_recipients:
         raise HTTPException(status_code=400, detail="No recipients — enter an email address in the To field")
     try:
-        await job(start_date=start_date, end_date=end_date, preset=preset,
-                  recipients=override_recipients)
+        kwargs: dict = dict(start_date=start_date, end_date=end_date, preset=preset,
+                            recipients=override_recipients)
+        if report_type == "enrollment" and slp_status:
+            kwargs["slp_status"] = slp_status
+        await job(**kwargs)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Email failed: {exc}")
     return {"status": "sent", "report": report_type,
