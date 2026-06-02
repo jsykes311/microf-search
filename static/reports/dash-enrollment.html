@@ -38,8 +38,26 @@
   .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
   .stat-sub { font-size: .7rem; color: #9ca3af; margin-top: 3px; }
 
+  /* Two-column middle layout */
+  .mid-layout { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-bottom: 18px; align-items: start; }
+  @media (max-width: 900px) { .mid-layout { grid-template-columns: 1fr; } }
+
+  /* Channel breakdown */
+  .channel-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .channel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: .82rem; font-weight: 700; color: #374151; }
+  .channel-row { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #f8f8f8; cursor: pointer; transition: background .1s; }
+  .channel-row:last-child { border-bottom: none; }
+  .channel-row:hover { background: #f9fafb; }
+  .channel-row.active-filter { background: #f0fdf4; }
+  .ch-name { font-size: .78rem; font-weight: 600; color: #111827; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ch-count { font-size: .78rem; font-weight: 700; color: #374151; min-width: 28px; text-align: right; }
+  .ch-pct { font-size: .68rem; color: #9ca3af; min-width: 34px; text-align: right; }
+  .ch-bar-wrap { width: 60px; background: #f0f0f0; border-radius: 3px; height: 5px; flex-shrink: 0; }
+  .ch-bar-fill { height: 5px; border-radius: 3px; background: #23A455; }
+  .ch-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
   /* Status pipeline */
-  .pipeline-grid { display: grid; gap: 10px; margin-bottom: 18px; }
+  .pipeline-grid { display: grid; gap: 10px; }
   .pipeline-row { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
   .pipeline-header { padding: 11px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; user-select: none; }
   .pipeline-header:hover { background: #fafafa; }
@@ -175,8 +193,14 @@
     <!-- Stats -->
     <div class="stats" id="stats"></div>
 
-    <!-- Status breakdown -->
-    <div class="pipeline-grid" id="pipeline"></div>
+    <!-- Status pipeline + Channel breakdown side by side -->
+    <div class="mid-layout">
+      <div class="pipeline-grid" id="pipeline"></div>
+      <div class="channel-card">
+        <div class="channel-header">By Channel / Platform</div>
+        <div id="channel-list"></div>
+      </div>
+    </div>
 
     <!-- Records table -->
     <div class="results-card">
@@ -304,8 +328,10 @@ async function runReport() {
     const curBdr = bdrSel.value;
     bdrSel.innerHTML = '<option value="">All BDRs</option>' + bdrs.map(b => `<option${b===curBdr?' selected':''}>${esc(b)}</option>`).join('');
 
+    activeChannelFilter = null;
     renderStats(allRecords);
     renderPipeline(allRecords);
+    renderChannel(allRecords);
     renderTable(allRecords);
 
     document.getElementById('loading').style.display = 'none';
@@ -438,6 +464,53 @@ function renderTable(records) {
 }
 
 function toggle(row) { row.classList.toggle('open'); }
+
+const CHANNEL_COLORS = {
+  'Microf Direct':'#23A455','Optimus':'#3b82f6','360 Finance':'#f59e0b',
+  'LTO':'#8b5cf6','SpectrumAC':'#06b6d4','ComfortConnect':'#ec4899',
+  'GoodLeap':'#10b981','Microf (LTO Only)':'#6366f1',
+};
+let activeChannelFilter = null;
+
+function renderChannel(records) {
+  const counts = {};
+  records.forEach(r => { const ch = r.channel||'Unknown'; counts[ch]=(counts[ch]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total  = records.length || 1;
+  const max    = Math.max(...sorted.map(s=>s[1]),1);
+
+  document.getElementById('channel-list').innerHTML = sorted.map(([ch, n]) => {
+    const color = CHANNEL_COLORS[ch] || '#9ca3af';
+    const pct   = Math.round(n/total*100);
+    const barW  = Math.round(n/max*100);
+    const isActive = activeChannelFilter === ch;
+    return `
+      <div class="channel-row${isActive?' active-filter':''}" onclick="filterByChannel('${ch.replace(/'/,"\\'")}')" title="Click to filter table">
+        <span class="ch-dot" style="background:${color};"></span>
+        <span class="ch-name">${esc(ch)}</span>
+        <span class="ch-bar-wrap"><span class="ch-bar-fill" style="width:${barW}%;background:${color};"></span></span>
+        <span class="ch-count">${n}</span>
+        <span class="ch-pct">${pct}%</span>
+      </div>`;
+  }).join('');
+}
+
+function filterByChannel(ch) {
+  if (activeChannelFilter === ch) {
+    activeChannelFilter = null;
+  } else {
+    activeChannelFilter = ch;
+  }
+  const filtered = activeChannelFilter
+    ? allRecords.filter(r => (r.channel||'Unknown') === activeChannelFilter)
+    : allRecords;
+  renderChannel(allRecords); // re-render to update active highlight
+  renderTable(filtered);
+  document.getElementById('rec-count').textContent =
+    activeChannelFilter
+      ? `${filtered.length.toLocaleString()} records (${esc(activeChannelFilter)})`
+      : `${allRecords.length.toLocaleString()} records`;
+}
 
 function exportCsv() {
   window.location.href = buildUrl('csv');
