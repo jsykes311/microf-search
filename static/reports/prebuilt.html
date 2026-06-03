@@ -533,7 +533,17 @@ const REPORTS = {
       { id:'from', label:'From Date', type:'date' },
       { id:'to',   label:'To Date',   type:'date' },
       { id:'channel', label:'Channel', type:'select', options: ['— all —', ...CHANNEL_OPTIONS] },
-      { id:'status', label:'Status', type:'select', options:['— all non-activated —','Not Started','Inactive','Pending'] },
+      { id:'status', label:'Status', type:'select', options:[
+        '— all non-activated —',
+        'Account on Hold (Suspended)',
+        'Not Started',
+        'Pending - Training Not Completed',
+        'Waiting_on_BDR_Approval',
+        'On Indefinite Hold - Agreement/Docs Not Signed',
+        'Pending - Waiting on Online Reviews',
+        'In Progress – Other',
+        'In Progress – Signed Contract Needed',
+      ] },
       { id:'bdr',   label:'Assigned BDR', type:'select-bdr' },
       { id:'state', label:'State', type:'select', options: ['— all states —', ...STATE_OPTIONS] },
       { id:'exclude', label:'Exclude Channels (comma-sep)', type:'text', placeholder:'e.g. LTO, Microf' },
@@ -626,7 +636,7 @@ const REPORTS = {
       if (trainer) p.set('trainer', trainer);
       if (tt && !tt.startsWith('—')) p.set('training_type', tt);
     },
-    emailType: 'training-activity',
+    emailType: 'training-summary',
   },
 
   'acta': {
@@ -694,7 +704,7 @@ const REPORTS = {
       { id:'vstatus', label:'Status', type:'select', options:['Active|Active','Not Active|Not Active'] },
     ],
     params: p => {},
-    emailType: 'verdata-active',
+    getEmailType: () => gv('vstatus') === 'Not Active' ? 'verdata-inactive' : 'verdata-active',
   },
 
   // Legacy aliases — kept so old bookmarks still resolve
@@ -1055,20 +1065,28 @@ function showEmailInput() {
 }
 
 async function doEmail() {
-  if (!cfg.emailType) { setStatus('Email not supported for this report.', 'var(--red)'); return; }
+  const emailType = cfg.getEmailType ? cfg.getEmailType() : cfg.emailType;
+  if (!emailType) { setStatus('Email not supported for this report.', 'var(--red)'); return; }
   const toVal = document.getElementById('email-to').value.trim();
   if (!toVal) { document.getElementById('email-to').focus(); return; }
   sessionStorage.setItem('report_email_to', toVal);
 
-  const p = new URLSearchParams();
-  const from = gv('from'), to = gv('to');
-  if (from) p.set('start_date', from);
-  if (to)   p.set('end_date',   to);
+  const p = buildParams();
+  const fromDate = p.get('from_date');
+  const toDate = p.get('to_date');
+  if (fromDate) {
+    p.set('start_date', fromDate);
+    p.delete('from_date');
+  }
+  if (toDate) {
+    p.set('end_date', toDate);
+    p.delete('to_date');
+  }
   p.set('to', toVal);
 
   setStatus('Sending…', 'var(--text3)');
   try {
-    const res  = await fetch(`/api/send-report/${cfg.emailType}?${p}`);
+    const res  = await fetch(`/api/send-report/${emailType}?${p}`);
     const data = await res.json();
     if (res.ok) {
       setStatus(`✓ Sent → ${esc((data.recipients||[]).join(', ') || toVal)}`, 'var(--green)');
