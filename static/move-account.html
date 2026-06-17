@@ -189,9 +189,14 @@ async function selectAccount(side, id, name) {
   textEl.innerHTML = `<strong>${esc(name)}</strong> <span style="color:#6b7280;font-size:.75rem">(ID: ${id})</span> — loading…`;
   selEl.style.display = 'block';
 
-  // Fetch contents
+  // Set state immediately so checkShowPreview works even if fetch is slow/fails
+  state[side] = { id, name, slps: [], contacts: [], note_count: 0 };
+  checkShowPreview();
+
+  // Fetch contents and update
   try {
     const res = await fetch(`/api/admin/account-contents/${id}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     state[side] = { id, name, ...data };
     const slpCount = data.slps?.length || 0;
@@ -201,11 +206,10 @@ async function selectAccount(side, id, name) {
       <span style="font-size:.75rem;color:#374151;margin-top:4px;display:inline-block">
         ${slpCount} SLP${slpCount!==1?'s':''} · ${conCount} contact${conCount!==1?'s':''} · ${data.note_count?.toLocaleString()||0} notes
       </span>`;
+    if (state.src && state.tgt) renderMoveOptions();
   } catch(e) {
     textEl.innerHTML = `<strong>${esc(name)}</strong> — <span style="color:#dc2626">Error loading contents: ${esc(e.message)}</span>`;
   }
-
-  checkShowPreview();
 }
 
 function clearAccount(side) {
