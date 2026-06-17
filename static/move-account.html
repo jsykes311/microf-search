@@ -170,7 +170,7 @@ async function searchAccount(side) {
       return;
     }
     listEl.innerHTML = accounts.map(a => `
-      <div class="result-item" onclick="selectAccount('${side}', '${a.id}', ${JSON.stringify(esc(a.name))})">
+      <div class="result-item" data-id="${a.id}" data-name="${esc(a.name)}" onclick="selectAccount('${side}', this.dataset.id, this.dataset.name)">
         <div>
           <div class="acct-name">${esc(a.name)}</div>
           <div class="acct-sub">ID: ${a.id}${a.dealer_id ? ' · DID: ' + a.dealer_id : ''}</div>
