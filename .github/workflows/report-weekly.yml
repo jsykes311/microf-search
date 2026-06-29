@@ -6,56 +6,100 @@ on:
   workflow_dispatch:
 
 jobs:
+  wake-up:
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.wake.outputs.ready }}
+    steps:
+      - name: Wake up Render
+        id: wake
+        run: |
+          echo "Waking Render (may take up to 60s)..."
+          STATUS=$(curl -s --max-time 90 \
+            "https://microf-search.onrender.com/api/health?token=${{ secrets.SYNC_TOKEN }}")
+          echo "Health: $STATUS"
+          echo "ready=true" >> $GITHUB_OUTPUT
+
   license-expiration:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger license expiration report
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/license-expiration"
+            "https://microf-search.onrender.com/api/send-report/license-expiration")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   bdr-summary:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger BDR summary report
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/bdr-summary?preset=last_week"
+            "https://microf-search.onrender.com/api/send-report/bdr-summary?preset=last_week")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   training-activity:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger training activity report
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/training-activity?preset=last_week"
+            "https://microf-search.onrender.com/api/send-report/training-activity?preset=last_week")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   platform-breakdown:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger platform breakdown report
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/platform-breakdown?preset=last_week"
+            "https://microf-search.onrender.com/api/send-report/platform-breakdown?preset=last_week")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   account-status:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger account status summary
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/account-status"
+            "https://microf-search.onrender.com/api/send-report/account-status")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   oracle-missing:
+    needs: wake-up
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Oracle Producer ID missing report
         run: |
-          curl -f --max-time 120 \
+          RESP=$(curl -s -w "\n%{http_code}" --max-time 120 \
             -H "Authorization: Bearer ${{ secrets.SYNC_TOKEN }}" \
-            "https://microf-search.onrender.com/api/send-report/oracle-missing"
+            "https://microf-search.onrender.com/api/send-report/oracle-missing")
+          BODY=$(echo "$RESP" | head -1)
+          CODE=$(echo "$RESP" | tail -1)
+          echo "HTTP $CODE: $BODY"
+          [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
