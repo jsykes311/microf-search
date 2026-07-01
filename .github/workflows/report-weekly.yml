@@ -8,17 +8,13 @@ on:
 jobs:
   wake-up:
     runs-on: ubuntu-latest
-    outputs:
-      ready: ${{ steps.wake.outputs.ready }}
     steps:
       - name: Wake up Render
-        id: wake
         run: |
           echo "Waking Render (may take up to 60s)..."
           STATUS=$(curl -s --max-time 90 \
             "https://microf-search.onrender.com/api/health?token=${{ secrets.SYNC_TOKEN }}")
           echo "Health: $STATUS"
-          echo "ready=true" >> $GITHUB_OUTPUT
 
   license-expiration:
     needs: wake-up
@@ -35,7 +31,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   bdr-summary:
-    needs: wake-up
+    needs: license-expiration
     runs-on: ubuntu-latest
     steps:
       - name: Trigger BDR summary report
@@ -49,7 +45,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   training-activity:
-    needs: wake-up
+    needs: bdr-summary
     runs-on: ubuntu-latest
     steps:
       - name: Trigger training activity report
@@ -63,7 +59,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   platform-breakdown:
-    needs: wake-up
+    needs: training-activity
     runs-on: ubuntu-latest
     steps:
       - name: Trigger platform breakdown report
@@ -77,7 +73,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   account-status:
-    needs: wake-up
+    needs: platform-breakdown
     runs-on: ubuntu-latest
     steps:
       - name: Trigger account status summary
@@ -91,7 +87,7 @@ jobs:
           [ "$CODE" -ge 200 ] && [ "$CODE" -lt 300 ] || (echo "FAILED with $CODE: $BODY" && exit 1)
 
   oracle-missing:
-    needs: wake-up
+    needs: account-status
     runs-on: ubuntu-latest
     steps:
       - name: Trigger Oracle Producer ID missing report
