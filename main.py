@@ -400,7 +400,7 @@ async def _startup():
     the first successful SLP load — avoids a race on the _slp_cache_lock at boot.
     """
     asyncio.create_task(_build_dealer_id_index())
-    asyncio.create_task(_keep_alive())
+    # asyncio.create_task(_keep_alive())  # disabled — not needed on paid tier
     asyncio.create_task(_slp_cache_loop())  # waits 90s, then fetches SLPs and kicks off location/state indexes
     asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
     asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
