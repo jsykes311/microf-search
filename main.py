@@ -78,6 +78,8 @@ _signer = URLSafeTimedSerializer(_SESSION_SECRET)
 # Separate token for internal/automated endpoints (no special chars needed).
 # Set SYNC_TOKEN on Render and in GitHub Secrets.
 _SYNC_TOKEN = os.getenv("SYNC_TOKEN", "")
+_WEBHOOK_TOKEN = (os.getenv("AC_WEBHOOK_TOKEN") or
+                  os.getenv("DEAL_WEBHOOK_TOKEN") or "")
 
 # ── Scheduled email reports ───────────────────────────────────────────────
 # Set these env vars on Render to enable report delivery.
@@ -444,7 +446,7 @@ async def dealer_index_status():
     }
 
 @app.get("/api/dealer-index/diagnose")
-async def dealer_index_diagnose(_: None = Depends(require_auth)):
+async def dealer_index_diagnose(_: None = Depends(_require_admin)):
     """Fetch first page of accountCustomFieldData and first SLP record raw — debug only."""
     cf_page  = await ac_get("accountCustomFieldData", {"limit": 5, "offset": 0})
     slp_page = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}", {"limit": 1})
@@ -1045,28 +1047,37 @@ _TA_CACHE_TTL = 900   # 15 minutes
 async def _refresh_ta_cache() -> None:
     global _ta_cache, _ta_cache_ts
     print("[ta-cache] refreshing…")
-    # contacts + notes use concurrent pagination (stable endpoints, no page-shuffling).
-    # activity (custom object) uses sequential to handle AC's non-deterministic ordering.
     from ac_client import fetch_all_pages as _fap
-    users_data, all_notes_raw, all_contacts, all_activity = await asyncio.gather(
+
+    # Fetch notes and activity concurrently; contacts are paged below to avoid
+    # holding 100K+ raw contact objects in memory at the same time.
+    users_data, all_notes_raw, all_activity = await asyncio.gather(
         ac_get("users"),
         _fap("notes", key="notes"),
-        _fap("contacts", key="contacts"),
         ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
     )
 
-    # Pre-process contacts into two lightweight dicts instead of storing
-    # the full contact objects (100K+ contacts × ~2KB each = ~200MB saved).
+    # Page through contacts, building slim maps on the fly — never accumulate
+    # all raw contact objects in memory (100K+ × ~2KB each = ~200MB peak avoided).
     contact_to_account: dict = {}
     contact_email_map:  dict = {}
-    for c in all_contacts:
-        cid = str(c.get("id", ""))
-        aid = str(c.get("account", "") or "")
-        if aid and aid != "0":
-            contact_to_account[cid] = aid
-        email = c.get("email", "")
-        if email:
-            contact_email_map[cid] = email
+    offset, PAGE = 0, 100
+    while True:
+        page_data = await ac_get("contacts", {"limit": PAGE, "offset": offset, "orders[id]": "ASC"})
+        batch = page_data.get("contacts", [])
+        if not batch:
+            break
+        for c in batch:
+            cid = str(c.get("id", ""))
+            aid = str(c.get("account", "") or "")
+            if aid and aid != "0":
+                contact_to_account[cid] = aid
+            email = c.get("email", "")
+            if email:
+                contact_email_map[cid] = email
+        offset += PAGE
+        if len(batch) < PAGE:
+            break
 
     # Slim notes — keep only fields used by the team report endpoints.
     slim_notes = [
@@ -1101,7 +1112,7 @@ async def _refresh_ta_cache() -> None:
     }
     _ta_cache_ts = _time.time()
     print(f"[ta-cache] done — {len(slim_notes)} notes, {len(slim_activity)} activities, "
-          f"{len(contact_to_account)} contact→account mappings (dropped raw contacts)")
+          f"{len(contact_to_account)} contact→account mappings")
 
 async def _ta_cache_loop() -> None:
     await asyncio.sleep(90)    # contacts+notes now concurrent — builds in ~10s
@@ -7171,6 +7182,44 @@ _SLP_SYNC_FIELDS = [
 # Holds the last sync job result/status in memory
 _slp_sync_status: dict = {"status": "idle"}
 
+def _rel_ids(values: list) -> list:
+    """Normalize AC relationship arrays that may contain IDs or {id: ...} dicts."""
+    out = []
+    for v in values or []:
+        raw = v.get("id", v) if isinstance(v, dict) else v
+        try:
+            out.append(int(raw))
+        except (TypeError, ValueError):
+            if raw:
+                out.append(raw)
+    return out
+
+async def _merge_update_custom_object_record(schema_id: str, record_id: str,
+                                             updates: list[dict]) -> dict:
+    """Fetch a custom object record, merge fields, and post the full record back.
+
+    Endpoint quirk: AC's per-record URL (`/customObjects/records/{schema}/{id}`)
+    only allows GET and DELETE. Updates must POST to the *collection* endpoint
+    (`/customObjects/records/{schema}`) with the existing record id in the body.
+    """
+    current = await ac_get(f"customObjects/records/{schema_id}/{record_id}")
+    record = current.get("record", {})
+    fields = {f["id"]: f.get("value", "") for f in record.get("fields", [])}
+    for item in updates:
+        fields[item["id"]] = item.get("value", "")
+    relationships = {
+        key: _rel_ids(vals)
+        for key, vals in (record.get("relationships") or {}).items()
+    }
+    payload = {
+        "record": {
+            "id":     record_id,
+            "fields": [{"id": k, "value": v} for k, v in fields.items()],
+            "relationships": relationships,
+        }
+    }
+    return await ac_post(f"customObjects/records/{schema_id}", payload)
+
 async def _run_slp_sync(dry_run: bool) -> None:
     """Background worker — pages through SLP records and fills blank fields from account CFs."""
     global _slp_sync_status
@@ -7250,8 +7299,7 @@ async def _run_slp_sync(dry_run: bool) -> None:
                     continue
 
                 try:
-                    await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}",
-                                  {"record": {"id": rec_id, "fields": to_update}})
+                    await _merge_update_custom_object_record(SLP_SCHEMA_ID, rec_id, to_update)
                     updated += 1
                 except Exception as e:
                     errors += 1
@@ -7290,7 +7338,7 @@ def _check_sync_token(token: str = Query(..., description="SYNC_TOKEN value from
 
 @app.post("/api/sync-slp-fields")
 async def sync_slp_fields(
-    dry_run: bool = Query(False, description="Preview changes without writing to AC"),
+    dry_run: bool = Query(True, description="Preview changes without writing to AC"),
     _: None = Depends(_check_sync_token),
 ):
     """Start a background sync of missing SLP fields from account data.
@@ -7633,65 +7681,57 @@ async def optimus_deactivate_confirm(
                     "relationships": {"account": acct_ids},
                 }
             }
-            status, data = await ac_post(
-                f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload
-            )
-            if status in (200, 201):
-                results["updated"].append(rec_id)
+            data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
+            results["updated"].append(rec_id)
 
-                # If no remaining Contractor Activated SLPs, set Account Status = Deactivated
+            # If no remaining Contractor Activated SLPs, set Account Status = Deactivated
+            for acct_id in acct_ids:
+                try:
+                    all_slps = await ac_get(
+                        f"customObjects/records/{SLP_SCHEMA}",
+                        {"filters[relationships.account]": acct_id},
+                    )
+                    still_active = any(
+                        f.get("value", "") == "Contractor Activated"
+                        for r in all_slps.get("records", [])
+                        for f in r.get("fields", [])
+                        if f.get("id") == "slp-status-detail"
+                    )
+                    if not still_active:
+                        await ac_post(
+                            f"accounts/{acct_id}/accountCustomFieldData",
+                            {"accountCustomFieldData": [
+                                {"customerAccountFieldId": 19, "fieldValue": "Deactivated"}
+                            ]},
+                        )
+                        results.setdefault("account_status_updated", []).append(acct_id)
+                except Exception as ae:
+                    print(f"[optimus-deactivate] account status update failed for {acct_id}: {ae}")
+
+            # Post Account Activity note (once per account)
+            if body.email_text:
                 for acct_id in acct_ids:
-                    try:
-                        all_slps = await ac_get(
-                            f"customObjects/records/{SLP_SCHEMA}",
-                            {"filters[relationships.account]": acct_id},
-                        )
-                        still_active = any(
-                            f.get("value", "") == "Contractor Activated"
-                            for r in all_slps.get("records", [])
-                            for f in r.get("fields", [])
-                            if f.get("id") == "slp-status-detail"
-                        )
-                        if not still_active:
-                            await ac_post(
-                                f"accounts/{acct_id}/accountCustomFieldData",
-                                {"accountCustomFieldData": [
-                                    {"customerAccountFieldId": 19, "fieldValue": "Deactivated"}
-                                ]},
-                            )
-                            results.setdefault("account_status_updated", []).append(acct_id)
-                    except Exception as ae:
-                        print(f"[optimus-deactivate] account status update failed for {acct_id}: {ae}")
-
-                # Post Account Activity note (once per account)
-                if body.email_text:
-                    for acct_id in acct_ids:
-                        if acct_id in noted_accounts:
-                            continue
-                        noted_accounts.add(acct_id)
-                        note_payload = {
-                            "record": {
-                                "fields": [
-                                    {"id": "activity-type",  "value": "Email"},
-                                    {"id": "subject",        "value": "GreenSky OPTIMUS Deactivation Notice"},
-                                    {"id": "body",           "value": body.email_text},
-                                    {"id": "activity-date",  "value": today_str},
-                                    {"id": "performed-by",   "value": performed_by},
-                                    {"id": "source",         "value": "Microf Reports"},
-                                ],
-                                "relationships": {"account": [acct_id]},
-                            }
+                    if acct_id in noted_accounts:
+                        continue
+                    noted_accounts.add(acct_id)
+                    note_payload = {
+                        "record": {
+                            "fields": [
+                                {"id": "activity-type",  "value": "Email"},
+                                {"id": "subject",        "value": "GreenSky OPTIMUS Deactivation Notice"},
+                                {"id": "body",           "value": body.email_text},
+                                {"id": "activity-date",  "value": today_str},
+                                {"id": "performed-by",   "value": performed_by},
+                                {"id": "source",         "value": "Microf Reports"},
+                            ],
+                            "relationships": {"account": [acct_id]},
                         }
-                        try:
-                            ns, nd = await ac_post(
-                                f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload
-                            )
-                            if ns in (200, 201):
-                                results["notes"].append(acct_id)
-                        except Exception as ne:
-                            print(f"[optimus-deactivate] note failed for acct {acct_id}: {ne}")
-            else:
-                results["failed"].append({"id": rec_id, "error": str(data)})
+                    }
+                    try:
+                        await ac_post(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload)
+                        results["notes"].append(acct_id)
+                    except Exception as ne:
+                        print(f"[optimus-deactivate] note failed for acct {acct_id}: {ne}")
         except Exception as e:
             results["failed"].append({"id": rec_id, "error": str(e)})
 
@@ -7813,55 +7853,51 @@ async def optimus_reactivate_confirm(
                     "relationships": {"account": [int(acct_id)]} if acct_id else {}
                 }
             }
-            status, data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
-            if status in (200, 201):
-                results["updated"].append(rec_id)
+            data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
+            results["updated"].append(rec_id)
 
-                # Update account status if this is the only active SLP
-                if acct_id:
-                    try:
-                        all_acct_slps = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
-                                                     {"filters[relationships.account]": acct_id, "limit": 50})
-                        other_active = [
-                            r for r in all_acct_slps.get("records", [])
-                            if r["id"] != rec_id and
-                            any(f["id"] == "slp-status-detail" and f.get("value") == "Contractor Activated"
-                                for f in r.get("fields", []))
-                        ]
-                        if not other_active:
-                            await ac_post(
-                                f"accounts/{acct_id}/accountCustomFieldData",
-                                {"accountCustomFieldData": [
-                                    {"customerAccountFieldId": 19, "fieldValue": "Contractor"}
-                                ]},
-                            )
-                            results["account_status_updated"].append(acct_id)
-                    except Exception as ae:
-                        print(f"[optimus-reactivate] account status update failed for {acct_id}: {ae}")
+            # Update account status if this is the only active SLP
+            if acct_id:
+                try:
+                    all_acct_slps = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
+                                                 {"filters[relationships.account]": acct_id, "limit": 50})
+                    other_active = [
+                        r for r in all_acct_slps.get("records", [])
+                        if r["id"] != rec_id and
+                        any(f["id"] == "slp-status-detail" and f.get("value") == "Contractor Activated"
+                            for f in r.get("fields", []))
+                    ]
+                    if not other_active:
+                        await ac_post(
+                            f"accounts/{acct_id}/accountCustomFieldData",
+                            {"accountCustomFieldData": [
+                                {"customerAccountFieldId": 19, "fieldValue": "Contractor"}
+                            ]},
+                        )
+                        results["account_status_updated"].append(acct_id)
+                except Exception as ae:
+                    print(f"[optimus-reactivate] account status update failed for {acct_id}: {ae}")
 
-                # Post Account Activity note
-                if body.email_text and acct_id:
-                    try:
-                        note_payload = {
-                            "record": {
-                                "fields": [
-                                    {"id": "activity-type",  "value": "Email"},
-                                    {"id": "subject",        "value": "EGIA OPTIMUS Reactivation Notice"},
-                                    {"id": "body",           "value": body.email_text},
-                                    {"id": "activity-date",  "value": today_date},
-                                    {"id": "performed-by",   "value": performed_by},
-                                    {"id": "source",         "value": "Microf Reports"},
-                                ],
-                                "relationships": {"account": [int(acct_id)]}
-                            }
+            # Post Account Activity note
+            if body.email_text and acct_id:
+                try:
+                    note_payload = {
+                        "record": {
+                            "fields": [
+                                {"id": "activity-type",  "value": "Email"},
+                                {"id": "subject",        "value": "EGIA OPTIMUS Reactivation Notice"},
+                                {"id": "body",           "value": body.email_text},
+                                {"id": "activity-date",  "value": today_date},
+                                {"id": "performed-by",   "value": performed_by},
+                                {"id": "source",         "value": "Microf Reports"},
+                            ],
+                            "relationships": {"account": [int(acct_id)]}
                         }
-                        ns, _ = await ac_post(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload)
-                        if ns in (200, 201):
-                            results["notes"].append(acct_id)
-                    except Exception as ne:
-                        print(f"[optimus-reactivate] note failed for acct {acct_id}: {ne}")
-            else:
-                results["failed"].append({"id": rec_id, "error": str(data)})
+                    }
+                    await ac_post(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload)
+                    results["notes"].append(acct_id)
+                except Exception as ne:
+                    print(f"[optimus-reactivate] note failed for acct {acct_id}: {ne}")
         except Exception as e:
             results["failed"].append({"id": rec_id, "error": str(e)})
 
@@ -8482,12 +8518,27 @@ async def _process_deal_to_sharepoint(deal_id: str):
         print(f"[deal-tracker] ✗ deal={deal_id} {e}\n{_tb.format_exc()}")
 
 
+def _check_webhook_token(request: _Request) -> None:
+    if not _WEBHOOK_TOKEN:
+        return   # local/dev fallback only
+    bearer = request.headers.get("Authorization", "")
+    header_token = request.headers.get("X-Webhook-Token", "")
+    query_token = request.query_params.get("token", "")
+    candidates = []
+    if bearer.startswith("Bearer "):
+        candidates.append(bearer.removeprefix("Bearer ").strip())
+    candidates.extend([header_token, query_token])
+    if not any(t and secrets.compare_digest(t, _WEBHOOK_TOKEN) for t in candidates):
+        raise HTTPException(status_code=401, detail="Invalid webhook token")
+
+
 @app.post("/webhook/deal-created")
 async def webhook_deal_created(request: _Request, background_tasks: BackgroundTasks):
     """
     Receives ActiveCampaign deal-created webhook. Returns immediately,
     processes the SharePoint write in the background.
     """
+    _check_webhook_token(request)
     try:
         body = await request.body()
         data = _parse_bracket_form(body)
@@ -9290,9 +9341,10 @@ async def health_check():
         "lc_cache_loaded":       lc_ok,
         "ta_cache_loaded":       ta_ok,
     }
-    # Return 503 while warming so Render (and any monitoring tool) sees the
-    # service as not-yet-ready. Flips to 200 once core caches are loaded (~2-3 min).
-    return JSONResponse(content=payload, status_code=200 if ready else 503)
+    # Always return 200 so Render's health check doesn't force-restart the
+    # service while it's still warming up (SLP cache takes ~2 min to load).
+    # Warmup state is visible in the "status" field of the response body.
+    return JSONResponse(content=payload, status_code=200)
 
 
 # ── SLP Cache Refresh ─────────────────────────────────────────────────────────
