@@ -897,6 +897,11 @@ _slp_cache_lock             = asyncio.Lock()
 _SLP_CACHE_TTL              = 900  # 15 minutes — fetch takes ~1-2 min, no point hammering every 5
 _slp_refreshing:    bool   = False  # True while a refresh is in flight
 
+# ── Account custom-field data cache (shared across all report endpoints) ─────
+_acct_cf_raw:    list  = []   # all raw accountCustomFieldData records
+_acct_cf_raw_ts: float = 0.0
+_ACCT_CF_TTL           = 600  # 10 minutes
+
 async def _refresh_slp_cache() -> None:
     """Fetch ALL SLP records from AC and atomically swap into _slp_cache_records.
     Uses ac_client.fetch_all_slps (sequential, dedup-by-id) — stops as soon as
@@ -5651,26 +5656,35 @@ def _resolve_date_range(
 
 
 async def _fetch_acct_cf_map(field_ids: set) -> dict:
-    """Bulk-fetch account custom fields. Returns {account_id: {field_id_str: value}}."""
-    result: dict   = defaultdict(dict)
-    field_ids_int  = {int(f) for f in field_ids}
-    offset, PAGE   = 0, 100
-    while True:
-        page  = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
-        items = page.get("accountCustomFieldData", [])
-        if not items:
-            break
-        for item in items:
-            fid = int(item.get("customFieldId", 0))
-            if fid not in field_ids_int:
-                continue
-            aid = str(item.get("accountId", ""))
-            val = (item.get("fieldValue") or "").strip()
-            if aid and val:
-                result[aid][str(fid)] = val
-        offset += PAGE
-        if len(items) < PAGE:
-            break
+    """Bulk-fetch account custom fields. Returns {account_id: {field_id_str: value}}.
+    Raw records are cached for _ACCT_CF_TTL seconds so repeated report calls are fast."""
+    global _acct_cf_raw, _acct_cf_raw_ts
+
+    if not _acct_cf_raw or (_time.time() - _acct_cf_raw_ts) > _ACCT_CF_TTL:
+        raw: list = []
+        offset, PAGE = 0, 100
+        while True:
+            page  = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
+            items = page.get("accountCustomFieldData", [])
+            if not items:
+                break
+            raw.extend(items)
+            offset += PAGE
+            if len(items) < PAGE:
+                break
+        _acct_cf_raw    = raw
+        _acct_cf_raw_ts = _time.time()
+
+    field_ids_int = {int(f) for f in field_ids}
+    result: dict  = defaultdict(dict)
+    for item in _acct_cf_raw:
+        fid = int(item.get("customFieldId", 0))
+        if fid not in field_ids_int:
+            continue
+        aid = str(item.get("accountId", ""))
+        val = (item.get("fieldValue") or "").strip()
+        if aid and val:
+            result[aid][str(fid)] = val
     return dict(result)
 
 
