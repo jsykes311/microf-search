@@ -2418,19 +2418,17 @@ async def activations_report(
 
     print(f"  {len(candidates)} candidates")
 
-    # Fetch account custom fields concurrently (name comes from in-memory index).
-    # Sequential per-account fetches killed performance on large date ranges.
-    _sem = asyncio.Semaphore(20)
-    async def _fetch_acct(aid: str) -> tuple:
-        async with _sem:
-            try:
-                acd = await ac_get(f"accounts/{aid}/accountCustomFieldData")
-                cfs = {str(cf["custom_field_id"]): cf.get("custom_field_text_value") or ""
-                       for cf in acd.get("customerAccountCustomFieldData", [])}
-                return aid, {"name": _account_to_name.get(aid, ""), "cfs": cfs}
-            except Exception:
-                return aid, {"name": _account_to_name.get(aid, ""), "cfs": {}}
-    acct_cache = dict(await asyncio.gather(*[_fetch_acct(aid) for aid in account_ids]))
+    # Bulk-fetch only the CF fields we need in one paginated sweep — far faster
+    # than one API call per account, especially for large date ranges.
+    _needed_cf_ids = {
+        ACCT_FIELD["dba_name"], ACCT_FIELD["doing_business_in"],
+        ACCT_FIELD["sales_region"], ACCT_FIELD["oracle_producer_id"],
+    }
+    cf_map = await _fetch_acct_cf_map(_needed_cf_ids)
+    acct_cache = {
+        aid: {"name": _account_to_name.get(aid, ""), "cfs": cf_map.get(aid, {})}
+        for aid in account_ids
+    }
 
     results = []
     for c in candidates:
