@@ -1432,34 +1432,6 @@ async function init() {
       .catch(() => {});
   }
 
-  // ── Filter change → abort + re-run ─────────────────────────────────────
-  // Attach to the filters card so we catch all inputs/selects/period buttons
-  // Use a short debounce for text inputs to avoid firing on every keystroke
-  let _filterDebounce;
-  function onFilterChange() {
-    clearTimeout(_filterDebounce);
-    _filterDebounce = setTimeout(doRun, 300);
-  }
-
-  document.getElementById('filters-card').addEventListener('change', e => {
-    if (e.target.tagName === 'SELECT' || e.target.type === 'date' ||
-        e.target.type === 'checkbox') {
-      doRun();
-    }
-  });
-
-  // Period buttons fire doRun via applyPeriod — wire those up too
-  document.getElementById('period-row').addEventListener('click', e => {
-    if (e.target.classList.contains('period-btn')) {
-      setTimeout(doRun, 50); // slight delay so applyPeriod sets date values first
-    }
-  });
-
-  // Text inputs (debounced)
-  document.getElementById('filters-card').addEventListener('input', e => {
-    if (e.target.type === 'text') onFilterChange();
-  });
-
   // ── Don't auto-run — show ready state instead ──────────────────────────
   setStatus('Set filters and click ▶ Run Report', 'var(--text3)');
 }
