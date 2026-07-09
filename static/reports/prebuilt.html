@@ -1297,7 +1297,7 @@ function tpCloseAcct() {
 }
 
 async function tpRenderAcct(accountId, userName) {
-  const acUrl  = `https://microf.activehosted.com/app/companies/${accountId}`;
+  const acUrl  = `https://microf.activehosted.com/app/accounts/${accountId}`;
   const acLink = `<a href="${acUrl}" target="_blank" style="font-size:.75rem;color:#fff;opacity:.8;text-decoration:none;">Open in AC ↗</a>`;
   document.getElementById('tp-acct-meta').innerHTML = acLink;
 

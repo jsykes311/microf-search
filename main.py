@@ -472,7 +472,7 @@ _subdomain  = _re.match(r"https?://([^.]+)", AC_BASE_URL)
 AC_UI_BASE  = f"https://{_subdomain.group(1)}.activehosted.com" if _subdomain else ""
 
 def ac_account_url(account_id) -> str:
-    return f"{AC_UI_BASE}/app/companies/{account_id}" if account_id else ""
+    return f"{AC_UI_BASE}/app/accounts/{account_id}" if account_id else ""
 
 def ac_contact_url(contact_id) -> str:
     return f"{AC_UI_BASE}/app/contacts/{contact_id}" if contact_id else ""
