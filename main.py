@@ -509,6 +509,7 @@ _account_to_revenue: dict = {}          # account_id (str) → Annual Revenue dr
 _account_to_strategic_partners: dict = {} # account_id (str) → Strategic Partners multiselect CF132
 _account_to_contractor_reactivation: dict = {} # account_id (str) → "Yes" or "" CF32
 _account_to_reactivation_date: dict = {}       # account_id (str) → Reactivation Date CF28
+_account_to_oracle_id: dict = {}               # account_id (str) → Oracle Producer ID (CF118)
 _account_to_activation_date: dict = {}         # account_id (str) → contractor-activated-date from SLP
 _account_to_slp_states: dict = {}              # account_id (str) → doing-business-in-states from SLP
 _user_id_to_name: dict = {}     # AC user_id (str) → "First Last"
@@ -619,6 +620,7 @@ async def _build_dealer_id_index() -> None:
     STRAT_PART_CF  = 132   # customFieldId for "Strategic Partners" (multiselect)
     CONTRACTOR_REACT_CF = 32  # customFieldId for "Contractor Reactivation" (checkbox)
     REACT_DATE_CF  = 28    # customFieldId for "Reactivation Date"
+    ORACLE_CF_ID   = 118   # customFieldId for "Oracle Producer ID"
     CF_PAGE        = 1000  # 1000 records/page → ~190 pages instead of ~1900
     CONCURRENCY    = 8     # 8 concurrent requests → index builds in ~10s instead of ~5min
 
@@ -653,6 +655,7 @@ async def _build_dealer_id_index() -> None:
         acct_to_strat_part: dict = {}
         acct_to_react:      dict = {}
         acct_to_react_date: dict = {}
+        acct_to_oracle_id:  dict = {}
 
         def _ingest(items: list) -> None:
             for item in items:
@@ -704,6 +707,8 @@ async def _build_dealer_id_index() -> None:
                     acct_to_react[aid]      = val   # "Yes" if checked
                 elif cf_id == REACT_DATE_CF:
                     acct_to_react_date[aid] = val
+                elif cf_id == ORACLE_CF_ID:
+                    acct_to_oracle_id[aid]  = val
 
         _ingest(first_page.get("accountCustomFieldData", []))
 
@@ -828,6 +833,7 @@ async def _build_dealer_id_index() -> None:
         global _apex_partners_cache; _apex_partners_cache = None  # invalidate on index rebuild
         _account_to_contractor_reactivation.clear(); _account_to_contractor_reactivation.update(acct_to_react)
         _account_to_reactivation_date.clear();       _account_to_reactivation_date.update(acct_to_react_date)
+        _account_to_oracle_id.clear();               _account_to_oracle_id.update(acct_to_oracle_id)
 
         # Reverse index: lowercase dealer program → set of account IDs
         new_prog: dict = {}
@@ -2511,7 +2517,6 @@ async def enrollment_report(
     to_dt   = datetime.strptime(to_date,   "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone.utc) if to_date else None
 
     slp_records = await get_slp_cache()
-    account_ids: set = set()
     candidates  = []
 
     for r in slp_records:
@@ -2563,32 +2568,19 @@ async def enrollment_report(
             if to_dt and rec_dt > to_dt:
                 continue
 
-        if acc_id:
-            account_ids.add(acc_id)
         candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
 
-    print(f"  {len(candidates)} candidates, {len(account_ids)} unique accounts")
-
-    _needed_cf_ids = {
-        ACCT_FIELD["dba_name"], ACCT_FIELD["doing_business_in"],
-        ACCT_FIELD["sales_region"], ACCT_FIELD["oracle_producer_id"],
-    }
-    cf_map = await _fetch_acct_cf_map(_needed_cf_ids)
-    acct_cache: dict = {
-        aid: {"name": _account_to_name.get(aid, ""), "cfs": cf_map.get(aid, {})}
-        for aid in account_ids
-    }
+    print(f"  {len(candidates)} candidates")
 
     results = []
     for c in candidates:
         f   = c["fields"]
-        acc = acct_cache.get(c["account_id"], {"name": "", "cfs": {}}) if c["account_id"] else {"name": "", "cfs": {}}
-        cfs = acc["cfs"]
+        aid = c["account_id"] or ""
         results.append({
             "slp_id":                    c["slp_id"],
-            "account_id":                c["account_id"],
-            "account_name":              acc["name"],
-            "dba_name":                  cfs.get(ACCT_FIELD["dba_name"], ""),
+            "account_id":                aid,
+            "account_name":              _account_to_name.get(aid, ""),
+            "dba_name":                  _account_to_dba.get(aid, ""),
             "dealer_id":                 f.get("dealer-id", ""),
             "channel":                   f.get("channel", ""),
             "slp_status":                f.get("slp-status-detail", ""),
@@ -2596,9 +2588,9 @@ async def enrollment_report(
             "enrollment_request_date":   f.get("enrollment-request-date", ""),
             "original_owner":            f.get("original-owner", ""),
             "assigned_bdr":              f.get("assigned-bdr", ""),
-            "sales_region":              cfs.get(ACCT_FIELD["sales_region"], ""),
-            "oracle_producer_id":        cfs.get(ACCT_FIELD["oracle_producer_id"], ""),
-            "doing_business_in_states":  cfs.get(ACCT_FIELD["doing_business_in"], "") or f.get("doing-business-in-states", ""),
+            "sales_region":              _account_to_region.get(aid, ""),
+            "oracle_producer_id":        _account_to_oracle_id.get(aid, ""),
+            "doing_business_in_states":  _account_to_states.get(aid, "") or f.get("doing-business-in-states", ""),
             "ein":                       f.get("ein", ""),
             "contractor_reactivation":   f.get("contractor-reactivation", ""),
         })
