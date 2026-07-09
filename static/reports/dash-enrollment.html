@@ -418,7 +418,7 @@ function renderPipeline(records) {
     const recs  = records.filter(r => (r.slp_status||'Unknown') === status);
     const rows  = recs.slice(0,200).map(r => `
       <tr>
-        <td><a class="ac-link" href="https://microf.activehosted.com/app/contacts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+        <td><a class="ac-link" href="https://microf.activehosted.com/app/companies/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
         <td>${esc(r.dealer_id)}</td>
         <td>${esc(r.channel)}</td>
         <td>${esc(r.assigned_bdr)}</td>
@@ -471,7 +471,7 @@ function renderTable(records) {
   }
   tbody.innerHTML = records.slice(0,500).map(r => `
     <tr>
-      <td><a class="ac-link" href="https://microf.activehosted.com/app/contacts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+      <td><a class="ac-link" href="https://microf.activehosted.com/app/companies/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
       <td>${esc(r.dealer_id)}</td>
       <td>${esc(r.channel)}</td>
       <td>${esc(r.assigned_bdr)}</td>

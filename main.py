@@ -2569,23 +2569,15 @@ async def enrollment_report(
 
     print(f"  {len(candidates)} candidates, {len(account_ids)} unique accounts")
 
-    async def _fetch_enroll_acct(aid: str) -> tuple:
-        try:
-            ad, acd = await asyncio.gather(
-                ac_get(f"accounts/{aid}"),
-                ac_get(f"accounts/{aid}/accountCustomFieldData"),
-                return_exceptions=True,
-            )
-            name = ad.get("account", {}).get("name", "") if isinstance(ad, dict) else ""
-            cfs: dict = {}
-            if isinstance(acd, dict):
-                for cf in acd.get("customerAccountCustomFieldData", []):
-                    cfs[str(cf.get("custom_field_id", ""))] = cf.get("custom_field_text_value") or ""
-            return aid, {"name": name, "cfs": cfs}
-        except Exception:
-            return aid, {"name": "", "cfs": {}}
-
-    acct_cache: dict = dict(await asyncio.gather(*[_fetch_enroll_acct(aid) for aid in account_ids]))
+    _needed_cf_ids = {
+        ACCT_FIELD["dba_name"], ACCT_FIELD["doing_business_in"],
+        ACCT_FIELD["sales_region"], ACCT_FIELD["oracle_producer_id"],
+    }
+    cf_map = await _fetch_acct_cf_map(_needed_cf_ids)
+    acct_cache: dict = {
+        aid: {"name": _account_to_name.get(aid, ""), "cfs": cf_map.get(aid, {})}
+        for aid in account_ids
+    }
 
     results = []
     for c in candidates:
@@ -5682,7 +5674,8 @@ async def _fetch_acct_cf_map(field_ids: set) -> dict:
         if fid not in field_ids_int:
             continue
         aid = str(item.get("accountId", ""))
-        val = (item.get("fieldValue") or "").strip()
+        fv  = item.get("fieldValue") or ""
+        val = (fv if isinstance(fv, str) else (str(fv[0]) if fv else "")).strip()
         if aid and val:
             result[aid][str(fid)] = val
     return dict(result)
