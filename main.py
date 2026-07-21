@@ -8129,6 +8129,255 @@ async def consolidate_account(body: _ConsolidateIn, admin=Depends(_require_admin
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dealer Fix Tool — split a misfiled dealer (SLP linked to the wrong account,
+# usually because a similarly-named account already existed) into its own
+# dedicated account, carrying over its contact(s) and deal(s).
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DEALER_FIX_SLP_CFS = {
+    "dealer-id":                 18,
+    "doing-business-in-states":  22,
+    "oracle-producer-ids":       118,
+    "ein":                       40,
+}
+
+def _find_slp_by_dealer_id(slp_records: list, dealer_id: str) -> Optional[dict]:
+    for r in slp_records:
+        fields = {f.get("id"): f.get("value") for f in r.get("fields", [])}
+        if str(fields.get("dealer-id", "")).strip() == dealer_id:
+            return {"id": r["id"], "fields": fields, "raw_fields": r.get("fields", []),
+                    "relationships": r.get("relationships", {})}
+    return None
+
+@app.get("/dealer-fix")
+async def dealer_fix_page(user=Depends(_require_admin)):
+    return FileResponse("static/dealer-fix.html")
+
+@app.get("/api/admin/dealer-fix/check")
+async def dealer_fix_check(dealer_id: str = Query(...), admin=Depends(_require_admin)):
+    """Look up a dealer's SLP record and check whether it's sharing an account
+    with a different (usually similarly-named) dealer. If so, surface the
+    contact(s)/deal(s) on that account so an admin can confirm which ones
+    actually belong to this dealer before splitting it out."""
+    dealer_id = dealer_id.strip()
+    if not dealer_id:
+        raise HTTPException(status_code=400, detail="Dealer ID required")
+
+    slp_records = await get_slp_cache()
+    slp_match = _find_slp_by_dealer_id(slp_records, dealer_id)
+    if not slp_match:
+        return {"ok": False, "error": f"No SLP record found for Dealer ID {dealer_id}"}
+
+    fields = slp_match["fields"]
+    slp_info = {
+        "id":                 slp_match["id"],
+        "name":               fields.get("name", ""),
+        "channel":            fields.get("channel", ""),
+        "status":             fields.get("slp-status-detail", ""),
+        "ein":                fields.get("ein", ""),
+        "states":             fields.get("doing-business-in-states", ""),
+        "oracle_producer_id": fields.get("oracle-producer-ids", ""),
+        "dealerkey":          fields.get("dealerkey", ""),
+    }
+
+    accts = slp_match["relationships"].get("account", [])
+    account_id = str(accts[0]) if accts else None
+
+    if not account_id:
+        return {"ok": True, "slp": slp_info, "linked": False,
+                "message": "This SLP has no linked account at all — nothing to split."}
+
+    acct_data, cfd, deals_resp = await asyncio.gather(
+        ac_get(f"accounts/{account_id}"),
+        ac_get(f"accounts/{account_id}/accountCustomFieldData"),
+        ac_get("deals", {"filters[account]": account_id, "limit": 100}),
+    )
+    account_name = acct_data.get("account", {}).get("name", "")
+    acct_dealer_id = ""
+    for cf in cfd.get("customerAccountCustomFieldData", []):
+        if str(cf.get("custom_field_id")) == "18":
+            acct_dealer_id = (cf.get("custom_field_text_value") or "").strip()
+            break
+
+    # A differing Parent Dealer ID field alone does NOT mean this dealer is
+    # misfiled — dealers routinely have several SLPs (one per financing
+    # channel) legitimately sharing one account, each with its own per-channel
+    # dealer-id. The one reliable signal for an actual same-name-collision
+    # misfile is the enrollment automation's own marker on the deal
+    # description ("Rojos Enrollment for dealer {id}"), combined with the
+    # account already belonging to a *different* dealer.
+    marker = f"dealer {dealer_id}".lower()
+    marker_deals = [d for d in deals_resp.get("deals", []) if marker in (d.get("description") or "").lower()]
+
+    is_misfiled = bool(marker_deals) and bool(acct_dealer_id) and acct_dealer_id != dealer_id
+    if not is_misfiled:
+        return {"ok": True, "slp": slp_info, "linked": True, "mismatch": False,
+                "account": {"id": account_id, "name": account_name, "dealer_id": acct_dealer_id, "url": ac_account_url(account_id)},
+                "message": "This dealer looks correctly filed — no sign of a same-name-collision misfile "
+                           "(a differing Parent Dealer ID here is normal if this dealer is enrolled under "
+                           "multiple channels on the same account)."}
+
+    # Genuine misfile — pull everything on the account so the admin can pick what moves.
+    contacts_resp = await ac_get(f"accounts/{account_id}/accountContacts")
+
+    contact_ids = [str(c.get("contact")) for c in contacts_resp.get("accountContacts", [])]
+    all_contacts = []
+    for cid in contact_ids:
+        try:
+            cdata = await ac_get(f"contacts/{cid}")
+            c = cdata.get("contact", {})
+            all_contacts.append({"id": cid, "name": f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
+                                  "email": c.get("email", "")})
+        except Exception:
+            all_contacts.append({"id": cid, "name": "(unknown)", "email": ""})
+
+    marker = f"dealer {dealer_id}".lower()
+    slp_name_upper = (fields.get("name") or "").strip().upper()
+    all_deals, matched_deal_ids, matched_contact_ids = [], [], []
+    for d in deals_resp.get("deals", []):
+        desc  = (d.get("description") or "")
+        title = (d.get("title") or "").strip()
+        is_match = marker in desc.lower() or (slp_name_upper and title.upper() == slp_name_upper)
+        deal_contact_id = str(d.get("contact")) if d.get("contact") else None
+        all_deals.append({"id": d.get("id"), "title": title, "description": desc,
+                           "contact_id": deal_contact_id, "auto_matched": is_match})
+        if is_match:
+            matched_deal_ids.append(d.get("id"))
+            if deal_contact_id:
+                matched_contact_ids.append(deal_contact_id)
+
+    return {
+        "ok": True, "slp": slp_info, "linked": True, "mismatch": True,
+        "account": {"id": account_id, "name": account_name, "dealer_id": acct_dealer_id, "url": ac_account_url(account_id)},
+        "all_contacts": all_contacts,
+        "all_deals": all_deals,
+        "matched_deal_ids": matched_deal_ids,
+        "matched_contact_ids": matched_contact_ids,
+        "auto_matched": len(matched_deal_ids) > 0,
+    }
+
+
+class _DealerFixIn(_BaseModel):
+    dealer_id: str
+    source_account_id: str
+    contact_ids: list = []
+    deal_ids: list = []
+    new_account_name: Optional[str] = None
+
+@app.post("/api/admin/dealer-fix/execute")
+async def dealer_fix_execute(body: _DealerFixIn, admin=Depends(_require_admin)):
+    """Create a dedicated account for a misfiled dealer, move the selected
+    contact(s)/deal(s) onto it, and repoint the SLP relationship."""
+    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+    dealer_id = body.dealer_id.strip()
+
+    slp_records = await get_slp_cache()
+    slp_match   = _find_slp_by_dealer_id(slp_records, dealer_id)
+    if not slp_match:
+        raise HTTPException(status_code=404, detail=f"No SLP record found for Dealer ID {dealer_id}")
+    fields     = slp_match["fields"]
+    raw_fields = slp_match["raw_fields"]
+
+    base_name = (body.new_account_name or fields.get("name") or f"Dealer {dealer_id}").strip()
+    final_name = base_name
+    try:
+        acc = await ac_post("accounts", {"account": {"name": final_name}})
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "already exists" in str(e).lower():
+            final_name = f"{base_name}-{dealer_id}"
+            acc = await ac_post("accounts", {"account": {"name": final_name}})
+        else:
+            raise HTTPException(status_code=400, detail=f"Failed to create account: {e}")
+    new_account_id = acc.get("account", {}).get("id")
+    if not new_account_id:
+        raise HTTPException(status_code=400, detail=f"Failed to create account: {acc}")
+
+    cf_errors = []
+    for field_key, cf_id in _DEALER_FIX_SLP_CFS.items():
+        val = (fields.get(field_key) or "").strip()
+        if not val:
+            continue
+        try:
+            await ac_post("accountCustomFieldData", {
+                "accountCustomFieldDatum": {"customFieldId": cf_id, "customerAccountId": new_account_id, "fieldValue": val}
+            })
+        except Exception as e:
+            cf_errors.append(f"cf {cf_id}: {e}")
+    try:
+        await ac_post("accountCustomFieldData", {
+            "accountCustomFieldDatum": {"customFieldId": 36, "customerAccountId": new_account_id,
+                                        "fieldValue": (fields.get("name") or base_name).strip()}
+        })
+    except Exception as e:
+        cf_errors.append(f"cf 36: {e}")
+
+    try:
+        old_acct_data = await ac_get(f"accounts/{body.source_account_id}")
+        old_name = old_acct_data.get("account", {}).get("name", "")
+    except Exception:
+        old_name = ""
+
+    note_new = (
+        f"Split out from Account {body.source_account_id} ({old_name}), which incorrectly shared this "
+        f"account with Dealer {dealer_id} due to a similar company name. Source: SLP record — "
+        f"dealerkey {fields.get('dealerkey','')}, channel {fields.get('channel','')}, "
+        f"EIN {fields.get('ein','')}, Oracle Producer ID {fields.get('oracle-producer-ids','')}, "
+        f"status {fields.get('slp-status-detail','')}."
+    )
+    note_old = (
+        f"Dealer {dealer_id} ({fields.get('name','')}) was incorrectly linked to this account and has "
+        f"been split out to its own Account (ID {new_account_id}, {final_name})."
+    )
+    try:
+        await ac_post("notes", {"note": {"note": note_new, "relid": new_account_id, "reltype": "CustomerAccount", "userid": "1"}})
+    except Exception as e:
+        cf_errors.append(f"note (new account): {e}")
+    try:
+        await ac_post("notes", {"note": {"note": note_old, "relid": body.source_account_id, "reltype": "CustomerAccount", "userid": "1"}})
+    except Exception as e:
+        cf_errors.append(f"note (old account): {e}")
+
+    moved_contacts = []
+    for cid in body.contact_ids:
+        try:
+            assoc_data = await ac_get("accountContacts", {"contact": cid, "limit": 50})
+            for assoc in assoc_data.get("accountContacts", []):
+                if str(assoc.get("account")) == str(body.source_account_id):
+                    await ac_delete(f"accountContacts/{assoc['id']}")
+            await ac_post("accountContacts", {"accountContact": {"contact": cid, "account": new_account_id}})
+            moved_contacts.append({"id": cid, "ok": True})
+        except Exception as e:
+            moved_contacts.append({"id": cid, "ok": False, "error": str(e)})
+
+    moved_deals = []
+    for did in body.deal_ids:
+        try:
+            await ac_put(f"deals/{did}", {"deal": {"organization": new_account_id}})
+            moved_deals.append({"id": did, "ok": True})
+        except Exception as e:
+            moved_deals.append({"id": did, "ok": False, "error": str(e)})
+
+    slp_repoint_error = None
+    try:
+        await ac_post(f"customObjects/records/{SLP_SCHEMA}", {
+            "record": {"id": slp_match["id"], "fields": raw_fields, "relationships": {"account": [new_account_id]}}
+        })
+    except Exception as e:
+        slp_repoint_error = str(e)
+
+    return {
+        "ok": True,
+        "new_account_id": new_account_id,
+        "new_account_name": final_name,
+        "new_account_url": ac_account_url(new_account_id),
+        "moved_contacts": moved_contacts,
+        "moved_deals": moved_deals,
+        "cf_errors": cf_errors,
+        "slp_repoint_error": slp_repoint_error,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Webhook: deal-created → append row to SharePoint Excel
 # ─────────────────────────────────────────────────────────────────────────────
 

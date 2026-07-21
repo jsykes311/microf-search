@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Dealer in the Wrong Place? — Microf</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans', Arial, sans-serif;background:#f3f2f1;color:#323130;min-height:100vh}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.apps-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}.back-btn{margin-left:auto;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}.back-btn:hover{background:rgba(255,255,255,.18)}
+main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:.9rem;font-weight:700;color:#1e3a5f;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-sub{font-weight:400;color:#6b7280;font-size:.8rem}
+.step-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0}
+
+.search-row{display:flex;gap:8px}
+.search-row input{flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+.search-row input:focus{outline:none;border-color:#1e3a5f}
+.search-row button{padding:8px 16px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.85rem;cursor:pointer;white-space:nowrap}
+.search-row button:hover{background:#162d4a}
+.search-row button:disabled{background:#9ca3af;cursor:not-allowed}
+
+.status-msg{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:.83rem;display:none}
+.status-msg.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.status-msg.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.status-msg.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+
+.slp-summary{margin-top:14px;padding:12px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:.83rem;display:none}
+.slp-summary dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin-top:6px}
+.slp-summary dt{color:#6b7280;font-weight:600}
+.slp-summary dd{color:#111827}
+.badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:.7rem;font-weight:500;background:#e0f2fe;color:#0369a1}
+.badge-green{background:#d1fae5;color:#065f46}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-amber{background:#fef3c7;color:#92400e}
+
+.preview-section{display:none}
+
+.name-row{display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.name-row label{font-size:.83rem;font-weight:600;color:#374151;white-space:nowrap}
+.name-row input{flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+.name-row input:focus{outline:none;border-color:#1e3a5f}
+
+.check-group{display:flex;flex-direction:column;gap:8px}
+.check-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:6px}
+.check-item .check-label{font-size:.83rem;font-weight:600;color:#374151}
+
+.sub-list{margin-top:6px;padding-left:4px}
+.sub-item{display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:.78rem;color:#374151}
+.sub-item input[type=checkbox]{accent-color:#1e3a5f;cursor:pointer;margin-top:2px}
+.sub-item .deal-desc{color:#6b7280;display:block;font-size:.73rem;margin-top:1px}
+
+.divider{height:1px;background:#e5e7eb;margin:18px 0}
+
+.btn-run{width:100%;padding:11px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:16px}
+.btn-run:hover{background:#162d4a}
+.btn-run:disabled{background:#9ca3af;cursor:not-allowed}
+
+.log{margin-top:16px;background:#0f172a;color:#e2e8f0;border-radius:6px;padding:14px;font-size:.78rem;font-family:monospace;line-height:1.7;max-height:300px;overflow-y:auto;display:none;white-space:pre-wrap}
+.log .ok{color:#4ade80}
+.log .err{color:#f87171}
+.log .info{color:#93c5fd}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width: 600px) {
+  body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
+  input, select, textarea { font-size: 16px !important; }
+  input, select, textarea, button { touch-action: manipulation; }
+  main { padding-left: 14px !important; padding-right: 14px !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>🧭 Dealer in the Wrong Place?</h1>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;"><a class="back-btn" href="#" onclick="history.back();return false;">← Back</a><a class="apps-btn" href="/">⬡ Apps</a></div>
+</header>
+
+<main>
+
+  <!-- Step 1: Dealer ID -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">1</span> Enter Dealer ID <span class="card-sub">(checks whether it's sharing an account with a different dealer)</span></div>
+    <div class="search-row">
+      <input id="dealer-input" type="text" placeholder="e.g. 17673" inputmode="numeric" onkeydown="if(event.key==='Enter')checkDealer()"/>
+      <button id="check-btn" onclick="checkDealer()">Check</button>
+    </div>
+    <div class="status-msg" id="status-msg"></div>
+    <div class="slp-summary" id="slp-summary"></div>
+  </div>
+
+  <!-- Step 2: Preview & confirm -->
+  <div class="card preview-section" id="preview-card">
+    <div class="card-title"><span class="step-badge">2</span> Move to Its Own Account</div>
+
+    <div class="name-row">
+      <label for="new-name-input">New account name:</label>
+      <input id="new-name-input" type="text"/>
+    </div>
+
+    <div class="check-group" id="move-options"></div>
+
+    <button class="btn-run" id="run-btn" onclick="runFix()">Move to Its Own Account</button>
+    <div class="log" id="log"></div>
+  </div>
+
+</main>
+
+<script>
+const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+let state = { dealerId: null, sourceAccountId: null, slpName: '' };
+
+function setStatus(msg, type) {
+  const el = document.getElementById('status-msg');
+  el.className = `status-msg ${type}`;
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+function hideStatus() {
+  document.getElementById('status-msg').style.display = 'none';
+}
+
+async function checkDealer() {
+  const dealerId = document.getElementById('dealer-input').value.trim();
+  if (!dealerId) return;
+
+  document.getElementById('preview-card').style.display = 'none';
+  document.getElementById('slp-summary').style.display = 'none';
+  hideStatus();
+
+  const btn = document.getElementById('check-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Checking…';
+  setStatus('Looking up SLP record and checking its account…', 'info');
+
+  try {
+    const res = await fetch(`/api/admin/dealer-fix/check?dealer_id=${encodeURIComponent(dealerId)}`);
+    const data = await res.json();
+
+    if (!data.ok) {
+      setStatus(`✗ ${esc(data.error || 'Something went wrong.')}`, 'err');
+      return;
+    }
+
+    const slp = data.slp;
+    const summaryEl = document.getElementById('slp-summary');
+    summaryEl.innerHTML = `
+      <strong>${esc(slp.name || 'Unnamed')}</strong> <span class="badge">${esc(slp.channel || '—')}</span>
+      <dl>
+        <dt>Status</dt><dd>${esc(slp.status || '—')}</dd>
+        <dt>States</dt><dd>${esc(slp.states || '—')}</dd>
+        <dt>Oracle Producer ID</dt><dd>${esc(slp.oracle_producer_id || '—')}</dd>
+        <dt>EIN</dt><dd>${esc(slp.ein || '—')}</dd>
+      </dl>`;
+    summaryEl.style.display = 'block';
+
+    if (!data.linked) {
+      setStatus(`ℹ ${esc(data.message)}`, 'info');
+      return;
+    }
+    if (data.mismatch === false) {
+      setStatus(`✓ ${esc(data.message)} (Account: <a href="${esc(data.account.url)}" target="_blank">${esc(data.account.name)}</a>)`, 'ok');
+      return;
+    }
+
+    // Mismatch — show the split UI
+    setStatus(`⚠ This dealer is currently attached to <strong>${esc(data.account.name)}</strong>
+      (<a href="${esc(data.account.url)}" target="_blank">ID ${esc(data.account.id)}</a>),
+      which has a different Parent Dealer ID${data.account.dealer_id ? ' (' + esc(data.account.dealer_id) + ')' : ' (none set)'}.
+      Review the contacts/deals below — the ones that look like they belong to this dealer are pre-checked.`, 'err');
+
+    state.dealerId = dealerId;
+    state.sourceAccountId = data.account.id;
+    state.slpName = slp.name || `Dealer ${dealerId}`;
+    document.getElementById('new-name-input').value = state.slpName;
+
+    renderMoveOptions(data);
+    document.getElementById('preview-card').style.display = 'block';
+
+  } catch(e) {
+    setStatus(`✗ Request failed: ${esc(e.message)}`, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Check';
+  }
+}
+
+function renderMoveOptions(data) {
+  const el = document.getElementById('move-options');
+  const matchedDeals = new Set(data.matched_deal_ids || []);
+  const matchedContacts = new Set(data.matched_contact_ids || []);
+
+  let html = '';
+
+  if (data.all_deals?.length) {
+    html += `<div class="check-item"><div style="width:100%">
+      <div class="check-label">Deals on this account (${data.all_deals.length})</div>
+      <div class="sub-list">
+        ${data.all_deals.map(d => `
+          <div class="sub-item">
+            <input type="checkbox" class="deal-chk" value="${d.id}" ${matchedDeals.has(d.id) ? 'checked' : ''}/>
+            <span>${esc(d.title || 'Untitled')} ${d.auto_matched ? '<span class="badge badge-green">likely match</span>' : ''}
+              ${d.description ? `<span class="deal-desc">${esc(d.description)}</span>` : ''}
+            </span>
+          </div>`).join('')}
+      </div>
+    </div></div>`;
+  } else {
+    html += `<div class="check-item" style="opacity:.5"><div><div class="check-label">Deals</div><div style="font-size:.75rem;color:#6b7280">None on this account</div></div></div>`;
+  }
+
+  if (data.all_contacts?.length) {
+    html += `<div class="check-item"><div style="width:100%">
+      <div class="check-label">Contacts on this account (${data.all_contacts.length})</div>
+      <div class="sub-list">
+        ${data.all_contacts.map(c => `
+          <div class="sub-item">
+            <input type="checkbox" class="contact-chk" value="${c.id}" ${matchedContacts.has(c.id) ? 'checked' : ''}/>
+            <span>${esc(c.name || 'Unnamed')} ${c.email ? `· <span style="color:#6b7280">${esc(c.email)}</span>` : ''}</span>
+          </div>`).join('')}
+      </div>
+    </div></div>`;
+  } else {
+    html += `<div class="check-item" style="opacity:.5"><div><div class="check-label">Contacts</div><div style="font-size:.75rem;color:#6b7280">None on this account</div></div></div>`;
+  }
+
+  if (!data.auto_matched) {
+    html = `<div class="status-msg err" style="display:block">Couldn't auto-detect which contact/deal belongs to this dealer — nothing is pre-checked below. Please review and select manually.</div>` + html;
+  }
+
+  el.innerHTML = html;
+}
+
+async function runFix() {
+  const dealIds = [...document.querySelectorAll('.deal-chk:checked')].map(c => c.value);
+  const contactIds = [...document.querySelectorAll('.contact-chk:checked')].map(c => c.value);
+  const newName = document.getElementById('new-name-input').value.trim();
+
+  if (!dealIds.length && !contactIds.length) {
+    alert('Select at least one contact or deal to move.');
+    return;
+  }
+  if (!confirm(`Create a new account "${newName}" for Dealer ${state.dealerId} and move ${contactIds.length} contact(s) and ${dealIds.length} deal(s) there? This writes to production ActiveCampaign.`)) return;
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Moving…';
+
+  const log = document.getElementById('log');
+  log.style.display = 'block';
+  log.innerHTML = `<span class="info">Creating new account "${esc(newName)}" for Dealer ${esc(state.dealerId)}…</span>\n`;
+
+  try {
+    const res = await fetch('/api/admin/dealer-fix/execute', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        dealer_id: state.dealerId,
+        source_account_id: state.sourceAccountId,
+        contact_ids: contactIds,
+        deal_ids: dealIds,
+        new_account_name: newName,
+      })
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.ok) {
+      log.innerHTML += `<span class="err">✗ ${esc(data.detail || 'Request failed.')}</span>`;
+      btn.disabled = false;
+      btn.innerHTML = 'Move to Its Own Account';
+      return;
+    }
+
+    log.innerHTML += `<span class="ok">✓ New account created: ${esc(data.new_account_name)} (ID ${data.new_account_id})</span>\n`;
+    data.moved_contacts?.forEach(c => {
+      log.innerHTML += c.ok
+        ? `<span class="ok">✓ Contact ${c.id} moved</span>\n`
+        : `<span class="err">✗ Contact ${c.id} failed: ${esc(c.error)}</span>\n`;
+    });
+    data.moved_deals?.forEach(d => {
+      log.innerHTML += d.ok
+        ? `<span class="ok">✓ Deal ${d.id} moved</span>\n`
+        : `<span class="err">✗ Deal ${d.id} failed: ${esc(d.error)}</span>\n`;
+    });
+    if (data.slp_repoint_error) {
+      log.innerHTML += `<span class="err">✗ SLP relationship repoint failed: ${esc(data.slp_repoint_error)}</span>\n`;
+    } else {
+      log.innerHTML += `<span class="ok">✓ SLP record repointed to the new account</span>\n`;
+    }
+    data.cf_errors?.forEach(e => {
+      log.innerHTML += `<span class="err">✗ ${esc(e)}</span>\n`;
+    });
+
+    const allOk = !data.slp_repoint_error && !(data.cf_errors?.length)
+      && data.moved_contacts?.every(c => c.ok) && data.moved_deals?.every(d => d.ok);
+    log.innerHTML += allOk
+      ? `\n<span class="ok">✅ Done — <a href="${esc(data.new_account_url)}" target="_blank" style="color:#4ade80">open the new account in ActiveCampaign</a>.</span>`
+      : `\n<span class="err">⚠ Completed with some errors — check above. <a href="${esc(data.new_account_url)}" target="_blank" style="color:#f87171">Open the new account</a>.</span>`;
+
+    btn.innerHTML = allOk ? '✅ Done' : '⚠ Done (with errors)';
+  } catch(e) {
+    log.innerHTML += `<span class="err">✗ Request failed: ${esc(e.message)}</span>`;
+    btn.disabled = false;
+    btn.innerHTML = 'Move to Its Own Account';
+  }
+
+  log.scrollTop = log.scrollHeight;
+}
+</script>
+<script src="/static/js/status-widget.js" defer></script>
+</body>
+</html>
