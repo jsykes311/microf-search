@@ -8149,6 +8149,34 @@ def _find_slp_by_dealer_id(slp_records: list, dealer_id: str) -> Optional[dict]:
                     "relationships": r.get("relationships", {})}
     return None
 
+def _normalize_dealer_name_parts(name: str) -> list:
+    """Return normalized candidate names for a dealer/account name string.
+    Accounts are commonly named "{Legal Entity} DBA {Common Name}" — either
+    side could be the one that matches, so both are returned as candidates."""
+    n = (name or "").upper()
+    n = n.split(":")[0]                     # drop trailing ": <channel>" suffix
+    segments = _re.split(r"\bDBA\b", n) or [n]
+
+    def clean(s: str) -> str:
+        s = _re.sub(r"-\d+\s*$", "", s)      # drop trailing "-<digits>"
+        s = _re.sub(r"[^A-Z0-9 ]", " ", s)   # strip punctuation
+        return _re.sub(r"\s+", " ", s).strip()
+
+    return [c for c in (clean(s) for s in segments) if c]
+
+def _names_look_related(a: str, b: str) -> bool:
+    """Best-effort check for whether an SLP name and an account name refer to
+    the same company. Not authoritative — a Rojos-enrollment marker deal gets
+    created for ANY new dealer-id enrollment, including legitimate re-enrollments
+    of an existing dealer under a new channel, so this is surfaced to the admin
+    as a caution note rather than used to suppress the mismatch flag."""
+    parts_a, parts_b = _normalize_dealer_name_parts(a), _normalize_dealer_name_parts(b)
+    for na in parts_a:
+        for nb in parts_b:
+            if na == nb or na in nb or nb in na:
+                return True
+    return False
+
 @app.get("/dealer-fix")
 async def dealer_fix_page(user=Depends(_require_admin)):
     return FileResponse("static/dealer-fix.html")
@@ -8210,14 +8238,10 @@ async def dealer_fix_check(dealer_id: str = Query(...), admin=Depends(_require_a
     marker_deals = [d for d in deals_resp.get("deals", []) if marker in (d.get("description") or "").lower()]
 
     is_misfiled = bool(marker_deals) and bool(acct_dealer_id) and acct_dealer_id != dealer_id
-    if not is_misfiled:
-        return {"ok": True, "slp": slp_info, "linked": True, "mismatch": False,
-                "account": {"id": account_id, "name": account_name, "dealer_id": acct_dealer_id, "url": ac_account_url(account_id)},
-                "message": "This dealer looks correctly filed — no sign of a same-name-collision misfile "
-                           "(a differing Parent Dealer ID here is normal if this dealer is enrolled under "
-                           "multiple channels on the same account)."}
 
-    # Genuine misfile — pull everything on the account so the admin can pick what moves.
+    # Always pull the account's contacts/deals — even when it looks correctly
+    # filed — so the UI can offer a "Move Anyway" override in case this
+    # detection heuristic is wrong (it's advisory, not authoritative).
     contacts_resp = await ac_get(f"accounts/{account_id}/accountContacts")
 
     contact_ids = [str(c.get("contact")) for c in contacts_resp.get("accountContacts", [])]
@@ -8231,7 +8255,6 @@ async def dealer_fix_check(dealer_id: str = Query(...), admin=Depends(_require_a
         except Exception:
             all_contacts.append({"id": cid, "name": "(unknown)", "email": ""})
 
-    marker = f"dealer {dealer_id}".lower()
     slp_name_upper = (fields.get("name") or "").strip().upper()
     all_deals, matched_deal_ids, matched_contact_ids = [], [], []
     for d in deals_resp.get("deals", []):
@@ -8246,9 +8269,26 @@ async def dealer_fix_check(dealer_id: str = Query(...), admin=Depends(_require_a
             if deal_contact_id:
                 matched_contact_ids.append(deal_contact_id)
 
+    message = (
+        "This dealer looks correctly filed — no sign of a same-name-collision misfile "
+        "(a differing Parent Dealer ID here is normal if this dealer is enrolled under "
+        "multiple channels on the same account). You can still move it manually below if "
+        "you believe this is wrong."
+        if not is_misfiled else None
+    )
+
+    # Advisory only: a Rojos-enrollment marker gets created for ANY new dealer-id
+    # enrollment, including a legitimate re-enrollment of an EXISTING dealer under a
+    # new channel — which looks identical, technically, to a genuine same-name
+    # collision. Surface a name-similarity note so the admin can tell the two apart
+    # rather than trying to auto-resolve it.
+    names_related = _names_look_related(fields.get("name", ""), account_name) if is_misfiled else False
+
     return {
-        "ok": True, "slp": slp_info, "linked": True, "mismatch": True,
+        "ok": True, "slp": slp_info, "linked": True, "mismatch": is_misfiled,
         "account": {"id": account_id, "name": account_name, "dealer_id": acct_dealer_id, "url": ac_account_url(account_id)},
+        "message": message,
+        "names_look_related": names_related,
         "all_contacts": all_contacts,
         "all_deals": all_deals,
         "matched_deal_ids": matched_deal_ids,

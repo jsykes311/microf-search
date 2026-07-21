@@ -171,24 +171,26 @@ async function checkDealer() {
       setStatus(`ℹ ${esc(data.message)}`, 'info');
       return;
     }
+
+    prepMoveState(dealerId, data, slp);
+
     if (data.mismatch === false) {
-      setStatus(`✓ ${esc(data.message)} (Account: <a href="${esc(data.account.url)}" target="_blank">${esc(data.account.name)}</a>)`, 'ok');
+      setStatus(`✓ ${esc(data.message)} (Account: <a href="${esc(data.account.url)}" target="_blank">${esc(data.account.name)}</a>)
+        <button class="btn-run" style="width:auto;margin-top:10px;padding:6px 14px;font-size:.8rem" onclick="showMoveUi(state.lastCheckData)">Move Anyway</button>`, 'ok');
       return;
     }
 
-    // Mismatch — show the split UI
+    // Mismatch — show the split UI automatically
+    const relatedNote = data.names_look_related
+      ? `<br><br>⚠️ <strong>Heads up:</strong> "${esc(slp.name)}" and "${esc(data.account.name)}" look like they might be the <em>same</em> company —
+         this could be a legitimate re-enrollment under a new channel rather than a real collision. Double-check before moving anything.`
+      : '';
     setStatus(`⚠ This dealer is currently attached to <strong>${esc(data.account.name)}</strong>
       (<a href="${esc(data.account.url)}" target="_blank">ID ${esc(data.account.id)}</a>),
       which has a different Parent Dealer ID${data.account.dealer_id ? ' (' + esc(data.account.dealer_id) + ')' : ' (none set)'}.
-      Review the contacts/deals below — the ones that look like they belong to this dealer are pre-checked.`, 'err');
+      Review the contacts/deals below — the ones that look like they belong to this dealer are pre-checked.${relatedNote}`, 'err');
 
-    state.dealerId = dealerId;
-    state.sourceAccountId = data.account.id;
-    state.slpName = slp.name || `Dealer ${dealerId}`;
-    document.getElementById('new-name-input').value = state.slpName;
-
-    renderMoveOptions(data);
-    document.getElementById('preview-card').style.display = 'block';
+    showMoveUi(data);
 
   } catch(e) {
     setStatus(`✗ Request failed: ${esc(e.message)}`, 'err');
@@ -196,6 +198,20 @@ async function checkDealer() {
     btn.disabled = false;
     btn.innerHTML = 'Check';
   }
+}
+
+function prepMoveState(dealerId, data, slp) {
+  state.dealerId = dealerId;
+  state.sourceAccountId = data.account.id;
+  state.slpName = slp.name || `Dealer ${dealerId}`;
+  state.lastCheckData = data;
+  document.getElementById('new-name-input').value = state.slpName;
+}
+
+function showMoveUi(data) {
+  renderMoveOptions(data);
+  document.getElementById('preview-card').style.display = 'block';
+  document.getElementById('preview-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderMoveOptions(data) {
