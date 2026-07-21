@@ -913,20 +913,40 @@ _acct_cf_refreshing: bool = False  # True while a refresh is in flight
 
 async def _refresh_acct_cf_cache() -> None:
     """Fetch ALL accountCustomFieldData records and atomically swap into _acct_cf_raw.
-    Uses ac_client.fetch_all_pages concurrently (~15 parallel requests) instead of
-    one-page-at-a-time — a cold rebuild over the full account custom-field dataset
-    (~160K+ records / 1600+ pages) took ~9.5 minutes sequentially, which is what
-    caused reports depending on this cache (e.g. Contractor Activations) to hang
-    whenever the cache went stale. Concurrent fetch brings this down to ~80s."""
+
+    A cold rebuild over the full account custom-field dataset (~160K+ records)
+    took ~9.5 minutes at 100 records/page, one page at a time — long enough to
+    hang any report depending on this cache (e.g. Contractor Activations)
+    whenever it went stale. A first attempt at fixing this used
+    ac_client.fetch_all_pages's concurrent path, which builds a {offset: page}
+    dict for every page and only flattens it into the final list at the end —
+    momentarily holding the entire ~160K-record dataset in memory TWICE. That
+    was confirmed (via Render's logs/metrics) to be the direct cause of an
+    out-of-memory crash in production. Fetching at 1000 records/page with 8
+    concurrent workers, extending a single shared list as each page completes
+    (same page size/concurrency already used by _build_dealer_id_index),
+    avoids the double-buffering and still finishes in well under a minute."""
     global _acct_cf_raw, _acct_cf_raw_ts, _acct_cf_refreshing
     async with _acct_cf_lock:
         if _acct_cf_raw and (_time.time() - _acct_cf_raw_ts) < _ACCT_CF_TTL:
             return
         _acct_cf_refreshing = True
         print("[acct-cf-cache] Refreshing account custom field data…")
+        PAGE, CONCURRENCY = 1000, 8
+        raw: list = []
         try:
-            from ac_client import fetch_all_pages as _fap
-            raw = await _fap("accountCustomFieldData", key="accountCustomFieldData")
+            first = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": 0})
+            raw.extend(first.get("accountCustomFieldData", []))
+            total = int(first.get("meta", {}).get("total", 0))
+
+            if total > PAGE:
+                sem = asyncio.Semaphore(CONCURRENCY)
+                async def fetch_and_extend(offset: int):
+                    async with sem:
+                        page = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
+                        raw.extend(page.get("accountCustomFieldData", []))
+                await asyncio.gather(*[fetch_and_extend(o) for o in range(PAGE, total, PAGE)])
+
             print(f"[acct-cf-cache] fetched {len(raw)} records")
             if raw:
                 _acct_cf_raw    = raw
