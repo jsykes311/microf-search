@@ -404,6 +404,7 @@ async def _startup():
     asyncio.create_task(_slp_cache_loop())  # waits 90s, then fetches SLPs and kicks off location/state indexes
     asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
     asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
+    asyncio.create_task(_acct_cf_cache_loop())  # waits 90s, then keeps account custom-field cache warm
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -907,6 +908,50 @@ _slp_refreshing:    bool   = False  # True while a refresh is in flight
 _acct_cf_raw:    list  = []   # all raw accountCustomFieldData records
 _acct_cf_raw_ts: float = 0.0
 _ACCT_CF_TTL           = 600  # 10 minutes
+_acct_cf_lock             = asyncio.Lock()
+_acct_cf_refreshing: bool = False  # True while a refresh is in flight
+
+async def _refresh_acct_cf_cache() -> None:
+    """Fetch ALL accountCustomFieldData records and atomically swap into _acct_cf_raw.
+    Uses ac_client.fetch_all_pages concurrently (~15 parallel requests) instead of
+    one-page-at-a-time — a cold rebuild over the full account custom-field dataset
+    (~160K+ records / 1600+ pages) took ~9.5 minutes sequentially, which is what
+    caused reports depending on this cache (e.g. Contractor Activations) to hang
+    whenever the cache went stale. Concurrent fetch brings this down to ~80s."""
+    global _acct_cf_raw, _acct_cf_raw_ts, _acct_cf_refreshing
+    async with _acct_cf_lock:
+        if _acct_cf_raw and (_time.time() - _acct_cf_raw_ts) < _ACCT_CF_TTL:
+            return
+        _acct_cf_refreshing = True
+        print("[acct-cf-cache] Refreshing account custom field data…")
+        try:
+            from ac_client import fetch_all_pages as _fap
+            raw = await _fap("accountCustomFieldData", key="accountCustomFieldData")
+            print(f"[acct-cf-cache] fetched {len(raw)} records")
+            if raw:
+                _acct_cf_raw    = raw
+                _acct_cf_raw_ts = _time.time()
+            else:
+                print("[acct-cf-cache] WARNING: 0 records returned — keeping existing cache, will retry")
+        except Exception as _e:
+            print(f"[acct-cf-cache] fetch failed: {_e}")
+        finally:
+            _acct_cf_refreshing = False
+
+async def _acct_cf_cache_loop() -> None:
+    """Background task: keep the account custom-field cache warm, refreshing every
+    _ACCT_CF_TTL seconds, so report requests never have to wait on a cold rebuild."""
+    await asyncio.sleep(90)   # stagger away from other startup fetches
+    while True:
+        try:
+            await _refresh_acct_cf_cache()
+        except Exception as _e:
+            print(f"[acct-cf-cache] loop error: {_e}")
+        if _acct_cf_raw:
+            await asyncio.sleep(_ACCT_CF_TTL)
+        else:
+            print("[acct-cf-cache] cache still empty — retrying in 30s")
+            await asyncio.sleep(30)
 
 async def _refresh_slp_cache() -> None:
     """Fetch ALL SLP records from AC and atomically swap into _slp_cache_records.
@@ -5641,23 +5686,10 @@ def _resolve_date_range(
 
 async def _fetch_acct_cf_map(field_ids: set) -> dict:
     """Bulk-fetch account custom fields. Returns {account_id: {field_id_str: value}}.
-    Raw records are cached for _ACCT_CF_TTL seconds so repeated report calls are fast."""
-    global _acct_cf_raw, _acct_cf_raw_ts
-
+    Backed by the shared _acct_cf_raw cache (kept warm by _acct_cf_cache_loop);
+    only blocks on a live refresh if the cache is empty or has gone stale."""
     if not _acct_cf_raw or (_time.time() - _acct_cf_raw_ts) > _ACCT_CF_TTL:
-        raw: list = []
-        offset, PAGE = 0, 100
-        while True:
-            page  = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
-            items = page.get("accountCustomFieldData", [])
-            if not items:
-                break
-            raw.extend(items)
-            offset += PAGE
-            if len(items) < PAGE:
-                break
-        _acct_cf_raw    = raw
-        _acct_cf_raw_ts = _time.time()
+        await _refresh_acct_cf_cache()
 
     field_ids_int = {int(f) for f in field_ids}
     result: dict  = defaultdict(dict)
