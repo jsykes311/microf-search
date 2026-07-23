@@ -65,6 +65,15 @@
   .s-dormancy    { background: #f5f3ff; color: #5b21b6; }
 
   .ac-link { color: #23A455; text-decoration: none; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; cursor: pointer; }
+  th:hover { color: #374151; }
+  th.sort-asc::after { content: ' ↑'; }
+  th.sort-desc::after { content: ' ↓'; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
   .ac-link:hover { text-decoration: underline; }
 
   /* Toasts */
@@ -126,6 +135,32 @@
 
   <div class="card">
     <div class="card-header">
+      <span class="card-title">SLP Details</span>
+      <span class="card-sub" id="slp-count"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortSlpBy('account_name')">Account</th>
+            <th onclick="sortSlpBy('dealer_id')">Dealer ID</th>
+            <th onclick="sortSlpBy('channel')">Channel</th>
+            <th onclick="sortSlpBy('assigned_bdr')">BDR</th>
+            <th onclick="sortSlpBy('slp_status')">Status</th>
+            <th onclick="sortSlpBy('status_changed_date')">Days in Status</th>
+            <th onclick="sortSlpBy('decline_reason')">Decline Reason</th>
+            <th onclick="sortSlpBy('contractor_activated_date')">Activated</th>
+            <th onclick="sortSlpBy('enrollment_request_date')">Enrolled</th>
+            <th onclick="sortSlpBy('doing_business_in_states')">States</th>
+          </tr>
+        </thead>
+        <tbody id="slp-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
       <span class="card-title">Recent Status Changes</span>
       <span class="card-sub">detected since this dashboard started watching — persists across reloads</span>
       <button class="back-btn" style="background:#f3f4f6;color:#6b7280;" onclick="clearFeed()">Clear</button>
@@ -163,6 +198,59 @@ function daysSince(dateStr) {
   const d = new Date(dateStr.slice(0,10));
   if (isNaN(d)) return null;
   return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function fmt(s) { return (s||'').replace('T',' ').slice(0,10) || '—'; }
+
+function daysInStatusCell(r) {
+  const days = daysSince(r.status_changed_date);
+  if (days === null) return '—';
+  const awaitingResponse = (r.slp_status||'').toLowerCase() === 'awaiting contractor response';
+  const overdue = awaitingResponse && days >= OVERDUE_DAYS;
+  return overdue
+    ? `<span style="color:#dc2626;font-weight:700;">${days}d ⚠ overdue</span>`
+    : `${days}d`;
+}
+
+let currentSlpRecords = [];
+let slpSortCol = null, slpSortAsc = true;
+
+function sortSlpBy(col) {
+  if (slpSortCol === col) { slpSortAsc = !slpSortAsc; } else { slpSortCol = col; slpSortAsc = true; }
+  renderSlpTable(currentSlpRecords);
+}
+
+function renderSlpTable(records) {
+  currentSlpRecords = records;
+  document.getElementById('slp-count').textContent = `${records.length.toLocaleString()} records`;
+  let sorted = records;
+  if (slpSortCol) {
+    sorted = [...records].sort((a, b) => {
+      const av = String(a[slpSortCol] ?? ''), bv = String(b[slpSortCol] ?? '');
+      return slpSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+  }
+  const tbody = document.getElementById('slp-tbody');
+  if (!sorted.length) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
+    return;
+  }
+  tbody.innerHTML = sorted.slice(0,500).map(r => `
+    <tr>
+      <td><a class="ac-link" href="https://microf.activehosted.com/app/accounts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+      <td>${esc(r.dealer_id)}</td>
+      <td>${esc(r.channel)}</td>
+      <td>${esc(r.assigned_bdr)}</td>
+      <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span></td>
+      <td>${daysInStatusCell(r)}</td>
+      <td>${esc(r.decline_reason) || '—'}</td>
+      <td>${fmt(r.contractor_activated_date)}</td>
+      <td>${fmt(r.enrollment_request_date)}</td>
+      <td>${esc(r.doing_business_in_states)}</td>
+    </tr>`).join('');
+  if (sorted.length > 500) {
+    tbody.innerHTML += `<tr><td colspan="10" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${sorted.length} — export CSV from the full enrollment report for the complete list</td></tr>`;
+  }
 }
 
 function loadFeed() {
@@ -292,6 +380,7 @@ async function poll() {
     document.getElementById('stat-awaiting').textContent = awaiting.length;
     const overdue = awaiting.filter(r => { const d = daysSince(r.status_changed_date); return d !== null && d >= OVERDUE_DAYS; });
     document.getElementById('stat-overdue').textContent = overdue.length;
+    renderSlpTable(records);
 
     const prevSnap = loadSnapshot();
     const nextSnap = {};
