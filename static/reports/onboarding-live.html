@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Onboarding Live — TEMPDEV (unlinked preview, not for general use)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #23A455 0%, #1d8e49 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(35,164,85,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 0 rgba(74,222,128,.7); animation: pulse 1.8s infinite; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(74,222,128,.6); }
+    70%  { box-shadow: 0 0 0 8px rgba(74,222,128,0); }
+    100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
+  }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .back-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+  .notif-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; }
+  .notif-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+  .notif-btn.on { background: #fff; color: #1d8e49; }
+
+  .container { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
+
+  .banner { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 12px 18px; margin-bottom: 18px; font-size: .8rem; color: #6b7280; display: flex; align-items: center; gap: 10px; }
+  .banner b { color: #374151; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 120px; flex: 1; border-left: 3px solid transparent; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+
+  .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; margin-bottom: 18px; }
+  .card-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 12px; }
+  .card-title { font-size: .85rem; font-weight: 700; color: #374151; flex: 1; }
+  .card-sub { font-size: .75rem; color: #9ca3af; }
+
+  .feed { max-height: 480px; overflow-y: auto; }
+  .feed-item { display: flex; align-items: flex-start; gap: 12px; padding: 12px 18px; border-bottom: 1px solid #f8f8f8; }
+  .feed-item:last-child { border-bottom: none; }
+  .feed-icon { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; background: #eff6ff; }
+  .feed-body { flex: 1; min-width: 0; }
+  .feed-title { font-size: .84rem; font-weight: 600; color: #111827; }
+  .feed-sub { font-size: .76rem; color: #6b7280; margin-top: 2px; }
+  .feed-time { font-size: .72rem; color: #9ca3af; white-space: nowrap; }
+  .feed-empty { text-align: center; padding: 40px; color: #9ca3af; font-size: .88rem; }
+
+  .status-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+  .s-activated   { background: #d1fae5; color: #065f46; }
+  .s-deactivated { background: #f3f4f6; color: #4b5563; }
+  .s-hold        { background: #fee2e2; color: #991b1b; }
+  .s-pending     { background: #fef3c7; color: #92400e; }
+  .s-progress    { background: #dbeafe; color: #1e40af; }
+  .s-declined    { background: #fce7f3; color: #831843; }
+  .s-dormancy    { background: #f5f3ff; color: #5b21b6; }
+
+  .ac-link { color: #23A455; text-decoration: none; font-weight: 600; }
+  .ac-link:hover { text-decoration: underline; }
+
+  /* Toasts */
+  #toast-stack { position: fixed; top: 66px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 999; max-width: 340px; }
+  .toast { background: #1a1a2e; color: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: .82rem; animation: slideIn .25s ease-out; }
+  .toast b { color: #4ade80; }
+  @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  .toast.leaving { animation: fadeOut .3s ease-in forwards; }
+  @keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+</style>
+</head>
+<body>
+<header>
+  <span class="live-dot"></span>
+  <h1>Onboarding Live — TEMPDEV preview (not linked, not final)</h1>
+  <button class="notif-btn" id="notif-btn" onclick="toggleNotifications()">🔔 Enable Alerts</button>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+
+<div id="toast-stack"></div>
+
+<div class="container">
+
+  <div class="banner">
+    <span id="poll-status">Checking for updates…</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total SLPs</div></div>
+    <div class="stat"><div class="stat-value" id="stat-awaiting">—</div><div class="stat-label">Awaiting Contractor Response</div></div>
+    <div class="stat"><div class="stat-value" id="stat-overdue">—</div><div class="stat-label">Overdue (30+ days)</div></div>
+    <div class="stat"><div class="stat-value" id="stat-changes">—</div><div class="stat-label">Changes Today</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Recent Status Changes</span>
+      <span class="card-sub">detected since this dashboard started watching — persists across reloads</span>
+      <button class="back-btn" style="background:#f3f4f6;color:#6b7280;" onclick="clearFeed()">Clear</button>
+    </div>
+    <div class="feed" id="feed"></div>
+  </div>
+
+</div>
+
+<script>
+const POLL_MS = 60000;
+const OVERDUE_DAYS = 30;
+const FEED_KEY = 'onboarding_live_feed_v1';
+const SNAPSHOT_KEY = 'onboarding_live_snapshot_v1';
+const MAX_FEED = 100;
+
+let notifsEnabled = localStorage.getItem('onboarding_live_notifs') === '1';
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function statusBadgeClass(s) {
+  const l = (s||'').toLowerCase();
+  if (l.includes('contractor activated')) return 's-activated';
+  if (l.includes('deactivat') || l.includes('not active')) return 's-deactivated';
+  if (l.includes('dormancy')) return 's-dormancy';
+  if (l.includes('hold') || l.includes('suspended')) return 's-hold';
+  if (l.includes('declined')) return 's-declined';
+  if (l.includes('pending') || l.includes('waiting') || l.includes('not started')) return 's-pending';
+  if (l.includes('progress')) return 's-progress';
+  return 's-pending';
+}
+
+function daysSince(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr.slice(0,10));
+  if (isNaN(d)) return null;
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+function loadFeed() {
+  try { return JSON.parse(localStorage.getItem(FEED_KEY) || '[]'); } catch { return []; }
+}
+function saveFeed(feed) {
+  localStorage.setItem(FEED_KEY, JSON.stringify(feed.slice(0, MAX_FEED)));
+}
+function clearFeed() {
+  if (!confirm('Clear the recent changes feed?')) return;
+  saveFeed([]);
+  renderFeed();
+}
+
+function loadSnapshot() {
+  try { return JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || '{}'); } catch { return {}; }
+}
+function saveSnapshot(snap) {
+  localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snap));
+}
+
+function renderFeed() {
+  const feed = loadFeed();
+  const el = document.getElementById('feed');
+  if (!feed.length) {
+    el.innerHTML = '<div class="feed-empty">No status changes detected yet. This dashboard checks every 60s.</div>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('stat-changes').textContent = feed.filter(f => f.at.slice(0,10) === today).length;
+  el.innerHTML = feed.map(f => `
+    <div class="feed-item">
+      <div class="feed-icon">🔁</div>
+      <div class="feed-body">
+        <div class="feed-title">
+          <a class="ac-link" href="${esc(f.url)}" target="_blank">${esc(f.name)}</a> (Dealer ${esc(f.dealerId)})
+        </div>
+        <div class="feed-sub">
+          <span class="status-badge ${statusBadgeClass(f.from)}">${esc(f.from || '—')}</span>
+          →
+          <span class="status-badge ${statusBadgeClass(f.to)}">${esc(f.to)}</span>
+        </div>
+      </div>
+      <div class="feed-time">${timeAgo(f.at)}</div>
+    </div>`).join('');
+}
+
+function timeAgo(iso) {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
+  return Math.floor(secs/86400) + 'd ago';
+}
+
+function showToast(name, from, to) {
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<b>${esc(name)}</b><br>${esc(from || '—')} → ${esc(to)}`;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('leaving');
+    setTimeout(() => el.remove(), 300);
+  }, 6000);
+
+  if (notifsEnabled && 'Notification' in window && Notification.permission === 'granted') {
+    new Notification('Onboarding status changed', { body: `${name}: ${from || '—'} → ${to}` });
+  }
+}
+
+function toggleNotifications() {
+  if (!('Notification' in window)) { alert('Browser notifications not supported here.'); return; }
+  if (!notifsEnabled) {
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') {
+        notifsEnabled = true;
+        localStorage.setItem('onboarding_live_notifs', '1');
+        updateNotifBtn();
+        new Notification('Alerts enabled', { body: 'You\'ll get a desktop notification when an SLP status changes.' });
+      }
+    });
+  } else {
+    notifsEnabled = false;
+    localStorage.setItem('onboarding_live_notifs', '0');
+    updateNotifBtn();
+  }
+}
+function updateNotifBtn() {
+  const btn = document.getElementById('notif-btn');
+  btn.textContent = notifsEnabled ? '🔔 Alerts On' : '🔔 Enable Alerts';
+  btn.classList.toggle('on', notifsEnabled);
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/report/enrollment');
+    const data = await res.json();
+    const records = data.records || [];
+
+    document.getElementById('stat-total').textContent = records.length.toLocaleString();
+    const awaiting = records.filter(r => (r.slp_status||'') === 'Awaiting Contractor Response');
+    document.getElementById('stat-awaiting').textContent = awaiting.length;
+    const overdue = awaiting.filter(r => { const d = daysSince(r.status_changed_date); return d !== null && d >= OVERDUE_DAYS; });
+    document.getElementById('stat-overdue').textContent = overdue.length;
+
+    const prevSnap = loadSnapshot();
+    const nextSnap = {};
+    const feed = loadFeed();
+    let changesFound = 0;
+
+    for (const r of records) {
+      if (!r.slp_id) continue;
+      nextSnap[r.slp_id] = r.slp_status;
+      const prevStatus = prevSnap[r.slp_id];
+      if (prevStatus !== undefined && prevStatus !== r.slp_status) {
+        const name = r.account_name || r.dealer_id || r.slp_id;
+        const url = r.account_id ? `https://microf.activehosted.com/app/accounts/${r.account_id}` : '#';
+        feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: prevStatus, to: r.slp_status, at: new Date().toISOString() });
+        showToast(name, prevStatus, r.slp_status);
+        changesFound++;
+      }
+    }
+
+    if (changesFound) saveFeed(feed);
+    saveSnapshot(nextSnap);
+    renderFeed();
+
+    document.getElementById('poll-status').innerHTML =
+      `Last checked <b>${new Date().toLocaleTimeString()}</b> — next check in ~60s. Backend data refreshes every 15 minutes.`;
+  } catch (e) {
+    document.getElementById('poll-status').textContent = 'Error checking for updates: ' + e.message;
+  }
+}
+
+updateNotifBtn();
+renderFeed();
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
