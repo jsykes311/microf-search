@@ -2560,6 +2560,8 @@ _SLP_STATUSES = [
     "Pending - Waiting on Online Reviews",
     "In Progress – Other",
     "In Progress – Signed Contract Needed",
+    "Awaiting Contractor Response",
+    "Declined",
 ]
 
 @app.get("/api/report/enrollment")
@@ -2658,6 +2660,8 @@ async def enrollment_report(
             "doing_business_in_states":  _account_to_states.get(aid, "") or f.get("doing-business-in-states", ""),
             "ein":                       f.get("ein", ""),
             "contractor_reactivation":   f.get("contractor-reactivation", ""),
+            "decline_reason":            f.get("decline-reason", ""),
+            "status_changed_date":       f.get("status-changed-date", ""),
         })
 
     results.sort(key=lambda x: (x.get("contractor_activated_date") or x.get("enrollment_request_date") or ""), reverse=True)
