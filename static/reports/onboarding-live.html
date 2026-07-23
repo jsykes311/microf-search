@@ -24,7 +24,14 @@
   .notif-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
   .notif-btn.on { background: #fff; color: #1d8e49; }
 
-  .container { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
+  .container { padding: 20px 24px; max-width: 1580px; margin: 0 auto; }
+
+  .board-layout { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+  @media (max-width: 1000px) { .board-layout { grid-template-columns: 1fr; } }
+  .board-main { min-width: 0; }
+  .board-side { position: sticky; top: 20px; }
+  .ticker-card { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
+  .ticker-feed { flex: 1; max-height: none; }
 
   .banner { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 12px 18px; margin-bottom: 18px; font-size: .8rem; color: #6b7280; display: flex; align-items: center; gap: 10px; }
 
@@ -98,6 +105,9 @@
 
 <div class="container">
 
+  <div class="board-layout">
+  <div class="board-main">
+
   <div class="banner">
     <span id="poll-status">Checking for updates…</span>
   </div>
@@ -120,6 +130,49 @@
     <div class="filter-group">
       <label>To</label>
       <input type="date" id="to_date"/>
+    </div>
+    <div class="filter-group">
+      <label>Channel</label>
+      <select id="channel" onchange="poll()">
+        <option value="">All channels</option>
+        <option value="Microf Direct" selected>Microf Direct</option>
+        <option value="Microf">Microf</option>
+        <option value="OPTIMUS">OPTIMUS</option>
+        <option value="Optimus 2.0">Optimus 2.0</option>
+        <option value="Optimus - RTO Only">Optimus - RTO Only</option>
+        <option value="Optimus - FTL">Optimus - FTL</option>
+        <option value="Optimus - RTO">Optimus - RTO</option>
+        <option value="Optimus - Greensky">Optimus - Greensky</option>
+        <option value="360 Finance">360 Finance</option>
+        <option value="ComfortConnect">ComfortConnect</option>
+        <option value="CustomFin">CustomFin</option>
+        <option value="Finturf">Finturf</option>
+        <option value="FTL">FTL</option>
+        <option value="GoodLeap">GoodLeap</option>
+        <option value="Greensky UCA">Greensky UCA</option>
+        <option value="Greensky">Greensky</option>
+        <option value="Momnt">Momnt</option>
+        <option value="PreviousLendingPartners">PreviousLendingPartners</option>
+        <option value="Rheem">Rheem</option>
+        <option value="ServiceFinance">ServiceFinance</option>
+        <option value="SpectrumAC">SpectrumAC</option>
+        <option value="SpectrumAC - WellsFargo">SpectrumAC - WellsFargo</option>
+        <option value="Upgrade">Upgrade</option>
+        <option value="Wells Fargo">Wells Fargo</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>BDR</label>
+      <select id="bdr" onchange="poll()">
+        <option value="">All BDRs</option>
+        <option value="__unassigned__">Unassigned</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Status</label>
+      <select id="slp_status" onchange="poll()">
+        <option value="">All statuses</option>
+      </select>
     </div>
     <div class="filter-group" style="justify-content:flex-end;">
       <button class="back-btn" style="background:#23A455;color:#fff;" onclick="poll()">Apply</button>
@@ -159,13 +212,17 @@
     </div>
   </div>
 
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Recent Status Changes</span>
-      <span class="card-sub">detected since this dashboard started watching — persists across reloads</span>
-      <button class="back-btn" style="background:#f3f4f6;color:#6b7280;" onclick="clearFeed()">Clear</button>
+  </div>
+  <div class="board-side">
+    <div class="card ticker-card">
+      <div class="card-header">
+        <span class="card-title">Recent Status Changes</span>
+        <button class="back-btn" style="background:#f3f4f6;color:#6b7280;" onclick="clearFeed()">Clear</button>
+      </div>
+      <div class="card-sub" style="padding:0 18px 10px;">detected since this dashboard started watching — persists across reloads</div>
+      <div class="feed ticker-feed" id="feed"></div>
     </div>
-    <div class="feed" id="feed"></div>
+  </div>
   </div>
 
 </div>
@@ -363,17 +420,44 @@ function applyPreset() {
   poll();
 }
 
+function populateBdrOptions(records) {
+  const sel = document.getElementById('bdr');
+  const current = sel.value;
+  const bdrs = [...new Set(records.map(r => r.assigned_bdr).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All BDRs</option><option value="__unassigned__">Unassigned</option>' +
+    bdrs.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+function populateStatusOptions(validStatuses) {
+  const sel = document.getElementById('slp_status');
+  if (!validStatuses || !validStatuses.length) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All statuses</option>' +
+    validStatuses.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
 async function poll() {
   try {
-    const from = document.getElementById('from_date').value;
-    const to   = document.getElementById('to_date').value;
+    const from    = document.getElementById('from_date').value;
+    const to      = document.getElementById('to_date').value;
+    const channel = document.getElementById('channel').value;
+    const bdr     = document.getElementById('bdr').value;
+    const status  = document.getElementById('slp_status').value;
     const params = new URLSearchParams();
-    if (from) params.set('from_date', from);
-    if (to)   params.set('to_date', to);
+    if (from)    params.set('from_date', from);
+    if (to)      params.set('to_date', to);
+    if (channel) params.set('platform', channel);
+    if (bdr)     params.set('bdr', bdr);
+    if (status)  params.set('slp_status', status);
 
     const res = await fetch(`/api/report/enrollment?${params.toString()}`);
     const data = await res.json();
     const records = data.records || [];
+
+    populateBdrOptions(records);
+    populateStatusOptions(data.valid_statuses);
 
     document.getElementById('stat-total').textContent = records.length.toLocaleString();
     const awaiting = records.filter(r => (r.slp_status||'') === 'Awaiting Contractor Response');
