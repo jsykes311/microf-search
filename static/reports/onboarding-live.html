@@ -27,6 +27,12 @@
   .container { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
 
   .banner { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 12px 18px; margin-bottom: 18px; font-size: .8rem; color: #6b7280; display: flex; align-items: center; gap: 10px; }
+
+  .filters { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 16px 20px; margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+  .filter-group select, .filter-group input { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: .82rem; font-family: inherit; background: #fff; color: #111827; min-width: 140px; }
+  .filter-group select:focus, .filter-group input:focus { outline: none; border-color: #23A455; box-shadow: 0 0 0 2px rgba(35,164,85,.15); }
   .banner b { color: #374151; }
 
   .stats { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -85,6 +91,30 @@
 
   <div class="banner">
     <span id="poll-status">Checking for updates…</span>
+  </div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>Date Range</label>
+      <select id="preset" onchange="applyPreset()">
+        <option value="last_30_days">Last 30 days</option>
+        <option value="last_90_days" selected>Last 90 days</option>
+        <option value="last_6_months">Last 6 months</option>
+        <option value="all_time">All time</option>
+        <option value="custom">Custom range…</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>From</label>
+      <input type="date" id="from_date"/>
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="date" id="to_date"/>
+    </div>
+    <div class="filter-group" style="justify-content:flex-end;">
+      <button class="back-btn" style="background:#23A455;color:#fff;" onclick="poll()">Apply</button>
+    </div>
   </div>
 
   <div class="stats">
@@ -227,9 +257,33 @@ function updateNotifBtn() {
   btn.classList.toggle('on', notifsEnabled);
 }
 
+function ymd(d) { return d.toISOString().slice(0,10); }
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+
+function applyPreset() {
+  const p = document.getElementById('preset').value;
+  const today = new Date();
+  if (p === 'custom') return; // leave from/to as whatever the user has typed
+  if (p === 'all_time') {
+    document.getElementById('from_date').value = '';
+    document.getElementById('to_date').value   = '';
+  } else {
+    const daysBack = { last_30_days: 30, last_90_days: 90, last_6_months: 182 }[p] || 90;
+    document.getElementById('from_date').value = ymd(addDays(today, -daysBack));
+    document.getElementById('to_date').value   = ymd(today);
+  }
+  poll();
+}
+
 async function poll() {
   try {
-    const res = await fetch('/api/report/enrollment');
+    const from = document.getElementById('from_date').value;
+    const to   = document.getElementById('to_date').value;
+    const params = new URLSearchParams();
+    if (from) params.set('from_date', from);
+    if (to)   params.set('to_date', to);
+
+    const res = await fetch(`/api/report/enrollment?${params.toString()}`);
     const data = await res.json();
     const records = data.records || [];
 
@@ -270,7 +324,7 @@ async function poll() {
 
 updateNotifBtn();
 renderFeed();
-poll();
+applyPreset(); // sets the default last-90-days range and triggers the first poll
 setInterval(poll, POLL_MS);
 </script>
 </body>
