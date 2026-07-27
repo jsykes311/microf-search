@@ -184,7 +184,8 @@
     <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total SLPs</div></div>
     <div class="stat"><div class="stat-value" id="stat-awaiting">—</div><div class="stat-label">Awaiting Contractor Response</div></div>
     <div class="stat"><div class="stat-value" id="stat-overdue">—</div><div class="stat-label">Needs Attention (overdue)</div></div>
-    <div class="stat"><div class="stat-value" id="stat-changes">—</div><div class="stat-label">Changes Today</div></div>
+    <div class="stat"><div class="stat-value" id="stat-new-today">—</div><div class="stat-label">New Today (by creation date)</div></div>
+    <div class="stat"><div class="stat-value" id="stat-changes">—</div><div class="stat-label">Changes Detected This Session</div></div>
   </div>
 
   <div class="card">
@@ -298,6 +299,25 @@ function isOverdue(r) {
   return days !== null && days >= threshold;
 }
 
+// Date-driven stamps — computed fresh on every render from AC's own record
+// timestamps, so they're correct regardless of whether this dashboard has
+// been open continuously (unlike the poll-diff feed, which only catches
+// things that happened while a tab was actively watching).
+function isNewToday(r) {
+  const days = daysSince(r.created_timestamp);
+  return days !== null && days <= 0;
+}
+function isUpdatedToday(r) {
+  if (isNewToday(r)) return false; // a brand-new record's updated_timestamp == created_timestamp; don't double-badge
+  const days = daysSince(r.updated_timestamp);
+  return days !== null && days <= 0;
+}
+function freshnessBadge(r) {
+  if (isNewToday(r)) return '<span class="status-badge s-activated" style="margin-left:6px;">🆕 New</span>';
+  if (isUpdatedToday(r)) return '<span class="status-badge s-progress" style="margin-left:6px;">✎ Updated Today</span>';
+  return '';
+}
+
 function daysInStatusCell(r) {
   const days = daysSince(r.status_changed_date);
   if (days === null) return '—';
@@ -358,7 +378,7 @@ function renderSlpTable(records) {
       <td><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></td>
       <td>${esc(r.channel)}</td>
       <td>${esc(r.assigned_bdr)}</td>
-      <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span></td>
+      <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>${freshnessBadge(r)}</td>
       <td>${daysInStatusCell(r)}</td>
       <td>${esc(r.decline_reason) || '—'}</td>
       <td>${fmt(r.contractor_activated_date)}</td>
@@ -528,6 +548,7 @@ async function poll() {
     document.getElementById('stat-awaiting').textContent = awaiting.length;
     const overdue = records.filter(isOverdue);
     document.getElementById('stat-overdue').textContent = overdue.length;
+    document.getElementById('stat-new-today').textContent = records.filter(isNewToday).length;
     renderSlpTable(records);
 
     const prevSnap = loadSnapshot();

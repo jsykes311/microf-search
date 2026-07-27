@@ -2635,7 +2635,8 @@ async def enrollment_report(
             if to_dt and rec_dt > to_dt:
                 continue
 
-        candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id")})
+        candidates.append({"fields": fields, "account_id": acc_id, "slp_id": r.get("id"),
+                            "created_ts": r.get("createdTimestamp", ""), "updated_ts": r.get("updatedTimestamp", "")})
 
     print(f"  {len(candidates)} candidates")
 
@@ -2663,6 +2664,8 @@ async def enrollment_report(
             "contractor_reactivation":   f.get("contractor-reactivation", ""),
             "decline_reason":            f.get("decline-reason", ""),
             "status_changed_date":       f.get("status-changed-date", ""),
+            "created_timestamp":         c.get("created_ts", ""),
+            "updated_timestamp":         c.get("updated_ts", ""),
         })
 
     results.sort(key=lambda x: (x.get("contractor_activated_date") or x.get("enrollment_request_date") or ""), reverse=True)
