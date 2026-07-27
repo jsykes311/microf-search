@@ -397,14 +397,14 @@ function renderFeed() {
   document.getElementById('stat-changes').textContent = feed.filter(f => f.at.slice(0,10) === today).length;
   el.innerHTML = feed.map(f => `
     <div class="feed-item">
-      <div class="feed-icon">🔁</div>
+      <div class="feed-icon">${f.isNew ? '🆕' : '🔁'}</div>
       <div class="feed-body">
         <div class="feed-title">
           <a class="ac-link" href="${esc(f.url)}" target="_blank">${esc(f.name)}</a> (Dealer ${esc(f.dealerId)})
         </div>
         <div class="feed-sub">
-          <span class="status-badge ${statusBadgeClass(f.from)}">${esc(f.from || '—')}</span>
-          →
+          ${f.isNew ? 'New SLP —' : ''}
+          ${f.isNew ? '' : `<span class="status-badge ${statusBadgeClass(f.from)}">${esc(f.from)}</span> →`}
           <span class="status-badge ${statusBadgeClass(f.to)}">${esc(f.to)}</span>
         </div>
       </div>
@@ -420,11 +420,12 @@ function timeAgo(iso) {
   return Math.floor(secs/86400) + 'd ago';
 }
 
-function showToast(name, from, to) {
+function showToast(name, from, to, isNew) {
+  const bodyText = isNew ? `New SLP — ${to}` : `${esc(from)} → ${esc(to)}`;
   const stack = document.getElementById('toast-stack');
   const el = document.createElement('div');
   el.className = 'toast';
-  el.innerHTML = `<b>${esc(name)}</b><br>${esc(from || '—')} → ${esc(to)}`;
+  el.innerHTML = `<b>${esc(name)}</b><br>${bodyText}`;
   stack.appendChild(el);
   setTimeout(() => {
     el.classList.add('leaving');
@@ -432,7 +433,9 @@ function showToast(name, from, to) {
   }, 6000);
 
   if (notifsEnabled && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification('Onboarding status changed', { body: `${name}: ${from || '—'} → ${to}` });
+    new Notification(isNew ? 'New SLP created' : 'Onboarding status changed', {
+      body: isNew ? `${name}: ${to}` : `${name}: ${from} → ${to}`
+    });
   }
 }
 
@@ -524,6 +527,7 @@ async function poll() {
     renderSlpTable(records);
 
     const prevSnap = loadSnapshot();
+    const isFirstEverPoll = Object.keys(prevSnap).length === 0;
     const nextSnap = {};
     const feed = loadFeed();
     let changesFound = 0;
@@ -532,9 +536,20 @@ async function poll() {
       if (!r.slp_id) continue;
       nextSnap[r.slp_id] = r.slp_status;
       const prevStatus = prevSnap[r.slp_id];
-      if (prevStatus !== undefined && prevStatus !== r.slp_status) {
-        const name = r.account_name || r.dealer_id || r.slp_id;
-        const url = r.account_id ? `https://microf.activehosted.com/app/accounts/${r.account_id}` : '#';
+      const name = r.account_name || r.dealer_id || r.slp_id;
+      const url = r.account_id ? `https://microf.activehosted.com/app/accounts/${r.account_id}` : '#';
+
+      if (prevStatus === undefined) {
+        // Brand-new SLP that wasn't in the previous snapshot. Don't alert on
+        // the very first poll ever (that's just seeding the baseline against
+        // an empty snapshot, not a real "new record" event) — but on every
+        // poll after that, a slp_id we've never seen before really is new.
+        if (!isFirstEverPoll) {
+          feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: null, to: r.slp_status, isNew: true, at: new Date().toISOString() });
+          showToast(name, null, r.slp_status, true);
+          changesFound++;
+        }
+      } else if (prevStatus !== r.slp_status) {
         feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: prevStatus, to: r.slp_status, at: new Date().toISOString() });
         showToast(name, prevStatus, r.slp_status);
         changesFound++;
