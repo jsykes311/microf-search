@@ -693,7 +693,7 @@ async function poll() {
       if (!r.slp_id) continue;
       nextSnap[r.slp_id] = r.slp_status;
       const prevStatus = prevSnap[r.slp_id];
-      const name = r.account_name || r.dealer_id || r.slp_id;
+      const name = r.slp_name || r.account_name || r.dealer_id || r.slp_id;
       const url = r.account_id ? `https://microf.activehosted.com/app/accounts/${r.account_id}` : '#';
 
       if (prevStatus === undefined) {
