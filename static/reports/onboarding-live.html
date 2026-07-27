@@ -158,6 +158,7 @@
         <option value="SpectrumAC">SpectrumAC</option>
         <option value="SpectrumAC - WellsFargo">SpectrumAC - WellsFargo</option>
         <option value="Upgrade">Upgrade</option>
+        <option value="Ottri">Ottri</option>
         <option value="Wells Fargo">Wells Fargo</option>
       </select>
     </div>
@@ -349,10 +350,12 @@ function renderSlpTable(records) {
     tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
     return;
   }
-  tbody.innerHTML = sorted.slice(0,500).map(r => `
+  tbody.innerHTML = sorted.slice(0,500).map(r => {
+    const acctUrl = `https://microf.activehosted.com/app/accounts/${esc(r.account_id)}`;
+    return `
     <tr>
-      <td><a class="ac-link" href="https://microf.activehosted.com/app/accounts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
-      <td>${esc(r.dealer_id)}</td>
+      <td><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.slp_name || r.account_name || r.dealer_id)}</a></td>
+      <td><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></td>
       <td>${esc(r.channel)}</td>
       <td>${esc(r.assigned_bdr)}</td>
       <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span></td>
@@ -361,7 +364,8 @@ function renderSlpTable(records) {
       <td>${fmt(r.contractor_activated_date)}</td>
       <td>${fmt(r.enrollment_request_date)}</td>
       <td>${esc(r.doing_business_in_states)}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
   if (sorted.length > 500) {
     tbody.innerHTML += `<tr><td colspan="10" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${sorted.length} — export CSV from the full enrollment report for the complete list</td></tr>`;
   }

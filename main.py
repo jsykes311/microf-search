@@ -2647,6 +2647,7 @@ async def enrollment_report(
             "slp_id":                    c["slp_id"],
             "account_id":                aid,
             "account_name":              _account_to_name.get(aid, ""),
+            "slp_name":                  f.get("name", ""),
             "dba_name":                  _account_to_dba.get(aid, ""),
             "dealer_id":                 f.get("dealer-id", ""),
             "channel":                   f.get("channel", ""),
