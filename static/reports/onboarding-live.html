@@ -182,7 +182,7 @@
   <div class="stats">
     <div class="stat"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total SLPs</div></div>
     <div class="stat"><div class="stat-value" id="stat-awaiting">—</div><div class="stat-label">Awaiting Contractor Response</div></div>
-    <div class="stat"><div class="stat-value" id="stat-overdue">—</div><div class="stat-label">Overdue (30+ days)</div></div>
+    <div class="stat"><div class="stat-value" id="stat-overdue">—</div><div class="stat-label">Needs Attention (overdue)</div></div>
     <div class="stat"><div class="stat-value" id="stat-changes">—</div><div class="stat-label">Changes Today</div></div>
   </div>
 
@@ -190,6 +190,7 @@
     <div class="card-header">
       <span class="card-title">SLP Details</span>
       <span class="card-sub" id="slp-count"></span>
+      <button class="back-btn" style="background:#f0f9f4;color:#23A455;" onclick="exportCsv()">⬇ Export CSV</button>
     </div>
     <div style="overflow-x:auto;">
       <table>
@@ -229,12 +230,42 @@
 
 <script>
 const POLL_MS = 60000;
-const OVERDUE_DAYS = 30;
+// Per-status "days in status" thresholds before something is flagged as
+// needing attention. Statuses not listed here (terminal states like
+// Contractor Activated, Declined, Deactivated, etc.) are never flagged.
+// Tune these based on how the team actually wants staleness measured —
+// there's no single "correct" number, this is a starting point.
+const STATUS_THRESHOLDS = {
+  'BDR Review':                          7,
+  'Onboarding Review':                   10,
+  'Mgmt Review':                         7,
+  'BDR Follow-up':                       7,
+  'Awaiting Contractor Response':        30,
+  'Approved':                           5,
+  'Awaiting Dealer Agreement Signature': 21,
+  'Awaiting Training':                  14,
+  'Training Completed':                 5,
+};
 const FEED_KEY = 'onboarding_live_feed_v1';
 const SNAPSHOT_KEY = 'onboarding_live_snapshot_v1';
 const MAX_FEED = 100;
 
 let notifsEnabled = localStorage.getItem('onboarding_live_notifs') === '1';
+let unreadCount = 0;
+const BASE_TITLE = document.title;
+
+function bumpUnread(n) {
+  if (document.hidden) {
+    unreadCount += n;
+    document.title = unreadCount > 0 ? `(${unreadCount}) ${BASE_TITLE}` : BASE_TITLE;
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    unreadCount = 0;
+    document.title = BASE_TITLE;
+  }
+});
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -259,18 +290,44 @@ function daysSince(dateStr) {
 
 function fmt(s) { return (s||'').replace('T',' ').slice(0,10) || '—'; }
 
+function isOverdue(r) {
+  const threshold = STATUS_THRESHOLDS[r.slp_status];
+  if (!threshold) return false;
+  const days = daysSince(r.status_changed_date);
+  return days !== null && days >= threshold;
+}
+
 function daysInStatusCell(r) {
   const days = daysSince(r.status_changed_date);
   if (days === null) return '—';
-  const awaitingResponse = (r.slp_status||'').toLowerCase() === 'awaiting contractor response';
-  const overdue = awaitingResponse && days >= OVERDUE_DAYS;
-  return overdue
+  return isOverdue(r)
     ? `<span style="color:#dc2626;font-weight:700;">${days}d ⚠ overdue</span>`
     : `${days}d`;
 }
 
 let currentSlpRecords = [];
 let slpSortCol = null, slpSortAsc = true;
+
+function exportCsv() {
+  if (!currentSlpRecords.length) { alert('No records to export.'); return; }
+  const cols = ['account_name','dealer_id','channel','assigned_bdr','slp_status',
+                'status_changed_date','decline_reason','contractor_activated_date',
+                'enrollment_request_date','doing_business_in_states'];
+  const csvEsc = v => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const rows = [cols.join(',')].concat(
+    currentSlpRecords.map(r => cols.map(c => csvEsc(r[c])).join(','))
+  );
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `onboarding_live_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function sortSlpBy(col) {
   if (slpSortCol === col) { slpSortAsc = !slpSortAsc; } else { slpSortCol = col; slpSortAsc = true; }
@@ -462,7 +519,7 @@ async function poll() {
     document.getElementById('stat-total').textContent = records.length.toLocaleString();
     const awaiting = records.filter(r => (r.slp_status||'') === 'Awaiting Contractor Response');
     document.getElementById('stat-awaiting').textContent = awaiting.length;
-    const overdue = awaiting.filter(r => { const d = daysSince(r.status_changed_date); return d !== null && d >= OVERDUE_DAYS; });
+    const overdue = records.filter(isOverdue);
     document.getElementById('stat-overdue').textContent = overdue.length;
     renderSlpTable(records);
 
@@ -487,6 +544,7 @@ async function poll() {
     if (changesFound) saveFeed(feed);
     saveSnapshot(nextSnap);
     renderFeed();
+    bumpUnread(changesFound);
 
     document.getElementById('poll-status').innerHTML =
       `Last checked <b>${new Date().toLocaleTimeString()}</b> — next check in ~60s. Backend data refreshes every 15 minutes.`;
