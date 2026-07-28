@@ -205,8 +205,8 @@
             <th onclick="sortSlpBy('channel')">Channel</th>
             <th onclick="sortSlpBy('assigned_bdr')">BDR</th>
             <th onclick="sortSlpBy('slp_status')">Status</th>
+            <th onclick="sortSlpBy('status_changed_date')">Days in Status</th>
             <th onclick="sortSlpBy('contractor_activated_date')">Date</th>
-            <th onclick="sortSlpBy('doing_business_in_states')">States</th>
           </tr>
         </thead>
         <tbody id="slp-tbody"></tbody>
@@ -394,10 +394,10 @@ function renderSlpTable(records) {
       <td>${esc(r.assigned_bdr) || '—'}</td>
       <td>
         <span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>${freshnessBadge(r)}
-        <div class="sub-line">${daysInStatusCell(r)}${r.decline_reason ? ' · ' + esc(r.decline_reason) : ''}</div>
+        ${r.decline_reason ? `<div class="sub-line">${esc(r.decline_reason)}</div>` : ''}
       </td>
+      <td>${daysInStatusCell(r)}</td>
       <td>${dateVal !== '—' ? `<span class="sub-line">${dateLabel}</span> ${dateVal}` : '—'}</td>
-      <td>${esc(r.doing_business_in_states) || '—'}</td>
     </tr>`;
   }).join('');
   if (sorted.length > 500) {
@@ -425,10 +425,33 @@ function saveSnapshot(snap) {
 }
 
 function renderFeed() {
-  const feed = loadFeed();
+  const allFeed = loadFeed();
   const el = document.getElementById('feed');
+
+  const channel = document.getElementById('channel').value;
+  const bdr = document.getElementById('bdr').value;
+  const status = document.getElementById('slp_status').value;
+
+  const feed = allFeed.filter(f => {
+    // Entries from before this filter existed won't have channel/bdr stored —
+    // don't hide those just because the metadata is missing.
+    if (channel && f.channel !== undefined && f.channel !== channel) return false;
+    if (bdr) {
+      const fBdr = f.bdr !== undefined ? f.bdr : undefined;
+      if (fBdr !== undefined) {
+        if (bdr === '__unassigned__') { if (fBdr) return false; }
+        else if (fBdr !== bdr) return false;
+      }
+    }
+    if (status && f.from !== status && f.to !== status) return false;
+    return true;
+  });
+
   if (!feed.length) {
-    el.innerHTML = '<div class="feed-empty">No status changes detected yet. This dashboard checks every 60s.</div>';
+    el.innerHTML = allFeed.length
+      ? '<div class="feed-empty">No status changes match the current filters.</div>'
+      : '<div class="feed-empty">No status changes detected yet. This dashboard checks every 60s.</div>';
+    document.getElementById('stat-changes').textContent = 0;
     return;
   }
   const today = new Date().toISOString().slice(0,10);
@@ -584,12 +607,12 @@ async function poll() {
         // an empty snapshot, not a real "new record" event) — but on every
         // poll after that, a slp_id we've never seen before really is new.
         if (!isFirstEverPoll) {
-          feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: null, to: r.slp_status, isNew: true, at: new Date().toISOString() });
+          feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: null, to: r.slp_status, isNew: true, at: new Date().toISOString(), channel: r.channel, bdr: r.assigned_bdr });
           showToast(name, null, r.slp_status, true);
           changesFound++;
         }
       } else if (prevStatus !== r.slp_status) {
-        feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: prevStatus, to: r.slp_status, at: new Date().toISOString() });
+        feed.unshift({ slpId: r.slp_id, dealerId: r.dealer_id, name, url, from: prevStatus, to: r.slp_status, at: new Date().toISOString(), channel: r.channel, bdr: r.assigned_bdr });
         showToast(name, prevStatus, r.slp_status);
         changesFound++;
       }
