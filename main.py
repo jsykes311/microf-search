@@ -2556,7 +2556,7 @@ _SLP_STATUSES = [
     "Deactivated for Dormancy",
     "Pending - Training Not Completed",
     "Waiting_on_BDR_Approval",
-    "On Indefinite Hold - Agreement/Docs Not Signed",
+    "On Indefinite Hold - Agreement/Documents Not Signed",
     "Pending - Waiting on Online Reviews",
     "In Progress – Other",
     "In Progress – Signed Contract Needed",
@@ -11058,7 +11058,7 @@ async def dash_onboarding_pipeline(admin=Depends(_require_admin)):
         "Pending - Training Not Completed",
         "Pending - Waiting on Online Reviews",
         "Waiting_on_BDR_Approval",
-        "On Indefinite Hold - Agreement/Docs Not Signed",
+        "On Indefinite Hold - Agreement/Documents Not Signed",
         "Account on Hold (Suspended)",
         "Contractor Activated",
         "Deactivated",
@@ -11192,7 +11192,7 @@ async def dash_bdr_performance(
         PIPELINE_STATUSES = {
             "Not Started", "In Progress – Signed Contract Needed", "In Progress – Other",
             "Pending - Training Not Completed", "Pending - Waiting on Online Reviews",
-            "On Indefinite Hold - Agreement/Docs Not Signed",
+            "On Indefinite Hold - Agreement/Documents Not Signed",
         }
         if status in PIPELINE_STATUSES:
             bdr_data[bdr]["pipeline_count"] += 1
