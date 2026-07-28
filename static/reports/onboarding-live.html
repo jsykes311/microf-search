@@ -170,16 +170,20 @@
   .ac-link { color: var(--green); text-decoration: none; font-weight: 600; }
   .ac-link:hover { text-decoration: underline; }
 
+  .table-scroll { overflow: auto; max-height: calc(100vh - 340px); min-height: 240px; }
   table { width: 100%; border-collapse: collapse; font-size: .81rem; }
   th {
     background: var(--panel-2); text-align: left; padding: 9px 14px; font-size: .66rem; font-weight: 700;
     color: var(--text-faint); text-transform: uppercase; letter-spacing: .8px; border-bottom: 1px solid var(--border);
     white-space: nowrap; cursor: pointer; font-family: var(--mono);
+    position: sticky; top: 0; z-index: 1;
   }
   th:hover { color: var(--green); }
   th.sort-asc::after { content: ' ↑'; color: var(--green); }
   th.sort-desc::after { content: ' ↓'; color: var(--green); }
-  td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; font-family: var(--mono); font-size: .79rem; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: normal; font-family: var(--mono); font-size: .79rem; }
+  .sub-line { font-size: .72rem; color: var(--text-faint); margin-top: 2px; }
+  .sub-line .ac-link { color: var(--text-faint); font-weight: 500; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: rgba(var(--green-rgb),.05); }
 
@@ -303,19 +307,15 @@
       <span class="card-sub" id="slp-count"></span>
       <button class="back-btn" style="background:#f0f9f4;color:#23A455;" onclick="exportCsv()">⬇ Export CSV</button>
     </div>
-    <div style="overflow-x:auto;">
+    <div class="table-scroll">
       <table>
         <thead>
           <tr>
-            <th onclick="sortSlpBy('account_name')">Account</th>
-            <th onclick="sortSlpBy('dealer_id')">Dealer ID</th>
+            <th onclick="sortSlpBy('account_name')">Account / Dealer ID</th>
             <th onclick="sortSlpBy('channel')">Channel</th>
             <th onclick="sortSlpBy('assigned_bdr')">BDR</th>
             <th onclick="sortSlpBy('slp_status')">Status</th>
-            <th onclick="sortSlpBy('status_changed_date')">Days in Status</th>
-            <th onclick="sortSlpBy('decline_reason')">Decline Reason</th>
-            <th onclick="sortSlpBy('contractor_activated_date')">Activated</th>
-            <th onclick="sortSlpBy('enrollment_request_date')">Enrolled</th>
+            <th onclick="sortSlpBy('contractor_activated_date')">Date</th>
             <th onclick="sortSlpBy('doing_business_in_states')">States</th>
           </tr>
         </thead>
@@ -487,27 +487,31 @@ function renderSlpTable(records) {
   }
   const tbody = document.getElementById('slp-tbody');
   if (!sorted.length) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
     return;
   }
   tbody.innerHTML = sorted.slice(0,500).map(r => {
     const acctUrl = `https://microf.activehosted.com/app/accounts/${esc(r.account_id)}`;
+    const dateLabel = r.contractor_activated_date ? 'Act' : (r.enrollment_request_date ? 'Enr' : '');
+    const dateVal = fmt(r.contractor_activated_date || r.enrollment_request_date);
     return `
     <tr>
-      <td><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.slp_name || r.account_name || r.dealer_id)}</a></td>
-      <td><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></td>
+      <td>
+        <a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.slp_name || r.account_name || r.dealer_id)}</a>
+        <div class="sub-line"><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></div>
+      </td>
       <td>${esc(r.channel)}</td>
-      <td>${esc(r.assigned_bdr)}</td>
-      <td><span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>${freshnessBadge(r)}</td>
-      <td>${daysInStatusCell(r)}</td>
-      <td>${esc(r.decline_reason) || '—'}</td>
-      <td>${fmt(r.contractor_activated_date)}</td>
-      <td>${fmt(r.enrollment_request_date)}</td>
-      <td>${esc(r.doing_business_in_states)}</td>
+      <td>${esc(r.assigned_bdr) || '—'}</td>
+      <td>
+        <span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>${freshnessBadge(r)}
+        <div class="sub-line">${daysInStatusCell(r)}${r.decline_reason ? ' · ' + esc(r.decline_reason) : ''}</div>
+      </td>
+      <td>${dateVal !== '—' ? `<span class="sub-line">${dateLabel}</span> ${dateVal}` : '—'}</td>
+      <td>${esc(r.doing_business_in_states) || '—'}</td>
     </tr>`;
   }).join('');
   if (sorted.length > 500) {
-    tbody.innerHTML += `<tr><td colspan="10" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${sorted.length} — export CSV from the full enrollment report for the complete list</td></tr>`;
+    tbody.innerHTML += `<tr><td colspan="6" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${sorted.length} — export CSV from the full enrollment report for the complete list</td></tr>`;
   }
 }
 
