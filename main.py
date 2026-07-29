@@ -1201,6 +1201,55 @@ async def _ta_cache_loop() -> None:
 
 _slp_dependent_indexes_built: bool = False  # True after first post-SLP location/state build
 
+# ── Partner-channel BDR sync ─────────────────────────────────────────────────
+# Every SLP whose channel isn't Microf/Microf Direct should have Assigned BDR
+# set to "Partner". Originally a one-off manual bulk push; this keeps it true
+# going forward for every new SLP as the cache refreshes, without needing a
+# native AC automation (custom-object field changes can't trigger those).
+PARTNER_BDR_SYNC_DRY_RUN = True   # flip to False once the logged output looks right
+PARTNER_BDR_EXCLUDED_CHANNELS = {"Microf", "Microf Direct"}
+PARTNER_BDR_VALUE = "Partner"
+
+async def _sync_partner_bdr() -> None:
+    checked = updated = errors = 0
+    for rec in _slp_cache_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        channel = (fields.get("channel") or "").strip()
+        current_bdr = (fields.get("assigned-bdr") or "").strip()
+        if not channel or channel in PARTNER_BDR_EXCLUDED_CHANNELS:
+            continue
+        if current_bdr == PARTNER_BDR_VALUE:
+            continue
+        checked += 1
+        dealer_id = fields.get("dealer-id", "")
+        if PARTNER_BDR_SYNC_DRY_RUN:
+            print(f"[partner-bdr-sync] DRY RUN would update dealer {dealer_id} "
+                  f"(channel={channel!r}, current BDR={current_bdr!r} -> Partner)")
+            updated += 1
+            continue
+        try:
+            raw_fields = list(rec.get("fields", []))
+            found = False
+            for f in raw_fields:
+                if f.get("id") == "assigned-bdr":
+                    f["value"] = PARTNER_BDR_VALUE
+                    found = True
+                    break
+            if not found:
+                raw_fields.append({"id": "assigned-bdr", "value": PARTNER_BDR_VALUE})
+            payload = {"record": {"id": rec["id"], "fields": raw_fields,
+                                   "relationships": rec.get("relationships", {})}}
+            await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+            updated += 1
+        except Exception as e:
+            errors += 1
+            print(f"[partner-bdr-sync] failed for dealer {dealer_id}: {e}")
+
+    if checked:
+        mode = "DRY RUN — " if PARTNER_BDR_SYNC_DRY_RUN else ""
+        print(f"[partner-bdr-sync] {mode}checked {checked} candidates, "
+              f"{'would update' if PARTNER_BDR_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
+
 async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
     On failure (0 records), retries every 30s until data is loaded, then
@@ -1221,6 +1270,11 @@ async def _slp_cache_loop() -> None:
             print("[slp-cache] SLP data ready — triggering location + state index builds")
             asyncio.create_task(_build_location_index())
             asyncio.create_task(_build_slp_state_index())
+        if _slp_cache_records:
+            try:
+                await _sync_partner_bdr()
+            except Exception as _e:
+                print(f"[partner-bdr-sync] loop error: {_e}")
         # If cache is still empty, retry quickly; otherwise use normal TTL
         if _slp_cache_records:
             await asyncio.sleep(_SLP_CACHE_TTL)
