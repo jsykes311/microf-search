@@ -10016,6 +10016,11 @@ async def am_guide_page(user=Depends(require_auth)):
     return FileResponse("static/am-guide.html")
 
 
+@app.get("/onboarding-live")
+async def onboarding_live_page(admin=Depends(_require_admin)):
+    return FileResponse("static/reports/onboarding-live.html")
+
+
 @app.get("/welcome")
 async def welcome_page(_admin=Depends(_require_welcome)):
     return FileResponse("static/welcome.html")
