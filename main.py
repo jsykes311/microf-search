@@ -1258,7 +1258,7 @@ async def _sync_partner_bdr() -> None:
 # advance any of its SLPs sitting in "Awaiting Dealer Agreement Signature" to
 # "Awaiting Training", then remove the tag so it isn't reprocessed. If no
 # matching SLP is found, the tag is left in place to retry next cycle.
-PANDADOC_SIGNED_SYNC_DRY_RUN = True   # flip to False once the logged output looks right
+PANDADOC_SIGNED_SYNC_DRY_RUN = False   # live — advances SLPs and removes the tag in AC
 PANDADOC_SIGNED_TAG_NAME = "PandaDoc-Signed"
 _pandadoc_signed_tag_id: Optional[str] = None
 
