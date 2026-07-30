@@ -1206,7 +1206,7 @@ _slp_dependent_indexes_built: bool = False  # True after first post-SLP location
 # set to "Partner". Originally a one-off manual bulk push; this keeps it true
 # going forward for every new SLP as the cache refreshes, without needing a
 # native AC automation (custom-object field changes can't trigger those).
-PARTNER_BDR_SYNC_DRY_RUN = True   # flip to False once the logged output looks right
+PARTNER_BDR_SYNC_DRY_RUN = False   # live — writes Assigned BDR = Partner to AC
 PARTNER_BDR_EXCLUDED_CHANNELS = {"Microf", "Microf Direct"}
 PARTNER_BDR_VALUE = "Partner"
 
