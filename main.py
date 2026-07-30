@@ -1250,6 +1250,104 @@ async def _sync_partner_bdr() -> None:
         print(f"[partner-bdr-sync] {mode}checked {checked} candidates, "
               f"{'would update' if PARTNER_BDR_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
 
+# ── PandaDoc-signed → Awaiting Training sync ─────────────────────────────────
+# The "Agreement Completed" AC automation (native PandaDoc trigger) tags the
+# contact "PandaDoc-Signed" when a dealer agreement is signed. AC can't update
+# the related SLP custom object from within that automation directly, so this
+# picks up the tag here instead: find the account behind the tagged contact,
+# advance any of its SLPs sitting in "Awaiting Dealer Agreement Signature" to
+# "Awaiting Training", then remove the tag so it isn't reprocessed. If no
+# matching SLP is found, the tag is left in place to retry next cycle.
+PANDADOC_SIGNED_SYNC_DRY_RUN = True   # flip to False once the logged output looks right
+PANDADOC_SIGNED_TAG_NAME = "PandaDoc-Signed"
+_pandadoc_signed_tag_id: Optional[str] = None
+
+async def _sync_pandadoc_signed() -> None:
+    global _pandadoc_signed_tag_id
+    if _pandadoc_signed_tag_id is None:
+        tags_resp = await ac_get("tags", {"search": PANDADOC_SIGNED_TAG_NAME, "limit": 100})
+        for t in tags_resp.get("tags", []):
+            if (t.get("tag") or "").strip().lower() == PANDADOC_SIGNED_TAG_NAME.lower():
+                _pandadoc_signed_tag_id = t.get("id")
+                break
+        if _pandadoc_signed_tag_id is None:
+            print(f"[pandadoc-signed-sync] tag {PANDADOC_SIGNED_TAG_NAME!r} not found in AC yet — skipping")
+            return
+
+    tagged = await ac_get_all("contacts", "contacts", {"tagid": _pandadoc_signed_tag_id})
+    if not tagged:
+        return
+
+    # account_id -> [SLP records currently Awaiting Dealer Agreement Signature]
+    awaiting_by_account: dict[str, list] = {}
+    for rec in _slp_cache_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        if (fields.get("slp-status-detail") or "").strip() != "Awaiting Dealer Agreement Signature":
+            continue
+        for acct_id in rec.get("relationships", {}).get("account", []):
+            awaiting_by_account.setdefault(str(acct_id), []).append(rec)
+
+    checked = updated = errors = untagged_only = 0
+    for contact in tagged:
+        cid = contact.get("id")
+        checked += 1
+        try:
+            acct_links = await ac_get_all("accountContacts", "accountContacts", {"contact": cid})
+            account_ids = {str(a.get("account")) for a in acct_links if a.get("account")}  # set — dedupe repeat links
+        except Exception as e:
+            errors += 1
+            print(f"[pandadoc-signed-sync] failed to look up account for contact {cid}: {e}")
+            continue
+
+        seen_rec_ids: set = set()
+        matching_slps = []
+        for aid in account_ids:
+            for rec in awaiting_by_account.get(aid, []):
+                if rec["id"] not in seen_rec_ids:
+                    seen_rec_ids.add(rec["id"])
+                    matching_slps.append(rec)
+        if not matching_slps:
+            print(f"[pandadoc-signed-sync] contact {cid} tagged but no SLP in "
+                  f"'Awaiting Dealer Agreement Signature' found for its account(s) {account_ids} — leaving tag, will retry")
+            untagged_only += 1
+            continue
+
+        for rec in matching_slps:
+            dealer_id = next((f.get("value") for f in rec.get("fields", []) if f.get("id") == "dealer-id"), "")
+            if PANDADOC_SIGNED_SYNC_DRY_RUN:
+                print(f"[pandadoc-signed-sync] DRY RUN would advance dealer {dealer_id} "
+                      f"(contact {cid}) -> Awaiting Training, then remove tag")
+                updated += 1
+                continue
+            try:
+                raw_fields = list(rec.get("fields", []))
+                for f in raw_fields:
+                    if f.get("id") == "slp-status-detail":
+                        f["value"] = "Awaiting Training"
+                        break
+                payload = {"record": {"id": rec["id"], "fields": raw_fields,
+                                       "relationships": rec.get("relationships", {})}}
+                await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+                updated += 1
+            except Exception as e:
+                errors += 1
+                print(f"[pandadoc-signed-sync] failed to advance dealer {dealer_id}: {e}")
+                continue
+
+        if not PANDADOC_SIGNED_SYNC_DRY_RUN:
+            try:
+                tag_assoc = await ac_get("contactTags", {"contact": cid, "tag": _pandadoc_signed_tag_id})
+                for assoc in tag_assoc.get("contactTags", []):
+                    await ac_delete(f"contactTags/{assoc['id']}")
+            except Exception as e:
+                print(f"[pandadoc-signed-sync] advanced dealer(s) but failed to remove tag from contact {cid}: {e}")
+
+    if checked:
+        mode = "DRY RUN — " if PANDADOC_SIGNED_SYNC_DRY_RUN else ""
+        print(f"[pandadoc-signed-sync] {mode}checked {checked} tagged contacts, "
+              f"{'would advance' if PANDADOC_SIGNED_SYNC_DRY_RUN else 'advanced'} {updated} SLP(s), "
+              f"{untagged_only} left tagged (no match yet), errors {errors}")
+
 async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
     On failure (0 records), retries every 30s until data is loaded, then
@@ -1275,6 +1373,10 @@ async def _slp_cache_loop() -> None:
                 await _sync_partner_bdr()
             except Exception as _e:
                 print(f"[partner-bdr-sync] loop error: {_e}")
+            try:
+                await _sync_pandadoc_signed()
+            except Exception as _e:
+                print(f"[pandadoc-signed-sync] loop error: {_e}")
         # If cache is still empty, retry quickly; otherwise use normal TTL
         if _slp_cache_records:
             await asyncio.sleep(_SLP_CACHE_TTL)
