@@ -162,6 +162,10 @@
         <option value="">All statuses</option>
       </select>
     </div>
+    <div class="filter-group" style="flex:1;min-width:220px;">
+      <label>Search</label>
+      <input type="text" id="search-box" placeholder="Dealer name, ID, or account…" oninput="applySearch()"/>
+    </div>
     <div class="filter-group" style="justify-content:flex-end;">
       <button class="back-btn" style="background:#23A455;color:#fff;" onclick="poll()">Apply</button>
     </div>
@@ -320,8 +324,13 @@ function daysInStatusCell(r) {
     : `<span style="color:#6b7280;">${label}</span>`;
 }
 
-let currentSlpRecords = [];
+let currentSlpRecords = [];  // currently displayed set (after search + sort) — used for CSV export
+let allFetchedRecords = [];  // full set from the server (after date/channel/BDR/status filters), pre-search
 let slpSortCol = null, slpSortAsc = true;
+
+function applySearch() {
+  renderSlpTable(allFetchedRecords);
+}
 
 function exportCsv() {
   if (!currentSlpRecords.length) { alert('No records to export.'); return; }
@@ -346,19 +355,29 @@ function exportCsv() {
 
 function sortSlpBy(col) {
   if (slpSortCol === col) { slpSortAsc = !slpSortAsc; } else { slpSortCol = col; slpSortAsc = true; }
-  renderSlpTable(currentSlpRecords);
+  renderSlpTable(allFetchedRecords);
 }
 
 function renderSlpTable(records) {
-  currentSlpRecords = records;
-  document.getElementById('slp-count').textContent = `${records.length.toLocaleString()} records`;
-  let sorted = records;
+  allFetchedRecords = records;
+  const term = (document.getElementById('search-box')?.value || '').trim().toLowerCase();
+  const filtered = term
+    ? records.filter(r => {
+        const haystack = `${r.slp_name||''} ${r.account_name||''} ${r.dealer_id||''}`.toLowerCase();
+        return haystack.includes(term);
+      })
+    : records;
+  document.getElementById('slp-count').textContent = term
+    ? `${filtered.length.toLocaleString()} of ${records.length.toLocaleString()} records`
+    : `${records.length.toLocaleString()} records`;
+  let sorted = filtered;
   if (slpSortCol) {
-    sorted = [...records].sort((a, b) => {
+    sorted = [...filtered].sort((a, b) => {
       const av = String(a[slpSortCol] ?? ''), bv = String(b[slpSortCol] ?? '');
       return slpSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
     });
   }
+  currentSlpRecords = sorted;
   const tbody = document.getElementById('slp-tbody');
   if (!sorted.length) {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
