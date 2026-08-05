@@ -10142,7 +10142,7 @@ async def am_guide_page(user=Depends(require_auth)):
 
 
 @app.get("/onboarding-live")
-async def onboarding_live_page(admin=Depends(_require_admin)):
+async def onboarding_live_page(user=Depends(require_auth)):
     return FileResponse("static/reports/onboarding-live.html")
 
 
