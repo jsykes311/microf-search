@@ -1250,6 +1250,51 @@ async def _sync_partner_bdr() -> None:
         print(f"[partner-bdr-sync] {mode}checked {checked} candidates, "
               f"{'would update' if PARTNER_BDR_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
 
+# ── "Not Started" -> "Pre-activation" status sync ────────────────────────────
+# dealer.microf.com still auto-creates new SLPs with the legacy "Not Started"
+# status. "Pre-activation" is the current canonical value for that same state
+# (Step 1 of the flow), so this keeps new records normalized going forward the
+# same way the one-off migration cleaned up the existing backlog.
+NOT_STARTED_STATUS_SYNC_DRY_RUN = True
+NOT_STARTED_STATUS_OLD = "Not Started"
+NOT_STARTED_STATUS_NEW = "Pre-activation"
+
+async def _sync_not_started_status() -> None:
+    checked = updated = errors = 0
+    for rec in _slp_cache_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        if (fields.get("slp-status-detail") or "").strip() != NOT_STARTED_STATUS_OLD:
+            continue
+        checked += 1
+        dealer_id = fields.get("dealer-id", "")
+        if NOT_STARTED_STATUS_SYNC_DRY_RUN:
+            print(f"[not-started-sync] DRY RUN would update dealer {dealer_id} "
+                  f"'{NOT_STARTED_STATUS_OLD}' -> '{NOT_STARTED_STATUS_NEW}'")
+            updated += 1
+            continue
+        try:
+            raw_fields = list(rec.get("fields", []))
+            found = False
+            for f in raw_fields:
+                if f.get("id") == "slp-status-detail":
+                    f["value"] = NOT_STARTED_STATUS_NEW
+                    found = True
+                    break
+            if not found:
+                raw_fields.append({"id": "slp-status-detail", "value": NOT_STARTED_STATUS_NEW})
+            payload = {"record": {"id": rec["id"], "fields": raw_fields,
+                                   "relationships": rec.get("relationships", {})}}
+            await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+            updated += 1
+        except Exception as e:
+            errors += 1
+            print(f"[not-started-sync] failed for dealer {dealer_id}: {e}")
+
+    if checked:
+        mode = "DRY RUN — " if NOT_STARTED_STATUS_SYNC_DRY_RUN else ""
+        print(f"[not-started-sync] {mode}checked {checked} candidates, "
+              f"{'would update' if NOT_STARTED_STATUS_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
+
 # ── PandaDoc-signed → Awaiting Training sync ─────────────────────────────────
 # The "Agreement Completed" AC automation (native PandaDoc trigger) tags the
 # contact "PandaDoc-Signed" when a dealer agreement is signed. AC can't update
@@ -1373,6 +1418,10 @@ async def _slp_cache_loop() -> None:
                 await _sync_partner_bdr()
             except Exception as _e:
                 print(f"[partner-bdr-sync] loop error: {_e}")
+            try:
+                await _sync_not_started_status()
+            except Exception as _e:
+                print(f"[not-started-sync] loop error: {_e}")
             try:
                 await _sync_pandadoc_signed()
             except Exception as _e:
