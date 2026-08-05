@@ -1250,6 +1250,53 @@ async def _sync_partner_bdr() -> None:
         print(f"[partner-bdr-sync] {mode}checked {checked} candidates, "
               f"{'would update' if PARTNER_BDR_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
 
+# ── Microf Direct blank-BDR sync ──────────────────────────────────────────────
+# Every Microf Direct SLP should have a real Assigned BDR. Where none has ever
+# been set (blank), default it to "House" so it's not left blank indefinitely —
+# mirrors partner-bdr-sync's role for the Microf Direct side of the same rule
+# (Microf Direct = named person or House; everything else = Partner).
+HOUSE_BDR_SYNC_DRY_RUN = True
+HOUSE_BDR_CHANNEL = "Microf Direct"
+HOUSE_BDR_VALUE = "House"
+
+async def _sync_house_bdr() -> None:
+    checked = updated = errors = 0
+    for rec in _slp_cache_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        channel = (fields.get("channel") or "").strip()
+        current_bdr = (fields.get("assigned-bdr") or "").strip()
+        if channel != HOUSE_BDR_CHANNEL or current_bdr:
+            continue
+        checked += 1
+        dealer_id = fields.get("dealer-id", "")
+        if HOUSE_BDR_SYNC_DRY_RUN:
+            print(f"[house-bdr-sync] DRY RUN would update dealer {dealer_id} "
+                  f"(channel={channel!r}, blank BDR -> House)")
+            updated += 1
+            continue
+        try:
+            raw_fields = list(rec.get("fields", []))
+            found = False
+            for f in raw_fields:
+                if f.get("id") == "assigned-bdr":
+                    f["value"] = HOUSE_BDR_VALUE
+                    found = True
+                    break
+            if not found:
+                raw_fields.append({"id": "assigned-bdr", "value": HOUSE_BDR_VALUE})
+            payload = {"record": {"id": rec["id"], "fields": raw_fields,
+                                   "relationships": rec.get("relationships", {})}}
+            await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+            updated += 1
+        except Exception as e:
+            errors += 1
+            print(f"[house-bdr-sync] failed for dealer {dealer_id}: {e}")
+
+    if checked:
+        mode = "DRY RUN — " if HOUSE_BDR_SYNC_DRY_RUN else ""
+        print(f"[house-bdr-sync] {mode}checked {checked} candidates, "
+              f"{'would update' if HOUSE_BDR_SYNC_DRY_RUN else 'updated'} {updated}, errors {errors}")
+
 # ── "Not Started" -> "Pre-activation" status sync ────────────────────────────
 # dealer.microf.com still auto-creates new SLPs with the legacy "Not Started"
 # status. "Pre-activation" is the current canonical value for that same state
@@ -1418,6 +1465,10 @@ async def _slp_cache_loop() -> None:
                 await _sync_partner_bdr()
             except Exception as _e:
                 print(f"[partner-bdr-sync] loop error: {_e}")
+            try:
+                await _sync_house_bdr()
+            except Exception as _e:
+                print(f"[house-bdr-sync] loop error: {_e}")
             try:
                 await _sync_not_started_status()
             except Exception as _e:
