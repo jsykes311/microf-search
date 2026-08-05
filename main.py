@@ -1255,7 +1255,7 @@ async def _sync_partner_bdr() -> None:
 # been set (blank), default it to "House" so it's not left blank indefinitely —
 # mirrors partner-bdr-sync's role for the Microf Direct side of the same rule
 # (Microf Direct = named person or House; everything else = Partner).
-HOUSE_BDR_SYNC_DRY_RUN = True
+HOUSE_BDR_SYNC_DRY_RUN = False   # live — writes Assigned BDR = House to AC
 HOUSE_BDR_CHANNEL = "Microf Direct"
 HOUSE_BDR_VALUE = "House"
 
