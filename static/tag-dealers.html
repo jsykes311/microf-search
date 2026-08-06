@@ -117,10 +117,10 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
 
       <h4>Option 1 — Upload File</h4>
       <ol>
-        <li>Prepare a CSV or XLSX with two columns: <code>dealer_id</code> and <code>tag</code>. Column names are case-insensitive — "Dealer ID" / "Tag Name" work too.</li>
+        <li>Upload any CSV or XLSX — it just needs a dealer ID somewhere and a tag somewhere, in any columns, with any header names.</li>
+        <li>A "Map your columns" step appears with a preview of your file's first few rows — pick which column is the dealer ID and which is the tag. It'll try to guess both automatically if it spots columns named like "dealer_id" / "tag".</li>
         <li>Different rows can use different tags in the same file (e.g. some dealers get "August", others get "Q3-Renewal").</li>
-        <li>Click the upload box (or drag a file onto it), then click <b>Preview</b>.</li>
-        <li>Preview shows: rows in the file, how many resolved to a real dealer/account, any not found, a per-tag account breakdown, and the exact number of contacts that will be tagged.</li>
+        <li>Click <b>Preview</b>: shows rows in the file, how many resolved to a real dealer/account, any not found, a per-tag account breakdown, and the exact number of contacts that will be tagged.</li>
         <li>Click <b>Apply Tags</b> and confirm. A progress bar tracks it — this can take a few minutes for large files.</li>
       </ol>
 
@@ -149,18 +149,35 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
   <!-- ══════════════════ FILE UPLOAD TAB ══════════════════ -->
   <div class="tab-panel active" id="panel-file">
     <div class="card">
-      <div class="card-title"><span class="step-badge">1</span> Upload a dealer_id / tag file <span class="card-sub">CSV or XLSX, one row per dealer</span></div>
+      <div class="card-title"><span class="step-badge">1</span> Upload a file <span class="card-sub">any CSV or XLSX — you'll pick which columns to use next</span></div>
       <div class="file-drop" id="file-drop" onclick="document.getElementById('file-input').click()">
         <div>📄 Click to choose a file, or drag one here</div>
         <div class="fname" id="file-name"></div>
         <input type="file" id="file-input" accept=".csv,.xlsx" onchange="onFileChosen()"/>
       </div>
-      <div class="file-hint">Needs two columns: <b>dealer_id</b> and <b>tag</b> (header names are case-insensitive; "Dealer ID" / "Tag Name" also work). Different rows can use different tags.</div>
       <div class="status-msg" id="file-status"></div>
-      <div class="btn-row">
-        <button class="btn" id="file-preview-btn" onclick="previewFile()" disabled>Preview</button>
-      </div>
+    </div>
 
+    <div class="card" id="file-mapper-card" style="display:none">
+      <div class="card-title"><span class="step-badge">2</span> Map your columns <span class="card-sub">which column is the dealer ID, and which is the tag?</span></div>
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label>Dealer ID column</label>
+          <select id="map-dealer-col"></select>
+        </div>
+        <div class="filter-field">
+          <label>Tag column</label>
+          <select id="map-tag-col"></select>
+        </div>
+      </div>
+      <table class="preview-table" id="map-sample-table" style="margin-top:14px"></table>
+      <div class="file-hint" id="map-row-count"></div>
+      <div class="btn-row">
+        <button class="btn" id="file-preview-btn" onclick="previewFile()">Preview</button>
+      </div>
+    </div>
+
+    <div class="card" id="file-results-card" style="display:none">
       <div class="preview-section" id="file-preview">
         <div class="preview-stats">
           <div class="stat"><span class="num" id="fp-rows">0</span><span class="lbl">Rows in file</span></div>
@@ -277,24 +294,62 @@ document.getElementById('file-drop').addEventListener('drop', e => {
   }
 });
 
-function onFileChosen(){
+let fileHeaders = [];
+
+function resetFileFlow(){
+  document.getElementById('file-mapper-card').style.display = 'none';
+  document.getElementById('file-results-card').style.display = 'none';
+  document.getElementById('file-preview').style.display = 'none';
+  document.getElementById('file-progress').style.display = 'none';
+  document.getElementById('file-apply-btn').disabled = false;
+  hideStatus('file-status');
+}
+
+async function onFileChosen(){
   const input = document.getElementById('file-input');
   chosenFile = input.files[0] || null;
   document.getElementById('file-name').textContent = chosenFile ? chosenFile.name : '';
-  document.getElementById('file-preview-btn').disabled = !chosenFile;
-  document.getElementById('file-preview').style.display = 'none';
-  hideStatus('file-status');
+  resetFileFlow();
+  if (!chosenFile) return;
+
+  showStatus('file-status', 'info', 'Reading file…');
+  try {
+    const fd = new FormData();
+    fd.append('file', chosenFile);
+    const res = await fetch('/api/tag-dealers/parse-headers', { method:'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to read file');
+
+    fileHeaders = data.headers;
+    const opts = fileHeaders.map((h, i) => `<option value="${i}">${esc(h || '(column ' + (i+1) + ')')}</option>`).join('');
+    document.getElementById('map-dealer-col').innerHTML = opts;
+    document.getElementById('map-tag-col').innerHTML = opts;
+    if (data.dealer_col_guess != null) document.getElementById('map-dealer-col').value = data.dealer_col_guess;
+    if (data.tag_col_guess != null) document.getElementById('map-tag-col').value = data.tag_col_guess;
+
+    const sampleTable = document.getElementById('map-sample-table');
+    sampleTable.innerHTML = '<tr>' + fileHeaders.map(h => `<th>${esc(h)}</th>`).join('') + '</tr>' +
+      data.sample_rows.map(r => '<tr>' + r.map(c => `<td>${esc(c)}</td>`).join('') + '</tr>').join('');
+    document.getElementById('map-row-count').textContent = `${data.row_count} data row(s) found.`;
+
+    document.getElementById('file-mapper-card').style.display = 'block';
+    hideStatus('file-status');
+  } catch (e) {
+    showStatus('file-status', 'err', e.message);
+  }
 }
 
 async function previewFile(){
   if (!chosenFile) return;
-  hideStatus('file-status');
+  document.getElementById('file-results-card').style.display = 'none';
   document.getElementById('file-preview').style.display = 'none';
   const btn = document.getElementById('file-preview-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking…';
   try {
     const fd = new FormData();
     fd.append('file', chosenFile);
+    fd.append('dealer_col', document.getElementById('map-dealer-col').value);
+    fd.append('tag_col', document.getElementById('map-tag-col').value);
     const res = await fetch('/api/tag-dealers/preview-file', { method:'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Preview failed');
@@ -317,7 +372,9 @@ async function previewFile(){
       ul.style.display = 'none';
     }
 
+    document.getElementById('file-apply-btn').disabled = false;
     document.getElementById('file-preview').style.display = 'block';
+    document.getElementById('file-results-card').style.display = 'block';
   } catch (e) {
     showStatus('file-status', 'err', e.message);
   } finally {
@@ -333,6 +390,8 @@ async function executeFile(){
   try {
     const fd = new FormData();
     fd.append('file', chosenFile);
+    fd.append('dealer_col', document.getElementById('map-dealer-col').value);
+    fd.append('tag_col', document.getElementById('map-tag-col').value);
     const res = await fetch('/api/tag-dealers/execute-file', { method:'POST', body: fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || 'Failed to start');

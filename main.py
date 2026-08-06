@@ -8824,40 +8824,45 @@ async def _tag_contact(contact_id: str, tag_id: str) -> None:
             await asyncio.sleep(1.5)
 
 
-def _parse_tag_upload(filename: str, content: bytes) -> list:
-    """Parse an uploaded dealer_id/tag file (csv or xlsx) into [{"dealer_id":..., "tag":...}]."""
-    def norm(h: str) -> str:
-        return _re.sub(r"[^a-z0-9]", "", (h or "").strip().lower())
+def _norm_header(h) -> str:
+    return _re.sub(r"[^a-z0-9]", "", str(h or "").strip().lower())
 
-    rows = []
+
+def _parse_file_table(filename: str, content: bytes) -> tuple:
+    """Parse any uploaded csv/xlsx into (headers: list[str], rows: list[list[str]])."""
     if filename.lower().endswith(".csv"):
         text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        col_map = {norm(h): h for h in (reader.fieldnames or [])}
-        did_col = col_map.get("dealerid") or col_map.get("dealer")
-        tag_col = col_map.get("tag") or col_map.get("tagname")
-        if not did_col or not tag_col:
-            raise ValueError("Couldn't find dealer_id / tag columns in the CSV header")
-        for r in reader:
-            did = (r.get(did_col) or "").strip()
-            tag = (r.get(tag_col) or "").strip()
-            if did and tag:
-                rows.append({"dealer_id": did, "tag": tag})
+        all_rows = list(csv.reader(io.StringIO(text)))
     else:
         import openpyxl
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
         ws = wb.active
-        headers = [norm(c.value) for c in ws[1]]
-        try:
-            did_idx = next(i for i, h in enumerate(headers) if h in ("dealerid", "dealer"))
-            tag_idx = next(i for i, h in enumerate(headers) if h in ("tag", "tagname"))
-        except StopIteration:
-            raise ValueError("Couldn't find dealer_id / tag columns in the sheet header")
-        for row in ws.iter_rows(min_row=2):
-            did = str(row[did_idx].value or "").strip()
-            tag = str(row[tag_idx].value or "").strip()
-            if did and tag:
-                rows.append({"dealer_id": did, "tag": tag})
+        all_rows = [[("" if c is None else str(c)) for c in row] for row in ws.iter_rows(values_only=True)]
+    if not all_rows:
+        return [], []
+    headers = [str(h or "").strip() for h in all_rows[0]]
+    data_rows = all_rows[1:]
+    return headers, data_rows
+
+
+def _guess_column(headers: list, candidates: tuple) -> Optional[int]:
+    for i, h in enumerate(headers):
+        if _norm_header(h) in candidates:
+            return i
+    return None
+
+
+def _rows_from_columns(headers: list, data_rows: list, dealer_col: int, tag_col: int) -> list:
+    """Turn parsed table rows into [{"dealer_id":..., "tag":...}] using the chosen column indices."""
+    n = len(headers)
+    if not (0 <= dealer_col < n) or not (0 <= tag_col < n):
+        raise ValueError("Selected column is out of range for this file")
+    rows = []
+    for r in data_rows:
+        did = str(r[dealer_col]).strip() if dealer_col < len(r) and r[dealer_col] is not None else ""
+        tag = str(r[tag_col]).strip() if tag_col < len(r) and r[tag_col] is not None else ""
+        if did and tag:
+            rows.append({"dealer_id": did, "tag": tag})
     return rows
 
 
@@ -8970,15 +8975,36 @@ def _tag_groups_from_upload(rows: list) -> tuple:
     return tag_groups, unresolved
 
 
-@app.post("/api/tag-dealers/preview-file")
-async def tag_dealers_preview_file(file: UploadFile = File(...), user=Depends(require_auth)):
+@app.post("/api/tag-dealers/parse-headers")
+async def tag_dealers_parse_headers(file: UploadFile = File(...), user=Depends(require_auth)):
     content = await file.read()
     try:
-        rows = _parse_tag_upload(file.filename, content)
+        headers, data_rows = _parse_file_table(file.filename, content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Couldn't read that file: {e}")
+    if not headers:
+        raise HTTPException(status_code=400, detail="File appears to be empty")
+
+    return {
+        "headers":          headers,
+        "sample_rows":      data_rows[:5],
+        "row_count":        len(data_rows),
+        "dealer_col_guess": _guess_column(headers, ("dealerid", "dealer")),
+        "tag_col_guess":    _guess_column(headers, ("tag", "tagname")),
+    }
+
+
+@app.post("/api/tag-dealers/preview-file")
+async def tag_dealers_preview_file(file: UploadFile = File(...), dealer_col: int = Form(...),
+                                    tag_col: int = Form(...), user=Depends(require_auth)):
+    content = await file.read()
+    try:
+        headers, data_rows = _parse_file_table(file.filename, content)
+        rows = _rows_from_columns(headers, data_rows, dealer_col, tag_col)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if not rows:
-        raise HTTPException(status_code=400, detail="No valid dealer_id/tag rows found in the file")
+        raise HTTPException(status_code=400, detail="No valid dealer_id/tag rows found using the selected columns")
 
     tag_groups, unresolved = _tag_groups_from_upload(rows)
     all_accounts: set = set()
@@ -8998,10 +9024,12 @@ async def tag_dealers_preview_file(file: UploadFile = File(...), user=Depends(re
 
 
 @app.post("/api/tag-dealers/execute-file")
-async def tag_dealers_execute_file(file: UploadFile = File(...), user=Depends(require_auth)):
+async def tag_dealers_execute_file(file: UploadFile = File(...), dealer_col: int = Form(...),
+                                    tag_col: int = Form(...), user=Depends(require_auth)):
     content = await file.read()
     try:
-        rows = _parse_tag_upload(file.filename, content)
+        headers, data_rows = _parse_file_table(file.filename, content)
+        rows = _rows_from_columns(headers, data_rows, dealer_col, tag_col)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     tag_groups, _unresolved = _tag_groups_from_upload(rows)
