@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Bulk Tag Dealers — Microf</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans', Arial, sans-serif;background:#f3f2f1;color:#323130;min-height:100vh}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.apps-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn{margin-left:auto;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn:hover{background:rgba(255,255,255,.18)}
+main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+
+.tabs{display:flex;gap:6px;margin-bottom:18px}
+.tab-btn{padding:9px 18px;border-radius:6px 6px 0 0;border:1px solid #e5e7eb;border-bottom:none;background:#e9e9e8;color:#6b7280;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit}
+.tab-btn.active{background:#fff;color:#1e3a5f}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:.9rem;font-weight:700;color:#1e3a5f;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-sub{font-weight:400;color:#6b7280;font-size:.8rem}
+.step-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0}
+
+.status-msg{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:.83rem;display:none}
+.status-msg.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.status-msg.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.status-msg.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.status-msg.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+
+.file-drop{border:2px dashed #d1d5db;border-radius:8px;padding:28px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+.file-drop:hover,.file-drop.drag{border-color:#1e3a5f;background:#f8fafc}
+.file-drop input{display:none}
+.file-drop .fname{margin-top:8px;font-size:.82rem;color:#1e3a5f;font-weight:600}
+.file-hint{margin-top:10px;font-size:.76rem;color:#6b7280}
+
+.filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:640px){.filter-grid{grid-template-columns:1fr}}
+.filter-field label{display:block;font-size:.78rem;font-weight:600;color:#374151;margin-bottom:5px}
+.filter-field select{width:100%;min-height:110px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:.8rem;font-family:inherit}
+.filter-field select:focus{outline:none;border-color:#1e3a5f}
+.filter-hint{font-size:.72rem;color:#9ca3af;margin-top:4px}
+
+.tag-name-row{margin-top:16px}
+.tag-name-row label{display:block;font-size:.78rem;font-weight:600;color:#374151;margin-bottom:5px}
+.tag-name-row input{width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+.tag-name-row input:focus{outline:none;border-color:#1e3a5f}
+
+.btn{padding:9px 18px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:#162d4a}
+.btn:disabled{background:#9ca3af;cursor:not-allowed}
+.btn-row{display:flex;gap:10px;margin-top:16px;align-items:center}
+.btn-danger{background:#b91c1c}
+.btn-danger:hover{background:#991b1b}
+
+.preview-section{display:none;margin-top:16px;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px}
+.preview-stats{display:flex;gap:22px;flex-wrap:wrap}
+.stat{display:flex;flex-direction:column}
+.stat .num{font-size:1.35rem;font-weight:800;color:#1e3a5f}
+.stat .lbl{font-size:.72rem;color:#6b7280;text-transform:uppercase;letter-spacing:.04em}
+.preview-table{width:100%;border-collapse:collapse;margin-top:14px;font-size:.78rem}
+.preview-table th{text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-weight:600}
+.preview-table td{padding:5px 8px;border-bottom:1px solid #f1f1f1}
+.unresolved-list{margin-top:10px;font-size:.76rem;color:#92400e;max-height:120px;overflow-y:auto;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px}
+
+.progress-wrap{margin-top:16px;display:none}
+.progress-bar-bg{background:#e5e7eb;border-radius:6px;height:10px;overflow:hidden}
+.progress-bar-fill{background:#1e3a5f;height:100%;width:0%;transition:width .2s}
+.progress-label{margin-top:6px;font-size:.78rem;color:#374151}
+.progress-errors{margin-top:10px;font-size:.75rem;color:#991b1b;max-height:140px;overflow-y:auto;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;display:none}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width: 600px) {
+  body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
+  input, select, textarea { font-size: 16px !important; }
+  input, select, textarea, button { touch-action: manipulation; }
+  main { padding-left: 14px !important; padding-right: 14px !important; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>🏷️ Bulk Tag Dealers</h1>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;"><a class="back-btn" href="#" onclick="history.back();return false;">← Back</a><a class="apps-btn" href="/">⬡ Apps</a></div>
+</header>
+
+<main>
+
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-btn-file" onclick="switchTab('file')">Upload File</button>
+    <button class="tab-btn" id="tab-btn-filters" onclick="switchTab('filters')">Filter-Based</button>
+  </div>
+
+  <!-- ══════════════════ FILE UPLOAD TAB ══════════════════ -->
+  <div class="tab-panel active" id="panel-file">
+    <div class="card">
+      <div class="card-title"><span class="step-badge">1</span> Upload a dealer_id / tag file <span class="card-sub">CSV or XLSX, one row per dealer</span></div>
+      <div class="file-drop" id="file-drop" onclick="document.getElementById('file-input').click()">
+        <div>📄 Click to choose a file, or drag one here</div>
+        <div class="fname" id="file-name"></div>
+        <input type="file" id="file-input" accept=".csv,.xlsx" onchange="onFileChosen()"/>
+      </div>
+      <div class="file-hint">Needs two columns: <b>dealer_id</b> and <b>tag</b> (header names are case-insensitive; "Dealer ID" / "Tag Name" also work). Different rows can use different tags.</div>
+      <div class="status-msg" id="file-status"></div>
+      <div class="btn-row">
+        <button class="btn" id="file-preview-btn" onclick="previewFile()" disabled>Preview</button>
+      </div>
+
+      <div class="preview-section" id="file-preview">
+        <div class="preview-stats">
+          <div class="stat"><span class="num" id="fp-rows">0</span><span class="lbl">Rows in file</span></div>
+          <div class="stat"><span class="num" id="fp-resolved">0</span><span class="lbl">Resolved</span></div>
+          <div class="stat"><span class="num" id="fp-unresolved">0</span><span class="lbl">Not found</span></div>
+          <div class="stat"><span class="num" id="fp-contacts">0</span><span class="lbl">Contacts to tag</span></div>
+        </div>
+        <table class="preview-table" id="fp-tag-table"></table>
+        <div class="unresolved-list" id="fp-unresolved-list" style="display:none"></div>
+        <div class="btn-row">
+          <button class="btn btn-danger" id="file-apply-btn" onclick="executeFile()">Apply Tags</button>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="file-progress">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="file-progress-fill"></div></div>
+        <div class="progress-label" id="file-progress-label"></div>
+        <div class="progress-errors" id="file-progress-errors"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ FILTER-BASED TAB ══════════════════ -->
+  <div class="tab-panel" id="panel-filters">
+    <div class="card">
+      <div class="card-title"><span class="step-badge">1</span> Choose filters <span class="card-sub">leave a filter empty to include everything for that field</span></div>
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label>Channel</label>
+          <select id="f-channel" multiple></select>
+          <div class="filter-hint">Ctrl/Cmd-click to select multiple</div>
+        </div>
+        <div class="filter-field">
+          <label>SLP Status Detail</label>
+          <select id="f-status" multiple></select>
+          <div class="filter-hint">Ctrl/Cmd-click to select multiple</div>
+        </div>
+        <div class="filter-field">
+          <label>Account Status</label>
+          <select id="f-acct-status" multiple></select>
+          <div class="filter-hint">Ctrl/Cmd-click to select multiple</div>
+        </div>
+        <div class="filter-field">
+          <label>Account Owner</label>
+          <select id="f-owner" multiple></select>
+          <div class="filter-hint">Ctrl/Cmd-click to select multiple</div>
+        </div>
+      </div>
+      <div class="tag-name-row">
+        <label>Tag to apply</label>
+        <input type="text" id="f-tag" placeholder="e.g. September"/>
+      </div>
+      <div class="status-msg" id="filters-status"></div>
+      <div class="btn-row">
+        <button class="btn" id="filters-preview-btn" onclick="previewFilters()">Preview</button>
+      </div>
+
+      <div class="preview-section" id="filters-preview">
+        <div class="preview-stats">
+          <div class="stat"><span class="num" id="flp-slps">0</span><span class="lbl">Matching SLPs</span></div>
+          <div class="stat"><span class="num" id="flp-accounts">0</span><span class="lbl">Accounts</span></div>
+          <div class="stat"><span class="num" id="flp-contacts">0</span><span class="lbl">Contacts to tag</span></div>
+        </div>
+        <table class="preview-table" id="flp-sample-table"></table>
+        <div class="btn-row">
+          <button class="btn btn-danger" id="filters-apply-btn" onclick="executeFilters()">Apply Tags</button>
+        </div>
+      </div>
+
+      <div class="progress-wrap" id="filters-progress">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="filters-progress-fill"></div></div>
+        <div class="progress-label" id="filters-progress-label"></div>
+        <div class="progress-errors" id="filters-progress-errors"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function switchTab(name){
+  document.getElementById('tab-btn-file').classList.toggle('active', name==='file');
+  document.getElementById('tab-btn-filters').classList.toggle('active', name==='filters');
+  document.getElementById('panel-file').classList.toggle('active', name==='file');
+  document.getElementById('panel-filters').classList.toggle('active', name==='filters');
+}
+
+function showStatus(id, kind, msg){
+  const el = document.getElementById(id);
+  el.className = 'status-msg ' + kind;
+  el.style.display = 'block';
+  el.textContent = msg;
+}
+function hideStatus(id){ document.getElementById(id).style.display='none'; }
+
+// ── File upload tab ──────────────────────────────────────────────────────
+let chosenFile = null;
+
+document.getElementById('file-drop').addEventListener('dragover', e => { e.preventDefault(); e.currentTarget.classList.add('drag'); });
+document.getElementById('file-drop').addEventListener('dragleave', e => { e.currentTarget.classList.remove('drag'); });
+document.getElementById('file-drop').addEventListener('drop', e => {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag');
+  if (e.dataTransfer.files.length) {
+    document.getElementById('file-input').files = e.dataTransfer.files;
+    onFileChosen();
+  }
+});
+
+function onFileChosen(){
+  const input = document.getElementById('file-input');
+  chosenFile = input.files[0] || null;
+  document.getElementById('file-name').textContent = chosenFile ? chosenFile.name : '';
+  document.getElementById('file-preview-btn').disabled = !chosenFile;
+  document.getElementById('file-preview').style.display = 'none';
+  hideStatus('file-status');
+}
+
+async function previewFile(){
+  if (!chosenFile) return;
+  hideStatus('file-status');
+  document.getElementById('file-preview').style.display = 'none';
+  const btn = document.getElementById('file-preview-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking…';
+  try {
+    const fd = new FormData();
+    fd.append('file', chosenFile);
+    const res = await fetch('/api/tag-dealers/preview-file', { method:'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Preview failed');
+
+    document.getElementById('fp-rows').textContent = data.row_count;
+    document.getElementById('fp-resolved').textContent = data.resolved_rows;
+    document.getElementById('fp-unresolved').textContent = data.unresolved_count;
+    document.getElementById('fp-contacts').textContent = data.contact_count;
+
+    const table = document.getElementById('fp-tag-table');
+    table.innerHTML = '<tr><th>Tag</th><th>Accounts</th></tr>' +
+      data.tag_summary.map(t => `<tr><td>${esc(t.tag)}</td><td>${t.accounts}</td></tr>`).join('');
+
+    const ul = document.getElementById('fp-unresolved-list');
+    if (data.unresolved_count > 0) {
+      ul.style.display = 'block';
+      ul.textContent = `${data.unresolved_count} dealer_id(s) not found (no matching SLP with an account)` +
+        (data.unresolved.length ? ': ' + data.unresolved.join(', ') + (data.unresolved_count > data.unresolved.length ? '…' : '') : '');
+    } else {
+      ul.style.display = 'none';
+    }
+
+    document.getElementById('file-preview').style.display = 'block';
+  } catch (e) {
+    showStatus('file-status', 'err', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Preview';
+  }
+}
+
+async function executeFile(){
+  if (!chosenFile) return;
+  if (!confirm('This will tag every matching contact in AC. This can\'t be bulk-undone. Continue?')) return;
+  document.getElementById('file-apply-btn').disabled = true;
+  document.getElementById('file-progress').style.display = 'block';
+  try {
+    const fd = new FormData();
+    fd.append('file', chosenFile);
+    const res = await fetch('/api/tag-dealers/execute-file', { method:'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to start');
+    pollJob(data.job_id, 'file');
+  } catch (e) {
+    showStatus('file-status', 'err', e.message);
+    document.getElementById('file-apply-btn').disabled = false;
+  }
+}
+
+// ── Filter-based tab ─────────────────────────────────────────────────────
+function fillMultiSelect(id, values, labelFn){
+  const sel = document.getElementById(id);
+  sel.innerHTML = (values || []).map(v => {
+    const val = labelFn ? v.id : v;
+    const label = labelFn ? labelFn(v) : v;
+    return `<option value="${esc(val)}">${esc(label)}</option>`;
+  }).join('');
+}
+
+async function loadFilterOptions(){
+  try {
+    const res = await fetch('/api/tag-dealers/filter-options');
+    const data = await res.json();
+    fillMultiSelect('f-channel', data.channels);
+    fillMultiSelect('f-status', data.statuses);
+    fillMultiSelect('f-acct-status', data.account_statuses);
+    fillMultiSelect('f-owner', data.owners, o => o.name);
+  } catch (e) {
+    showStatus('filters-status', 'err', 'Failed to load filter options: ' + e.message);
+  }
+}
+loadFilterOptions();
+
+function selectedValues(id){
+  return Array.from(document.getElementById(id).selectedOptions).map(o => o.value);
+}
+
+function currentFilterBody(){
+  return {
+    channels: selectedValues('f-channel'),
+    statuses: selectedValues('f-status'),
+    account_statuses: selectedValues('f-acct-status'),
+    owner_ids: selectedValues('f-owner'),
+    tag: document.getElementById('f-tag').value.trim(),
+  };
+}
+
+async function previewFilters(){
+  hideStatus('filters-status');
+  document.getElementById('filters-preview').style.display = 'none';
+  const body = currentFilterBody();
+  if (!body.tag) { showStatus('filters-status', 'warn', 'Enter a tag name first.'); return; }
+  const btn = document.getElementById('filters-preview-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking…';
+  try {
+    const res = await fetch('/api/tag-dealers/preview-filters', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Preview failed');
+
+    document.getElementById('flp-slps').textContent = data.slp_count;
+    document.getElementById('flp-accounts').textContent = data.account_count;
+    document.getElementById('flp-contacts').textContent = data.contact_count;
+
+    const table = document.getElementById('flp-sample-table');
+    table.innerHTML = '<tr><th>Dealer ID</th><th>Name</th><th>Channel</th><th>Status</th></tr>' +
+      data.sample.map(r => `<tr><td>${esc(r.dealer_id)}</td><td>${esc(r.name)}</td><td>${esc(r.channel)}</td><td>${esc(r.status)}</td></tr>`).join('') +
+      (data.slp_count > data.sample.length ? `<tr><td colspan="4" style="color:#9ca3af">…and ${data.slp_count - data.sample.length} more</td></tr>` : '');
+
+    if (data.slp_count === 0) {
+      showStatus('filters-status', 'warn', 'No SLPs match these filters.');
+    }
+    document.getElementById('filters-preview').style.display = 'block';
+  } catch (e) {
+    showStatus('filters-status', 'err', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Preview';
+  }
+}
+
+async function executeFilters(){
+  const body = currentFilterBody();
+  if (!body.tag) { showStatus('filters-status', 'warn', 'Enter a tag name first.'); return; }
+  if (!confirm(`This will tag every matching contact with "${body.tag}" in AC. This can't be bulk-undone. Continue?`)) return;
+  document.getElementById('filters-apply-btn').disabled = true;
+  document.getElementById('filters-progress').style.display = 'block';
+  try {
+    const res = await fetch('/api/tag-dealers/execute-filters', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed to start');
+    pollJob(data.job_id, 'filters');
+  } catch (e) {
+    showStatus('filters-status', 'err', e.message);
+    document.getElementById('filters-apply-btn').disabled = false;
+  }
+}
+
+// ── Shared job polling ───────────────────────────────────────────────────
+async function pollJob(jobId, prefix){
+  const fill = document.getElementById(prefix + '-progress-fill');
+  const label = document.getElementById(prefix + '-progress-label');
+  const errBox = document.getElementById(prefix + '-progress-errors');
+
+  const tick = async () => {
+    let data;
+    try {
+      const res = await fetch(`/api/tag-dealers/job/${jobId}`);
+      data = await res.json();
+    } catch (e) {
+      label.textContent = 'Lost connection while checking progress — the job may still be running server-side.';
+      return;
+    }
+    const total = data.total_accounts || 0;
+    const done = data.processed_accounts || 0;
+    const pct = total ? Math.round((done/total)*100) : 0;
+    fill.style.width = pct + '%';
+
+    if (data.status === 'queued') {
+      label.textContent = 'Starting…';
+      setTimeout(tick, 1500);
+    } else if (data.status === 'running') {
+      label.textContent = `${done} / ${total} accounts processed — ${data.tagged_contacts || 0} contacts tagged so far`;
+      setTimeout(tick, 1500);
+    } else if (data.status === 'done') {
+      label.textContent = `✅ Done — ${data.tagged_contacts || 0} contacts tagged across ${total} accounts` +
+        ((data.errors && data.errors.length) ? ` (${data.errors.length} errors)` : '');
+      if (data.errors && data.errors.length) {
+        errBox.style.display = 'block';
+        errBox.textContent = data.errors.slice(0, 50).join('\n');
+      }
+    } else if (data.status === 'error') {
+      label.textContent = '❌ Job failed: ' + (data.message || 'unknown error');
+    }
+  };
+  tick();
+}
+</script>
+</body>
+</html>

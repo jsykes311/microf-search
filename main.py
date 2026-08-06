@@ -8726,6 +8726,302 @@ async def dealer_fix_execute(body: _DealerFixIn, admin=Depends(_require_admin)):
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# BULK TAG DEALERS
+# Two ways to mass-tag contacts: upload a dealer_id/tag file, or pick account
+# + SLP filters and apply one tag to everything that matches. Tagging can
+# touch thousands of contacts, so it always runs as a background job that the
+# UI polls, and both modes require a Preview (with real, live contact counts)
+# before Execute is allowed.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_TAG_ACCOUNT_STATUSES = [
+    "Active", "Not Active", "Deactivated", "Pre-Activation",
+    "Waiting on BDR", "Waiting on Docs to be signed", "Under Review by OPS Manager",
+]
+_TAG_JOB_CONCURRENCY = 10
+_tag_jobs: dict = {}   # job_id -> progress dict
+
+
+def _dealer_id_to_slp_index() -> dict:
+    """dealer_id -> raw SLP record, built fresh from the in-memory SLP cache."""
+    idx: dict = {}
+    for rec in _slp_cache_records:
+        did = _slp_get_field(rec, "dealer-id")
+        if did:
+            idx[did] = rec
+    return idx
+
+
+def _slp_account_id(rec: dict) -> Optional[str]:
+    accts = rec.get("relationships", {}).get("account", [])
+    return str(accts[0]) if accts else None
+
+
+def _slps_matching_filters(channels: set, statuses: set, account_statuses: set, owner_ids: set) -> list:
+    matches = []
+    for rec in _slp_cache_records:
+        if channels and _slp_get_field(rec, "channel") not in channels:
+            continue
+        if statuses and _slp_get_field(rec, "slp-status-detail") not in statuses:
+            continue
+        aid = _slp_account_id(rec)
+        if account_statuses and _account_to_status.get(aid or "", "") not in account_statuses:
+            continue
+        if owner_ids and _account_to_owner.get(aid or "", "") not in owner_ids:
+            continue
+        matches.append(rec)
+    return matches
+
+
+async def _get_contacts_for_account(account_id: str) -> list:
+    rows = await ac_get_all("accountContacts", "accountContacts", {"filters[account]": account_id})
+    return [str(r["contact"]) for r in rows if r.get("contact")]
+
+
+async def _count_contacts_for_accounts(account_ids: list) -> set:
+    sem = asyncio.Semaphore(_TAG_JOB_CONCURRENCY)
+    async def one(aid):
+        async with sem:
+            try:
+                return await _get_contacts_for_account(aid)
+            except Exception:
+                return []
+    results = await asyncio.gather(*[one(aid) for aid in account_ids])
+    all_ids: set = set()
+    for r in results:
+        all_ids.update(r)
+    return all_ids
+
+
+_tag_id_cache: dict = {}   # tag name (lower) -> tag id, cleared on each new job
+
+async def _ensure_tag(tag_name: str) -> str:
+    key = tag_name.strip().lower()
+    if key in _tag_id_cache:
+        return _tag_id_cache[key]
+    resp = await ac_get("tags", {"search": tag_name, "limit": 100})
+    for t in resp.get("tags", []):
+        if (t.get("tag") or "").strip().lower() == key:
+            _tag_id_cache[key] = t["id"]
+            return t["id"]
+    created = await ac_post("tags", {"tag": {"tag": tag_name.strip(), "tagType": "contact", "description": ""}})
+    tag_id = created["tag"]["id"]
+    _tag_id_cache[key] = tag_id
+    return tag_id
+
+
+async def _tag_contact(contact_id: str, tag_id: str) -> None:
+    for attempt in range(4):
+        try:
+            r = await ac_post("contactTags", {"contactTag": {"contact": contact_id, "tag": tag_id}})
+            return
+        except Exception as e:
+            if "422" in str(e):   # already tagged
+                return
+            if attempt == 3:
+                raise
+            await asyncio.sleep(1.5)
+
+
+def _parse_tag_upload(filename: str, content: bytes) -> list:
+    """Parse an uploaded dealer_id/tag file (csv or xlsx) into [{"dealer_id":..., "tag":...}]."""
+    def norm(h: str) -> str:
+        return _re.sub(r"[^a-z0-9]", "", (h or "").strip().lower())
+
+    rows = []
+    if filename.lower().endswith(".csv"):
+        text = content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(text))
+        col_map = {norm(h): h for h in (reader.fieldnames or [])}
+        did_col = col_map.get("dealerid") or col_map.get("dealer")
+        tag_col = col_map.get("tag") or col_map.get("tagname")
+        if not did_col or not tag_col:
+            raise ValueError("Couldn't find dealer_id / tag columns in the CSV header")
+        for r in reader:
+            did = (r.get(did_col) or "").strip()
+            tag = (r.get(tag_col) or "").strip()
+            if did and tag:
+                rows.append({"dealer_id": did, "tag": tag})
+    else:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+        ws = wb.active
+        headers = [norm(c.value) for c in ws[1]]
+        try:
+            did_idx = next(i for i, h in enumerate(headers) if h in ("dealerid", "dealer"))
+            tag_idx = next(i for i, h in enumerate(headers) if h in ("tag", "tagname"))
+        except StopIteration:
+            raise ValueError("Couldn't find dealer_id / tag columns in the sheet header")
+        for row in ws.iter_rows(min_row=2):
+            did = str(row[did_idx].value or "").strip()
+            tag = str(row[tag_idx].value or "").strip()
+            if did and tag:
+                rows.append({"dealer_id": did, "tag": tag})
+    return rows
+
+
+async def _run_tag_job(job_id: str, tag_groups: dict) -> None:
+    """tag_groups: tag name -> set of account_ids to tag every contact on."""
+    job = _tag_jobs[job_id]
+    global _tag_id_cache
+    _tag_id_cache = {}
+    try:
+        total_accounts = sum(len(v) for v in tag_groups.values())
+        job.update(status="running", total_accounts=total_accounts, processed_accounts=0,
+                   tagged_contacts=0, errors=[])
+        sem = asyncio.Semaphore(_TAG_JOB_CONCURRENCY)
+
+        async def process_account(tag_id, aid):
+            async with sem:
+                try:
+                    contact_ids = await _get_contacts_for_account(aid)
+                    for cid in contact_ids:
+                        try:
+                            await _tag_contact(cid, tag_id)
+                            job["tagged_contacts"] += 1
+                        except Exception as e:
+                            job["errors"].append(f"contact {cid} (account {aid}): {e}")
+                except Exception as e:
+                    job["errors"].append(f"account {aid}: {e}")
+                job["processed_accounts"] += 1
+
+        for tag_name, account_ids in tag_groups.items():
+            tag_id = await _ensure_tag(tag_name)
+            await asyncio.gather(*[process_account(tag_id, aid) for aid in account_ids])
+
+        job["status"] = "done"
+    except Exception as e:
+        job["status"] = "error"
+        job["message"] = str(e)
+
+
+@app.get("/tag-dealers")
+async def tag_dealers_page(user=Depends(_require_admin)):
+    return FileResponse("static/tag-dealers.html")
+
+
+@app.get("/api/tag-dealers/filter-options")
+async def tag_dealers_filter_options(admin=Depends(_require_admin)):
+    _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
+    channels = [o["value"] for o in ftypes.get("channel", {}).get("options", [])]
+    owners = sorted(
+        [{"id": uid, "name": _user_id_to_name.get(uid, uid)}
+         for uid in {v for v in _account_to_owner.values() if v}],
+        key=lambda x: x["name"].lower()
+    )
+    return {
+        "channels":         channels,
+        "statuses":         _SLP_STATUSES,
+        "account_statuses": _TAG_ACCOUNT_STATUSES,
+        "owners":           owners,
+    }
+
+
+class _TagFiltersIn(_BaseModel):
+    channels: list = []
+    statuses: list = []
+    account_statuses: list = []
+    owner_ids: list = []
+    tag: str = ""
+
+
+def _tag_filters_matches(body: "_TagFiltersIn") -> list:
+    if not body.tag.strip():
+        raise HTTPException(status_code=400, detail="Tag name is required")
+    return _slps_matching_filters(set(body.channels), set(body.statuses),
+                                   set(body.account_statuses), set(body.owner_ids))
+
+
+@app.post("/api/tag-dealers/preview-filters")
+async def tag_dealers_preview_filters(body: _TagFiltersIn, admin=Depends(_require_admin)):
+    matches = _tag_filters_matches(body)
+    account_ids = sorted({_slp_account_id(rec) for rec in matches if _slp_account_id(rec)})
+    contact_ids = await _count_contacts_for_accounts(account_ids)
+    sample = [{"dealer_id": _slp_get_field(rec, "dealer-id"), "name": _slp_get_field(rec, "name"),
+               "channel": _slp_get_field(rec, "channel"), "status": _slp_get_field(rec, "slp-status-detail")}
+              for rec in matches[:15]]
+    return {"slp_count": len(matches), "account_count": len(account_ids),
+            "contact_count": len(contact_ids), "sample": sample}
+
+
+@app.post("/api/tag-dealers/execute-filters")
+async def tag_dealers_execute_filters(body: _TagFiltersIn, admin=Depends(_require_admin)):
+    matches = _tag_filters_matches(body)
+    account_ids = {_slp_account_id(rec) for rec in matches if _slp_account_id(rec)}
+    job_id = str(_uuid.uuid4())[:8]
+    _tag_jobs[job_id] = {"status": "queued"}
+    asyncio.create_task(_run_tag_job(job_id, {body.tag.strip(): account_ids}))
+    return {"job_id": job_id}
+
+
+def _tag_groups_from_upload(rows: list) -> tuple:
+    """Returns (tag_name -> set(account_id), unresolved dealer_ids)."""
+    idx = _dealer_id_to_slp_index()
+    tag_groups: dict = {}
+    unresolved = []
+    for row in rows:
+        rec = idx.get(row["dealer_id"])
+        aid = _slp_account_id(rec) if rec else None
+        if not aid:
+            unresolved.append(row["dealer_id"])
+            continue
+        tag_groups.setdefault(row["tag"], set()).add(aid)
+    return tag_groups, unresolved
+
+
+@app.post("/api/tag-dealers/preview-file")
+async def tag_dealers_preview_file(file: UploadFile = File(...), admin=Depends(_require_admin)):
+    content = await file.read()
+    try:
+        rows = _parse_tag_upload(file.filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid dealer_id/tag rows found in the file")
+
+    tag_groups, unresolved = _tag_groups_from_upload(rows)
+    all_accounts: set = set()
+    for accts in tag_groups.values():
+        all_accounts |= accts
+    contact_ids = await _count_contacts_for_accounts(sorted(all_accounts))
+    tag_summary = [{"tag": t, "accounts": len(accts)} for t, accts in sorted(tag_groups.items())]
+
+    return {
+        "row_count":        len(rows),
+        "resolved_rows":    len(rows) - len(unresolved),
+        "unresolved_count": len(unresolved),
+        "unresolved":       unresolved[:50],
+        "tag_summary":      tag_summary,
+        "contact_count":    len(contact_ids),
+    }
+
+
+@app.post("/api/tag-dealers/execute-file")
+async def tag_dealers_execute_file(file: UploadFile = File(...), admin=Depends(_require_admin)):
+    content = await file.read()
+    try:
+        rows = _parse_tag_upload(file.filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    tag_groups, _unresolved = _tag_groups_from_upload(rows)
+    if not tag_groups:
+        raise HTTPException(status_code=400, detail="No dealer_id in the file matched an SLP with a linked account")
+
+    job_id = str(_uuid.uuid4())[:8]
+    _tag_jobs[job_id] = {"status": "queued"}
+    asyncio.create_task(_run_tag_job(job_id, tag_groups))
+    return {"job_id": job_id}
+
+
+@app.get("/api/tag-dealers/job/{job_id}")
+async def tag_dealers_job_status(job_id: str, admin=Depends(_require_admin)):
+    job = _tag_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Webhook: deal-created → append row to SharePoint Excel
 # ─────────────────────────────────────────────────────────────────────────────
