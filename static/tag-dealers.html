@@ -77,6 +77,17 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
 
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+.help-card{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;overflow:hidden}
+.help-toggle{width:100%;text-align:left;background:none;border:none;padding:14px 18px;font-size:.86rem;font-weight:700;color:#1e40af;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-family:inherit}
+.help-toggle .chev{transition:transform .15s}
+.help-toggle.open .chev{transform:rotate(90deg)}
+.help-body{display:none;padding:0 18px 16px;font-size:.82rem;color:#1e3a5f;line-height:1.55}
+.help-body.open{display:block}
+.help-body h4{margin:12px 0 4px;font-size:.82rem;color:#1e40af}
+.help-body ol,.help-body ul{margin:0 0 0 20px}
+.help-body li{margin-bottom:3px}
+.help-body code{background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:.78rem}
 @media (max-width: 600px) {
   body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
   input, select, textarea { font-size: 16px !important; }
@@ -95,6 +106,40 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
 </header>
 
 <main>
+
+  <div class="help-card">
+    <button class="help-toggle" id="help-toggle" onclick="toggleHelp()">
+      <span>❓ How to use this</span>
+      <span class="chev">›</span>
+    </button>
+    <div class="help-body" id="help-body">
+      <p>Two ways to tag contacts in AC. Both always show you a live <b>Preview</b> — real counts pulled straight from AC — before <b>Apply Tags</b> is enabled, so nothing gets tagged blind.</p>
+
+      <h4>Option 1 — Upload File</h4>
+      <ol>
+        <li>Prepare a CSV or XLSX with two columns: <code>dealer_id</code> and <code>tag</code>. Column names are case-insensitive — "Dealer ID" / "Tag Name" work too.</li>
+        <li>Different rows can use different tags in the same file (e.g. some dealers get "August", others get "Q3-Renewal").</li>
+        <li>Click the upload box (or drag a file onto it), then click <b>Preview</b>.</li>
+        <li>Preview shows: rows in the file, how many resolved to a real dealer/account, any not found, a per-tag account breakdown, and the exact number of contacts that will be tagged.</li>
+        <li>Click <b>Apply Tags</b> and confirm. A progress bar tracks it — this can take a few minutes for large files.</li>
+      </ol>
+
+      <h4>Option 2 — Filter-Based</h4>
+      <ol>
+        <li>Pick any combination of Channel, SLP Status Detail, Account Status, and Account Owner. Ctrl/Cmd-click to select multiple values in a field; leave a field empty to include everything for it.</li>
+        <li>Enter one tag name to apply to everything that matches.</li>
+        <li>Click <b>Preview</b> to see the matching SLP/account/contact counts and a sample of matched dealers.</li>
+        <li>Click <b>Apply Tags</b> and confirm.</li>
+      </ol>
+
+      <h4>Good to know</h4>
+      <ul>
+        <li>If the tag name doesn't exist in AC yet, it's created automatically.</li>
+        <li>Tagging is safe to re-run — a contact that already has the tag is just skipped, not duplicated.</li>
+        <li>"Contacts to tag" is a real, live count (every contact on every matching account), not an estimate — some accounts have far more linked contacts than others.</li>
+      </ul>
+    </div>
+  </div>
 
   <div class="tabs">
     <button class="tab-btn active" id="tab-btn-file" onclick="switchTab('file')">Upload File</button>
@@ -197,6 +242,11 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
 
 <script>
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function toggleHelp(){
+  document.getElementById('help-toggle').classList.toggle('open');
+  document.getElementById('help-body').classList.toggle('open');
+}
 
 function switchTab(name){
   document.getElementById('tab-btn-file').classList.toggle('active', name==='file');
