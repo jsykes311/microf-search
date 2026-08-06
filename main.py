@@ -8897,12 +8897,12 @@ async def _run_tag_job(job_id: str, tag_groups: dict) -> None:
 
 
 @app.get("/tag-dealers")
-async def tag_dealers_page(user=Depends(_require_admin)):
+async def tag_dealers_page(user=Depends(require_auth)):
     return FileResponse("static/tag-dealers.html")
 
 
 @app.get("/api/tag-dealers/filter-options")
-async def tag_dealers_filter_options(admin=Depends(_require_admin)):
+async def tag_dealers_filter_options(user=Depends(require_auth)):
     _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
     channels = [o["value"] for o in ftypes.get("channel", {}).get("options", [])]
     owners = sorted(
@@ -8934,7 +8934,7 @@ def _tag_filters_matches(body: "_TagFiltersIn") -> list:
 
 
 @app.post("/api/tag-dealers/preview-filters")
-async def tag_dealers_preview_filters(body: _TagFiltersIn, admin=Depends(_require_admin)):
+async def tag_dealers_preview_filters(body: _TagFiltersIn, user=Depends(require_auth)):
     matches = _tag_filters_matches(body)
     account_ids = sorted({_slp_account_id(rec) for rec in matches if _slp_account_id(rec)})
     contact_ids = await _count_contacts_for_accounts(account_ids)
@@ -8946,7 +8946,7 @@ async def tag_dealers_preview_filters(body: _TagFiltersIn, admin=Depends(_requir
 
 
 @app.post("/api/tag-dealers/execute-filters")
-async def tag_dealers_execute_filters(body: _TagFiltersIn, admin=Depends(_require_admin)):
+async def tag_dealers_execute_filters(body: _TagFiltersIn, user=Depends(require_auth)):
     matches = _tag_filters_matches(body)
     account_ids = {_slp_account_id(rec) for rec in matches if _slp_account_id(rec)}
     job_id = str(_uuid.uuid4())[:8]
@@ -8971,7 +8971,7 @@ def _tag_groups_from_upload(rows: list) -> tuple:
 
 
 @app.post("/api/tag-dealers/preview-file")
-async def tag_dealers_preview_file(file: UploadFile = File(...), admin=Depends(_require_admin)):
+async def tag_dealers_preview_file(file: UploadFile = File(...), user=Depends(require_auth)):
     content = await file.read()
     try:
         rows = _parse_tag_upload(file.filename, content)
@@ -8998,7 +8998,7 @@ async def tag_dealers_preview_file(file: UploadFile = File(...), admin=Depends(_
 
 
 @app.post("/api/tag-dealers/execute-file")
-async def tag_dealers_execute_file(file: UploadFile = File(...), admin=Depends(_require_admin)):
+async def tag_dealers_execute_file(file: UploadFile = File(...), user=Depends(require_auth)):
     content = await file.read()
     try:
         rows = _parse_tag_upload(file.filename, content)
@@ -9015,7 +9015,7 @@ async def tag_dealers_execute_file(file: UploadFile = File(...), admin=Depends(_
 
 
 @app.get("/api/tag-dealers/job/{job_id}")
-async def tag_dealers_job_status(job_id: str, admin=Depends(_require_admin)):
+async def tag_dealers_job_status(job_id: str, user=Depends(require_auth)):
     job = _tag_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
