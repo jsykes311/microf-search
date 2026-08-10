@@ -1199,8 +1199,6 @@ async def _ta_cache_loop() -> None:
             print(f"[ta-cache] loop error: {e}")
         await asyncio.sleep(_TA_CACHE_TTL)
 
-_slp_dependent_indexes_built: bool = False  # True after first post-SLP location/state build
-
 # ── Partner-channel BDR sync ─────────────────────────────────────────────────
 # Every SLP whose channel isn't Microf/Microf Direct should have Assigned BDR
 # set to "Partner". Originally a one-off manual bulk push; this keeps it true
@@ -1444,23 +1442,26 @@ async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
     On failure (0 records), retries every 30s until data is loaded, then
     switches to the normal 5-minute refresh interval.
-    After the first successful SLP load, kicks off the location and SLP-state
-    index builds (which depend on SLP data) so they don't race at startup.
+    The location and SLP-state indexes (dealer-locator) depend on SLP data,
+    so they're rebuilt every cycle right after the SLP cache itself —
+    their own TTLs match _SLP_CACHE_TTL, so this keeps them in lockstep
+    with the 15-minute refresh instead of the old 24h TTL.
     """
-    global _slp_dependent_indexes_built
     await asyncio.sleep(90)   # give dealer index a head-start before first SLP fetch
     while True:
         try:
             await _refresh_slp_cache()
         except Exception as _e:
             print(f"[slp-cache] loop error: {_e}")
-        # After first successful SLP load, kick off SLP-dependent index builders once
-        if _slp_cache_records and not _slp_dependent_indexes_built:
-            _slp_dependent_indexes_built = True
-            print("[slp-cache] SLP data ready — triggering location + state index builds")
-            asyncio.create_task(_build_location_index())
-            asyncio.create_task(_build_slp_state_index())
         if _slp_cache_records:
+            try:
+                await _build_location_index()
+            except Exception as _e:
+                print(f"[location-index] loop error: {_e}")
+            try:
+                await _build_slp_state_index()
+            except Exception as _e:
+                print(f"[slp-state-index] loop error: {_e}")
             try:
                 await _sync_partner_bdr()
             except Exception as _e:
@@ -4142,7 +4143,7 @@ async def accounts_search(q: str = Query(""), limit: int = Query(20)):
 
 _slp_state_index: dict = {}       # state (str) → {account_id: {name, dealer_id}}
 _slp_state_index_ts: float = 0.0
-_SLP_STATE_TTL = 86400            # rebuild at most once per 24 hours
+_SLP_STATE_TTL = _SLP_CACHE_TTL   # tied to the same 15-minute SLP cache refresh
 def _is_microf_channel(ch: str) -> bool:
     """True for any channel that is a Microf/LTO program.
     Matches 'Microf', 'Microf Direct', 'Microf (LTO Only)', 'LTO', etc.
@@ -4293,7 +4294,7 @@ def _haversine(lat1, lon1, lat2, lon2) -> float:
 _location_index: dict = {}        # account_id → {lat, lon, name, dealer_id, city, state, zip}
 _location_index_ts: float = 0.0
 _location_index_building: bool = False
-_LOCATION_TTL = 86400
+_LOCATION_TTL = _SLP_CACHE_TTL    # tied to the same 15-minute SLP cache refresh
 
 async def _build_location_index() -> dict:
     global _location_index, _location_index_ts, _location_index_building
