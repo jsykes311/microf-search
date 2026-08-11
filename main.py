@@ -7882,8 +7882,11 @@ class _DeactivateConfirmIn(_BaseModel):
 @app.post("/api/admin/optimus-deactivate/preview")
 async def optimus_deactivate_preview(body: dict = Body(...), user=Depends(require_auth)):
     """
-    Parse a GreenSky deactivation email body, find each dealer's OPTIMUS SLP,
-    and return a preview list without making any changes.
+    Parse a GreenSky deactivation email body and look up each dealer's OPTIMUS
+    SLP directly by its own dealer-id field. SLP-only — no dependency on any
+    Account custom field (the account's Parent Dealer ID is often blank even
+    when the SLP's own dealer-id is set correctly, which used to make dealers
+    silently fail to match here).
     """
     text = body.get("text", "")
     # Extract 4-6 digit numbers as candidate dealer IDs
@@ -7894,95 +7897,27 @@ async def optimus_deactivate_preview(body: dict = Body(...), user=Depends(requir
     rows = []
     not_found = []
 
-    # Determine which dealer IDs are missing from the CF18 index
-    missing_dids = {did for did in dealer_ids if did not in _dealer_id_index}
-
-    # For missing IDs: scan all SLP records once; store account_id AND the matching SLP record
-    slp_did_to_acct: dict = {}   # did → account_id
-    slp_did_to_rec:  dict = {}   # did → SLP record (so we don't need to re-filter by platform)
-    if missing_dids:
-        offset = 0
-        while True:
-            page = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
-                                {"limit": 100, "offset": offset})
-            records = page.get("records", [])
-            if not records:
-                break
-            for r in records:
-                fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
-                slp_did = str(fmap.get("dealer-id") or "").strip()
-                if slp_did in missing_dids and slp_did not in slp_did_to_acct:
-                    rels  = r.get("relationships", {})
-                    accts = rels.get("account", [])
-                    if accts:
-                        a0  = accts[0]
-                        aid = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
-                        slp_did_to_acct[slp_did] = aid
-                        slp_did_to_rec[slp_did]  = (r, fmap)
-            total = int(page.get("meta", {}).get("total", 0))
-            offset += len(records)
-            if offset >= total or len(slp_did_to_acct) >= len(missing_dids):
-                break
-
-        # Fetch names for newly found accounts
-        new_acct_ids = list(set(slp_did_to_acct.values()))
-        acct_names: dict = {}
-        for aid in new_acct_ids:
-            try:
-                ad = await ac_get(f"accounts/{aid}")
-                acct_names[aid] = ad.get("account", {}).get("name", "")
-            except Exception:
-                acct_names[aid] = ""
-
     for did in dealer_ids:
-        # Phase 1: try CF18 index
-        entry     = _dealer_id_index.get(did)
-        acct_id   = str(entry["id"])    if entry else None
-        acct_name = entry.get("name", "") if entry else ""
-
-        # Phase 2: fall back to SLP dealer-id scan
-        via_slp_scan = False
-        if not acct_id and did in slp_did_to_acct:
-            acct_id      = slp_did_to_acct[did]
-            acct_name    = acct_names.get(acct_id, "")
-            via_slp_scan = True
-
-        if not acct_id:
-            not_found.append(did)
-            continue
-
-        if via_slp_scan:
-            # Use the SLP record we already found — skip platform filter since
-            # platform may be unset on these records
-            r, fmap = slp_did_to_rec[did]
+        slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
+                                 {"filters[fields.dealer-id]": did, "limit": 10})
+        found_any = False
+        for r in slp_data.get("records", []):
+            fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
+            if "optimus" not in (fmap.get("channel") or "").lower():
+                continue
+            found_any = True
+            accts = r.get("relationships", {}).get("account", [])
+            acct_id = str(accts[0]) if accts else None
             rows.append({
                 "record_id":      r["id"],
                 "account_id":     acct_id,
                 "dealer_id":      did,
-                "account_name":   acct_name,
+                "account_name":   fmap.get("name", ""),
                 "current_status": fmap.get("slp-status-detail", ""),
-                "channel":        fmap.get("channel", "OPTIMUS"),
+                "channel":        fmap.get("channel", ""),
             })
-        else:
-            # Fetch OPTIMUS SLPs for this account (CF18-indexed path)
-            slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
-                                    {"filters[relationships.account]": acct_id, "limit": 50})
-            found_any = False
-            for r in slp_data.get("records", []):
-                fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
-                if "optimus" not in (fmap.get("channel") or "").lower():
-                    continue
-                found_any = True
-                rows.append({
-                    "record_id":      r["id"],
-                    "account_id":     acct_id,
-                    "dealer_id":      did,
-                    "account_name":   acct_name,
-                    "current_status": fmap.get("slp-status-detail", ""),
-                    "channel":        fmap.get("channel", ""),
-                })
-            if not found_any:
-                not_found.append(did)
+        if not found_any:
+            not_found.append(did)
 
     return {"preview": rows, "not_found": not_found, "dealer_ids_parsed": dealer_ids}
 
@@ -8060,7 +7995,11 @@ async def optimus_deactivate_confirm(
 
 @app.post("/api/admin/optimus-reactivate/preview")
 async def optimus_reactivate_preview(body: dict = Body(...), user=Depends(require_auth)):
-    """Same lookup as deactivation preview but returns all non-activated OPTIMUS SLPs."""
+    """
+    Same lookup as deactivation preview: look up each dealer's OPTIMUS SLP
+    directly by its own dealer-id field. SLP-only — no dependency on any
+    Account custom field.
+    """
     text = body.get("text", "")
     raw_ids = _re.findall(r'\b(\d{4,6})\b', text)
     dealer_ids = list(dict.fromkeys(raw_ids))
@@ -8068,60 +8007,23 @@ async def optimus_reactivate_preview(body: dict = Body(...), user=Depends(requir
     rows, not_found = [], []
 
     for did in dealer_ids:
-        entry   = _dealer_id_index.get(did)
-        acct_id = str(entry["id"]) if entry else None
-        acct_name = entry.get("name", "") if entry else ""
-
-        if not acct_id:
-            slp_fallback = await ac_get(f"customObjects/records/{SLP_SCHEMA}", {"filters[dealer-id]": did, "limit": 10})
-            for r in slp_fallback.get("records", []):
-                accts = r.get("relationships", {}).get("account", [])
-                if accts:
-                    a0 = accts[0]
-                    acct_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
-                    try:
-                        ad = await ac_get(f"accounts/{acct_id}")
-                        acct_name = ad.get("account", {}).get("name", "")
-                    except Exception:
-                        acct_name = ""
-                    break
-
-        if not acct_id:
-            # Scan all SLP records for this dealer-id
-            all_slps = await ac_get_all(f"customObjects/records/{SLP_SCHEMA}", "records", {"limit": 100})
-            for r in all_slps:
-                fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
-                if str(fmap.get("dealer-id", "")).strip() == did:
-                    accts = r.get("relationships", {}).get("account", [])
-                    if accts:
-                        a0 = accts[0]
-                        acct_id = str(a0) if isinstance(a0, (int, str)) else str(a0.get("id", ""))
-                        try:
-                            ad = await ac_get(f"accounts/{acct_id}")
-                            acct_name = ad.get("account", {}).get("name", "")
-                        except Exception:
-                            acct_name = ""
-                    break
-
-        if not acct_id:
-            not_found.append(did)
-            continue
-
-        slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}", {"filters[relationships.account]": acct_id, "limit": 50})
+        slp_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
+                                 {"filters[fields.dealer-id]": did, "limit": 10})
         found_any = False
         for r in slp_data.get("records", []):
             fmap = {f["id"]: f.get("value", "") for f in r.get("fields", [])}
             if "optimus" not in (fmap.get("channel") or "").lower():
                 continue
             found_any = True
+            accts = r.get("relationships", {}).get("account", [])
+            acct_id = str(accts[0]) if accts else None
             rows.append({
                 "record_id":      r["id"],
                 "account_id":     acct_id,
                 "dealer_id":      did,
-                "account_name":   acct_name,
+                "account_name":   fmap.get("name", ""),
                 "current_status": fmap.get("slp-status-detail", ""),
                 "channel":        fmap.get("channel", ""),
-                "fields":         fmap,
             })
         if not found_any:
             not_found.append(did)
