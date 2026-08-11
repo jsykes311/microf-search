@@ -8025,31 +8025,8 @@ async def optimus_deactivate_confirm(
             data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
             results["updated"].append(rec_id)
 
-            # If no remaining Contractor Activated SLPs, set Account Status = Deactivated
-            for acct_id in acct_ids:
-                try:
-                    all_slps = await ac_get(
-                        f"customObjects/records/{SLP_SCHEMA}",
-                        {"filters[relationships.account]": acct_id},
-                    )
-                    still_active = any(
-                        f.get("value", "") == "Contractor Activated"
-                        for r in all_slps.get("records", [])
-                        for f in r.get("fields", [])
-                        if f.get("id") == "slp-status-detail"
-                    )
-                    if not still_active:
-                        await ac_post(
-                            f"accounts/{acct_id}/accountCustomFieldData",
-                            {"accountCustomFieldData": [
-                                {"customerAccountFieldId": 19, "fieldValue": "Deactivated"}
-                            ]},
-                        )
-                        results.setdefault("account_status_updated", []).append(acct_id)
-                except Exception as ae:
-                    print(f"[optimus-deactivate] account status update failed for {acct_id}: {ae}")
-
-            # Post Account Activity note (once per account)
+            # Post Account Activity note (once per account) — audit trail only,
+            # deliberately does not touch the Account's own custom fields.
             if body.email_text:
                 for acct_id in acct_ids:
                     if acct_id in noted_accounts:
@@ -8062,7 +8039,7 @@ async def optimus_deactivate_confirm(
                                 {"id": "subject",        "value": "GreenSky OPTIMUS Deactivation Notice"},
                                 {"id": "body",           "value": body.email_text},
                                 {"id": "activity-date",  "value": today_str},
-                                {"id": "performed-by",   "value": performed_by},
+                                {"id": "performed-by-1", "value": performed_by},
                                 {"id": "source",         "value": "Microf Reports"},
                             ],
                             "relationships": {"account": [acct_id]},
@@ -8164,7 +8141,7 @@ async def optimus_reactivate_confirm(
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S-05:00")
     today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     performed_by = _get_session_email(request) or admin or "Microf Reports"
-    results = {"updated": [], "failed": [], "notes": [], "account_status_updated": []}
+    results = {"updated": [], "failed": [], "notes": []}
 
     for rec_id in body.record_ids:
         try:
@@ -8197,29 +8174,8 @@ async def optimus_reactivate_confirm(
             data = await ac_post(f"customObjects/records/{SLP_SCHEMA}/{rec_id}", payload)
             results["updated"].append(rec_id)
 
-            # Update account status if this is the only active SLP
-            if acct_id:
-                try:
-                    all_acct_slps = await ac_get(f"customObjects/records/{SLP_SCHEMA}",
-                                                 {"filters[relationships.account]": acct_id, "limit": 50})
-                    other_active = [
-                        r for r in all_acct_slps.get("records", [])
-                        if r["id"] != rec_id and
-                        any(f["id"] == "slp-status-detail" and f.get("value") == "Contractor Activated"
-                            for f in r.get("fields", []))
-                    ]
-                    if not other_active:
-                        await ac_post(
-                            f"accounts/{acct_id}/accountCustomFieldData",
-                            {"accountCustomFieldData": [
-                                {"customerAccountFieldId": 19, "fieldValue": "Contractor"}
-                            ]},
-                        )
-                        results["account_status_updated"].append(acct_id)
-                except Exception as ae:
-                    print(f"[optimus-reactivate] account status update failed for {acct_id}: {ae}")
-
-            # Post Account Activity note
+            # Post Account Activity note — audit trail only, deliberately does
+            # not touch the Account's own custom fields.
             if body.email_text and acct_id:
                 try:
                     note_payload = {
@@ -8229,7 +8185,7 @@ async def optimus_reactivate_confirm(
                                 {"id": "subject",        "value": "EGIA OPTIMUS Reactivation Notice"},
                                 {"id": "body",           "value": body.email_text},
                                 {"id": "activity-date",  "value": today_date},
-                                {"id": "performed-by",   "value": performed_by},
+                                {"id": "performed-by-1", "value": performed_by},
                                 {"id": "source",         "value": "Microf Reports"},
                             ],
                             "relationships": {"account": [int(acct_id)]}
