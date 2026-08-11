@@ -7880,7 +7880,7 @@ class _DeactivateConfirmIn(_BaseModel):
     email_text: str = ""  # Original email body to log as Account Activity note
 
 @app.post("/api/admin/optimus-deactivate/preview")
-async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_require_admin)):
+async def optimus_deactivate_preview(body: dict = Body(...), user=Depends(require_auth)):
     """
     Parse a GreenSky deactivation email body, find each dealer's OPTIMUS SLP,
     and return a preview list without making any changes.
@@ -7991,7 +7991,7 @@ async def optimus_deactivate_preview(body: dict = Body(...), admin=Depends(_requ
 async def optimus_deactivate_confirm(
     body: _DeactivateConfirmIn,
     request: _Request,
-    admin=Depends(_require_admin),
+    user=Depends(require_auth),
 ):
     """
     Set slp-status-detail = Deactivated on the given SLP record IDs.
@@ -8000,7 +8000,7 @@ async def optimus_deactivate_confirm(
     """
     SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
     results = {"updated": [], "failed": [], "notes": []}
-    performed_by = _get_session_email(request) or admin or "Microf Reports"
+    performed_by = _get_session_email(request) or user or "Microf Reports"
     today_str = datetime.now().strftime("%Y-%m-%d")
     noted_accounts: set = set()  # track which accounts already got a note
 
@@ -8059,7 +8059,7 @@ async def optimus_deactivate_confirm(
 # ── OPTIMUS Reactivation ──────────────────────────────────────────────────────
 
 @app.post("/api/admin/optimus-reactivate/preview")
-async def optimus_reactivate_preview(body: dict = Body(...), admin=Depends(_require_admin)):
+async def optimus_reactivate_preview(body: dict = Body(...), user=Depends(require_auth)):
     """Same lookup as deactivation preview but returns all non-activated OPTIMUS SLPs."""
     text = body.get("text", "")
     raw_ids = _re.findall(r'\b(\d{4,6})\b', text)
@@ -8133,14 +8133,14 @@ async def optimus_reactivate_preview(body: dict = Body(...), admin=Depends(_requ
 async def optimus_reactivate_confirm(
     body: _DeactivateConfirmIn,
     request: _Request,
-    admin=Depends(_require_admin),
+    user=Depends(require_auth),
 ):
     """Set each SLP to Contractor Activated, set contractor-activated-date to today,
     update account status if this was the only SLP, and log an Account Activity note."""
     SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
     today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S-05:00")
     today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    performed_by = _get_session_email(request) or admin or "Microf Reports"
+    performed_by = _get_session_email(request) or user or "Microf Reports"
     results = {"updated": [], "failed": [], "notes": []}
 
     for rec_id in body.record_ids:
