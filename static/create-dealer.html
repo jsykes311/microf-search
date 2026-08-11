@@ -97,7 +97,8 @@ main{max-width:820px;margin:0 auto;padding:24px 20px 60px}
     <div class="help-body" id="help-body">
       <p>Creates the full record set a normal warehouse/dealer.microf.com push would create — Account, Contact(s), and SLP — for one-off cases where that pipeline is down or a dealer needs to be entered by hand.</p>
       <ul>
-        <li>Fill in the required fields (marked <span class="req">*</span>), then click <b>Check for Conflicts</b>.</li>
+        <li>Paste the dealer info email and click <b>Parse &amp; Fill Form</b> — it fills in everything it can find. Business Name and Channel are never in that email, so add those yourself.</li>
+        <li>Review every field it filled in (nothing is created until you click Create) — then click <b>Check for Conflicts</b>.</li>
         <li>If a dealer_id already has an SLP, creation is blocked — that's a real duplicate, not a false alarm. Matching account names or contact emails are shown as warnings, not blockers, since they're common (e.g. re-enrolling under a new channel).</li>
         <li>Leave <b>Assigned BDR</b> blank to auto-apply the standard rule: <code>House</code> for Microf Direct, <code>Partner</code> for every other channel.</li>
         <li>If Business Manager is the same person as Owner, leave that box checked — only one contact gets created.</li>
@@ -107,7 +108,17 @@ main{max-width:820px;margin:0 auto;padding:24px 20px 60px}
   </div>
 
   <div class="card">
-    <div class="card-title"><span class="step-badge">1</span> Dealer &amp; Business Info</div>
+    <div class="card-title"><span class="step-badge">1</span> Paste Dealer Email <span class="card-sub">optional — fills in the fields below for you to review</span></div>
+    <textarea id="f-paste" rows="9" placeholder="Dealer ID: 17760&#10;Years in business: 1&#10;Months in business: 4&#10;Owner name: LaKisha HaleEarle&#10;Owner email: LeeEarle@onehourcolumbus.com&#10;Owner phone: 7069879798&#10;Business manager name: HaleEarle LaKisha&#10;Business manager email: LeeEarle@onehourcolumbus.com&#10;Business manager phone: 7099879798" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:.82rem;font-family:inherit;resize:vertical"></textarea>
+    <div class="btn-row">
+      <button class="btn" onclick="parseEmail()" id="parse-btn">Parse &amp; Fill Form</button>
+    </div>
+    <div class="status-msg" id="parse-status"></div>
+    <div class="status-msg warn" id="parse-note" style="display:none"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="step-badge">2</span> Dealer &amp; Business Info <span class="card-sub">Business Name and Channel are never in the pasted email — fill these in yourself</span></div>
     <div class="field-grid cols-3">
       <div class="field"><label>Dealer ID <span class="req">*</span></label><input id="f-dealer-id" placeholder="17770"/></div>
       <div class="field span-2"><label>Business Name <span class="req">*</span></label><input id="f-business-name" placeholder="Arctic Air 2.0"/></div>
@@ -196,6 +207,72 @@ async function loadOptions(){
 }
 loadOptions();
 
+let pendingExtraNote = '';
+
+async function parseEmail(){
+  const text = document.getElementById('f-paste').value;
+  const statusEl = document.getElementById('parse-status');
+  const noteEl = document.getElementById('parse-note');
+  const btn = document.getElementById('parse-btn');
+  noteEl.style.display = 'none';
+  pendingExtraNote = '';
+
+  if(!text.trim()){
+    statusEl.className = 'status-msg err';
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Paste the dealer email text first.';
+    return;
+  }
+
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Parsing…';
+  statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/create-dealer/parse-email', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({text})
+    });
+    const data = await res.json();
+    if(!res.ok){
+      statusEl.className = 'status-msg err';
+      statusEl.style.display = 'block';
+      statusEl.textContent = data.detail || 'Could not parse that text.';
+      return;
+    }
+
+    document.getElementById('f-dealer-id').value = data.dealer_id || '';
+    document.getElementById('f-years').value = data.years_in_business || '';
+    document.getElementById('f-months').value = data.months_in_business || '';
+    document.getElementById('f-owner-first').value = data.owner_first || '';
+    document.getElementById('f-owner-last').value = data.owner_last || '';
+    document.getElementById('f-owner-email').value = data.owner_email || '';
+    document.getElementById('f-owner-phone').value = data.owner_phone || '';
+
+    document.getElementById('f-manager-same').checked = !!data.manager_same_as_owner;
+    document.getElementById('f-manager-first').value = data.manager_first || '';
+    document.getElementById('f-manager-last').value = data.manager_last || '';
+    document.getElementById('f-manager-email').value = data.manager_email || '';
+    document.getElementById('f-manager-phone').value = data.manager_phone || '';
+    toggleManagerFields();
+
+    if(data.phone_mismatch_note){
+      pendingExtraNote = data.phone_mismatch_note;
+      noteEl.style.display = 'block';
+      noteEl.innerHTML = `⚠ ${esc(data.phone_mismatch_note)} This has been queued to go on the Account note automatically.`;
+    }
+
+    statusEl.className = 'status-msg ok';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = 'Parsed — review the fields below, then fill in <b>Business Name</b> and <b>Channel</b> (never included in the email) before checking for conflicts.';
+    document.getElementById('f-business-name').focus();
+  } catch(e){
+    statusEl.className = 'status-msg err';
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Parse failed: ' + (e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Parse & Fill Form';
+  }
+}
+
 function collectBody(){
   return {
     dealer_id: document.getElementById('f-dealer-id').value.trim(),
@@ -218,6 +295,7 @@ function collectBody(){
     manager_phone: document.getElementById('f-manager-phone').value.trim(),
     reason: document.getElementById('f-reason').value.trim(),
     tag: document.getElementById('f-tag').value.trim(),
+    extra_note: pendingExtraNote,
   };
 }
 

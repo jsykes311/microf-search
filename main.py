@@ -9062,6 +9062,89 @@ async def tag_dealers_job_status(job_id: str, user=Depends(require_auth)):
 
 _MANUAL_DEALER_DEFAULT_TAG = "Manually-Created-ETL-Down"
 
+_EMAIL_FIELD_LABELS = {
+    "dealerid":             "dealer_id",
+    "yearsinbusiness":      "years_in_business",
+    "monthsinbusiness":     "months_in_business",
+    "ownername":            "owner_name",
+    "owneremail":           "owner_email",
+    "ownerphone":           "owner_phone",
+    "businessmanagername":  "manager_name",
+    "businessmanageremail": "manager_email",
+    "businessmanagerphone": "manager_phone",
+    "managername":          "manager_name",
+    "manageremail":         "manager_email",
+    "managerphone":         "manager_phone",
+}
+
+
+def _split_name(full: str) -> tuple:
+    parts = full.strip().split(None, 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    if len(parts) == 1:
+        return parts[0], ""
+    return "", ""
+
+
+def _parse_dealer_email(text: str) -> dict:
+    """Parse a 'Label: Value' per-line dealer-info email (the format the
+    warehouse/team has been pasting) into the Create Dealer form's fields."""
+    raw: dict = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        label, _, value = line.partition(":")
+        key = _norm_header(label)
+        if key in _EMAIL_FIELD_LABELS:
+            raw[_EMAIL_FIELD_LABELS[key]] = value.strip()
+
+    owner_first, owner_last = _split_name(raw.get("owner_name", ""))
+    manager_first, manager_last = _split_name(raw.get("manager_name", ""))
+
+    owner_email = raw.get("owner_email", "")
+    manager_email = raw.get("manager_email", "")
+    same_person = bool(owner_email) and owner_email.strip().lower() == manager_email.strip().lower()
+
+    owner_phone = raw.get("owner_phone", "")
+    manager_phone = raw.get("manager_phone", "")
+    phone_mismatch_note = None
+    if same_person and owner_phone and manager_phone and owner_phone.strip() != manager_phone.strip():
+        phone_mismatch_note = (
+            f"Owner phone as given: {owner_phone}; Business Manager phone as given: {manager_phone} "
+            f"(numbers differ in the source email — kept both here rather than assuming a typo; "
+            f"contact record uses the Owner's number)."
+        )
+
+    return {
+        "dealer_id":            raw.get("dealer_id", ""),
+        "years_in_business":    raw.get("years_in_business", ""),
+        "months_in_business":   raw.get("months_in_business", ""),
+        "owner_first":          owner_first,
+        "owner_last":           owner_last,
+        "owner_email":          owner_email,
+        "owner_phone":          owner_phone,
+        "manager_first":        manager_first,
+        "manager_last":         manager_last,
+        "manager_email":        manager_email,
+        "manager_phone":        manager_phone,
+        "manager_same_as_owner": same_person,
+        "phone_mismatch_note":  phone_mismatch_note,
+    }
+
+
+class _ParseEmailIn(_BaseModel):
+    text: str
+
+
+@app.post("/api/create-dealer/parse-email")
+async def create_dealer_parse_email(body: _ParseEmailIn, admin=Depends(_require_admin)):
+    parsed = _parse_dealer_email(body.text)
+    if not parsed["dealer_id"]:
+        raise HTTPException(status_code=400,
+                             detail="Couldn't find a \"Dealer ID:\" line in the pasted text")
+    return parsed
+
 
 class _ManualDealerIn(_BaseModel):
     dealer_id: str
@@ -9084,6 +9167,7 @@ class _ManualDealerIn(_BaseModel):
     manager_phone: str = ""
     reason: str = "Manually created — warehouse ETL was down"
     tag: str = _MANUAL_DEALER_DEFAULT_TAG
+    extra_note: str = ""   # e.g. a phone-mismatch caveat surfaced by the email parser
 
 
 def _resolve_manual_bdr(channel: str, assigned_bdr: str) -> str:
@@ -9178,10 +9262,11 @@ async def create_dealer_execute(body: _ManualDealerIn, admin=Depends(_require_ad
             cf_errors.append(f"cf {cf_id}: {e}")
 
     months_note = f" Months in business: {body.months_in_business.strip()}." if body.months_in_business.strip() else ""
+    extra_note  = f" {body.extra_note.strip()}" if body.extra_note.strip() else ""
     note_text = (
         f"{body.reason.strip()}. Dealer ID {did}, Channel {body.channel}. "
         f"Owner: {body.owner_first.strip()} {body.owner_last.strip()} "
-        f"({body.owner_email.strip()}, {body.owner_phone.strip()}).{months_note} "
+        f"({body.owner_email.strip()}, {body.owner_phone.strip()}).{months_note}{extra_note} "
         f"If the source system later pushes a duplicate for this dealer, reconcile against this account."
     )
     try:
