@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Create Dealer — Microf</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans', Arial, sans-serif;background:#f3f2f1;color:#323130;min-height:100vh}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.apps-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn{margin-left:auto;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn:hover{background:rgba(255,255,255,.18)}
+main{max-width:820px;margin:0 auto;padding:24px 20px 60px}
+
+.help-card{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin-bottom:20px;overflow:hidden}
+.help-toggle{width:100%;text-align:left;background:none;border:none;padding:14px 18px;font-size:.86rem;font-weight:700;color:#1e40af;cursor:pointer;display:flex;align-items:center;justify-content:space-between;font-family:inherit}
+.help-toggle .chev{transition:transform .15s}
+.help-toggle.open .chev{transform:rotate(90deg)}
+.help-body{display:none;padding:0 18px 16px;font-size:.82rem;color:#1e3a5f;line-height:1.55}
+.help-body.open{display:block}
+.help-body ul{margin:6px 0 0 20px}
+.help-body li{margin-bottom:3px}
+.help-body code{background:#dbeafe;padding:1px 5px;border-radius:4px;font-size:.78rem}
+
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:.9rem;font-weight:700;color:#1e3a5f;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.card-sub{font-weight:400;color:#6b7280;font-size:.8rem}
+.step-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0}
+
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px}
+@media (max-width:640px){.field-grid{grid-template-columns:1fr}}
+.field-grid.cols-3{grid-template-columns:1fr 1fr 1fr}
+@media (max-width:640px){.field-grid.cols-3{grid-template-columns:1fr}}
+.field{display:flex;flex-direction:column}
+.field.span-2{grid-column:span 2}
+@media (max-width:640px){.field.span-2{grid-column:span 1}}
+.field label{font-size:.78rem;font-weight:600;color:#374151;margin-bottom:5px}
+.field .req{color:#b91c1c}
+.field input,.field select{padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem;font-family:inherit}
+.field input:focus,.field select:focus{outline:none;border-color:#1e3a5f}
+.field .hint{font-size:.72rem;color:#9ca3af;margin-top:3px}
+
+.section-divider{display:flex;align-items:center;gap:10px;margin:22px 0 14px}
+.section-divider .line{flex:1;height:1px;background:#e5e7eb}
+.section-divider .label{font-size:.78rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em}
+
+.checkbox-row{display:flex;align-items:center;gap:8px;margin:12px 0}
+.checkbox-row input{width:16px;height:16px}
+.checkbox-row label{font-size:.83rem;color:#374151;cursor:pointer}
+
+.btn{padding:9px 18px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:#162d4a}
+.btn:disabled{background:#9ca3af;cursor:not-allowed}
+.btn-row{display:flex;gap:10px;margin-top:18px;align-items:center}
+.btn-danger{background:#b91c1c}
+.btn-danger:hover{background:#991b1b}
+
+.status-msg{margin-top:14px;padding:10px 14px;border-radius:6px;font-size:.83rem;display:none}
+.status-msg.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+.status-msg.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+.status-msg.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+.status-msg.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+.status-msg ul{margin:6px 0 0 18px}
+
+.result-card{display:none;margin-top:16px;padding:16px 18px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px}
+.result-card h3{font-size:.88rem;color:#166534;margin-bottom:10px}
+.result-row{display:flex;justify-content:space-between;padding:5px 0;font-size:.83rem;border-bottom:1px solid #dcfce7}
+.result-row:last-child{border-bottom:none}
+.result-row .lbl{color:#374151;font-weight:600}
+.result-row a{color:#166534;font-weight:600}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>➕ Create Dealer</h1>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;"><a class="back-btn" href="#" onclick="history.back();return false;">← Back</a><a class="apps-btn" href="/">⬡ Apps</a></div>
+</header>
+
+<main>
+
+  <div class="help-card">
+    <button class="help-toggle" id="help-toggle" onclick="toggleHelp()">
+      <span>❓ How to use this</span>
+      <span class="chev">›</span>
+    </button>
+    <div class="help-body" id="help-body">
+      <p>Creates the full record set a normal warehouse/dealer.microf.com push would create — Account, Contact(s), and SLP — for one-off cases where that pipeline is down or a dealer needs to be entered by hand.</p>
+      <ul>
+        <li>Fill in the required fields (marked <span class="req">*</span>), then click <b>Check for Conflicts</b>.</li>
+        <li>If a dealer_id already has an SLP, creation is blocked — that's a real duplicate, not a false alarm. Matching account names or contact emails are shown as warnings, not blockers, since they're common (e.g. re-enrolling under a new channel).</li>
+        <li>Leave <b>Assigned BDR</b> blank to auto-apply the standard rule: <code>House</code> for Microf Direct, <code>Partner</code> for every other channel.</li>
+        <li>If Business Manager is the same person as Owner, leave that box checked — only one contact gets created.</li>
+        <li>Every dealer created here gets a note on the Account and a tag on the Contact (default <code>Manually-Created-ETL-Down</code>) so these are easy to find as a group and reconcile if the source system later creates a duplicate.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="step-badge">1</span> Dealer &amp; Business Info</div>
+    <div class="field-grid cols-3">
+      <div class="field"><label>Dealer ID <span class="req">*</span></label><input id="f-dealer-id" placeholder="17770"/></div>
+      <div class="field span-2"><label>Business Name <span class="req">*</span></label><input id="f-business-name" placeholder="Arctic Air 2.0"/></div>
+      <div class="field"><label>Channel <span class="req">*</span></label><select id="f-channel"></select></div>
+      <div class="field"><label>Account Status</label><select id="f-account-status"></select></div>
+      <div class="field"><label>SLP Status</label><select id="f-slp-status"></select></div>
+      <div class="field"><label>Assigned BDR</label><select id="f-bdr"><option value="">Auto (House / Partner by channel)</option></select></div>
+      <div class="field"><label>Years in Business</label><input id="f-years" placeholder="4"/></div>
+      <div class="field"><label>Months in Business</label><input id="f-months" placeholder="5"/><div class="hint">No dedicated AC field — recorded in the account note</div></div>
+      <div class="field"><label>States (optional)</label><input id="f-states" placeholder="FL"/></div>
+    </div>
+
+    <div class="section-divider"><div class="line"></div><div class="label">Owner</div><div class="line"></div></div>
+    <div class="field-grid">
+      <div class="field"><label>First Name <span class="req">*</span></label><input id="f-owner-first"/></div>
+      <div class="field"><label>Last Name <span class="req">*</span></label><input id="f-owner-last"/></div>
+      <div class="field"><label>Email <span class="req">*</span></label><input id="f-owner-email" type="email"/></div>
+      <div class="field"><label>Phone</label><input id="f-owner-phone"/></div>
+    </div>
+
+    <div class="section-divider"><div class="line"></div><div class="label">Business Manager</div><div class="line"></div></div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="f-manager-same" checked onchange="toggleManagerFields()"/>
+      <label for="f-manager-same">Same person as Owner</label>
+    </div>
+    <div class="field-grid" id="manager-fields" style="display:none">
+      <div class="field"><label>First Name</label><input id="f-manager-first"/></div>
+      <div class="field"><label>Last Name</label><input id="f-manager-last"/></div>
+      <div class="field"><label>Email</label><input id="f-manager-email" type="email"/></div>
+      <div class="field"><label>Phone</label><input id="f-manager-phone"/></div>
+    </div>
+
+    <div class="section-divider"><div class="line"></div><div class="label">Reconciliation</div><div class="line"></div></div>
+    <div class="field-grid">
+      <div class="field span-2"><label>Reason (goes on the Account note)</label><input id="f-reason" value="Manually created — warehouse ETL was down"/></div>
+      <div class="field span-2"><label>Tag (applied to the Contact)</label><input id="f-tag" value="Manually-Created-ETL-Down"/></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="check-btn" onclick="checkConflicts()">Check for Conflicts</button>
+    </div>
+    <div class="status-msg" id="check-status"></div>
+
+    <div class="btn-row" id="create-row" style="display:none">
+      <button class="btn btn-danger" id="create-btn" onclick="createDealer()" disabled>Create Account + Contact(s) + SLP</button>
+    </div>
+    <div class="status-msg" id="create-status"></div>
+
+    <div class="result-card" id="result-card">
+      <h3>✅ Created</h3>
+      <div id="result-rows"></div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+function toggleHelp(){
+  document.getElementById('help-toggle').classList.toggle('open');
+  document.getElementById('help-body').classList.toggle('open');
+}
+function toggleManagerFields(){
+  const same = document.getElementById('f-manager-same').checked;
+  document.getElementById('manager-fields').style.display = same ? 'none' : 'grid';
+}
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+let checkedOnce = false;
+
+async function loadOptions(){
+  const res = await fetch('/api/create-dealer/filter-options');
+  const data = await res.json();
+
+  const chSel = document.getElementById('f-channel');
+  chSel.innerHTML = data.channels.map(c => `<option value="${esc(c)}"${c==='Microf Direct'?' selected':''}>${esc(c)}</option>`).join('');
+
+  const asSel = document.getElementById('f-account-status');
+  asSel.innerHTML = data.account_statuses.map(s => `<option value="${esc(s)}"${s==='Pre-Activation'?' selected':''}>${esc(s)}</option>`).join('');
+
+  const ssSel = document.getElementById('f-slp-status');
+  ssSel.innerHTML = data.statuses.map(s => `<option value="${esc(s)}"${s==='Pre-activation'?' selected':''}>${esc(s)}</option>`).join('');
+
+  const bdrSel = document.getElementById('f-bdr');
+  bdrSel.innerHTML = '<option value="">Auto (House / Partner by channel)</option>' +
+    data.bdrs.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('');
+}
+loadOptions();
+
+function collectBody(){
+  return {
+    dealer_id: document.getElementById('f-dealer-id').value.trim(),
+    business_name: document.getElementById('f-business-name').value.trim(),
+    channel: document.getElementById('f-channel').value,
+    account_status: document.getElementById('f-account-status').value,
+    slp_status: document.getElementById('f-slp-status').value,
+    assigned_bdr: document.getElementById('f-bdr').value,
+    years_in_business: document.getElementById('f-years').value.trim(),
+    months_in_business: document.getElementById('f-months').value.trim(),
+    states: document.getElementById('f-states').value.trim(),
+    owner_first: document.getElementById('f-owner-first').value.trim(),
+    owner_last: document.getElementById('f-owner-last').value.trim(),
+    owner_email: document.getElementById('f-owner-email').value.trim(),
+    owner_phone: document.getElementById('f-owner-phone').value.trim(),
+    manager_same_as_owner: document.getElementById('f-manager-same').checked,
+    manager_first: document.getElementById('f-manager-first').value.trim(),
+    manager_last: document.getElementById('f-manager-last').value.trim(),
+    manager_email: document.getElementById('f-manager-email').value.trim(),
+    manager_phone: document.getElementById('f-manager-phone').value.trim(),
+    reason: document.getElementById('f-reason').value.trim(),
+    tag: document.getElementById('f-tag').value.trim(),
+  };
+}
+
+function validateRequired(body){
+  const missing = [];
+  if(!body.dealer_id) missing.push('Dealer ID');
+  if(!body.business_name) missing.push('Business Name');
+  if(!body.owner_first) missing.push('Owner First Name');
+  if(!body.owner_last) missing.push('Owner Last Name');
+  if(!body.owner_email) missing.push('Owner Email');
+  if(!body.manager_same_as_owner){
+    if(!body.manager_email) missing.push('Business Manager Email');
+  }
+  return missing;
+}
+
+async function checkConflicts(){
+  const body = collectBody();
+  const missing = validateRequired(body);
+  const statusEl = document.getElementById('check-status');
+  if(missing.length){
+    statusEl.className = 'status-msg err';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = `Missing required fields: ${missing.map(esc).join(', ')}`;
+    return;
+  }
+
+  const btn = document.getElementById('check-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking…';
+  statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/create-dealer/check', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    checkedOnce = true;
+
+    const createRow = document.getElementById('create-row');
+    const createBtn = document.getElementById('create-btn');
+    createRow.style.display = 'flex';
+
+    if(data.blocking){
+      statusEl.className = 'status-msg err';
+      statusEl.innerHTML = `<b>Blocked — a real duplicate exists:</b><ul>${data.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`;
+      createBtn.disabled = true;
+    } else if(data.issues.length){
+      statusEl.className = 'status-msg warn';
+      statusEl.innerHTML = `<b>No blocking conflicts, but worth a look:</b><ul>${data.issues.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>Assigned BDR will be set to <b>${esc(data.resolved_bdr)}</b>.`;
+      createBtn.disabled = false;
+    } else {
+      statusEl.className = 'status-msg ok';
+      statusEl.innerHTML = `No conflicts found. Assigned BDR will be set to <b>${esc(data.resolved_bdr)}</b>.`;
+      createBtn.disabled = false;
+    }
+    statusEl.style.display = 'block';
+  } catch(e){
+    statusEl.className = 'status-msg err';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = 'Check failed: ' + esc(e.message || e);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Check for Conflicts';
+  }
+}
+
+async function createDealer(){
+  if(!checkedOnce) return;
+  const body = collectBody();
+  const btn = document.getElementById('create-btn');
+  const statusEl = document.getElementById('create-status');
+  if(!confirm(`Create Account "${body.business_name}" (dealer_id ${body.dealer_id}), Contact(s), and SLP in AC?`)) return;
+
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Creating…';
+  statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/create-dealer/execute', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if(!res.ok){
+      statusEl.className = 'status-msg err';
+      statusEl.style.display = 'block';
+      statusEl.textContent = data.detail || 'Creation failed';
+      btn.disabled = false; btn.textContent = 'Create Account + Contact(s) + SLP';
+      return;
+    }
+
+    let rows = `
+      <div class="result-row"><span class="lbl">Account</span><a href="${data.account_url}" target="_blank">${esc(data.account_id)}</a></div>
+      <div class="result-row"><span class="lbl">Owner Contact</span><a href="${data.owner_contact_url}" target="_blank">${esc(data.owner_contact_id)}</a></div>`;
+    if(data.manager_contact_id){
+      rows += `<div class="result-row"><span class="lbl">Manager Contact</span><a href="${data.manager_contact_url}" target="_blank">${esc(data.manager_contact_id)}</a></div>`;
+    }
+    rows += `
+      <div class="result-row"><span class="lbl">SLP Record</span><span>${esc(data.slp_id)}</span></div>
+      <div class="result-row"><span class="lbl">Assigned BDR</span><span>${esc(data.assigned_bdr)}</span></div>
+      <div class="result-row"><span class="lbl">Tag applied</span><span>${esc(data.tag)}</span></div>`;
+    if(data.cf_errors && data.cf_errors.length){
+      rows += `<div class="result-row"><span class="lbl">Warnings</span><span>${data.cf_errors.map(esc).join('; ')}</span></div>`;
+    }
+    document.getElementById('result-rows').innerHTML = rows;
+    document.getElementById('result-card').style.display = 'block';
+    document.getElementById('create-row').style.display = 'none';
+    btn.textContent = 'Create Account + Contact(s) + SLP';
+  } catch(e){
+    statusEl.className = 'status-msg err';
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Creation failed: ' + (e.message || e);
+    btn.disabled = false; btn.textContent = 'Create Account + Contact(s) + SLP';
+  }
+}
+</script>
+</body>
+</html>

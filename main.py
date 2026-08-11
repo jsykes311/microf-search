@@ -9051,6 +9051,197 @@ async def tag_dealers_job_status(job_id: str, user=Depends(require_auth)):
     return job
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MANUAL DEALER CREATE
+# For when the warehouse ETL to AC is down (or any other one-off need):
+# creates the Account + Contact(s) + SLP a normal warehouse push would have
+# created, with a note + tag documenting it so it's easy to find and
+# reconcile later if the source system pushes a duplicate for the same
+# dealer once it's back up.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_MANUAL_DEALER_DEFAULT_TAG = "Manually-Created-ETL-Down"
+
+
+class _ManualDealerIn(_BaseModel):
+    dealer_id: str
+    business_name: str
+    channel: str
+    account_status: str = "Pre-Activation"
+    slp_status: str = "Pre-activation"
+    assigned_bdr: str = ""   # blank = auto (House for Microf Direct, Partner otherwise)
+    years_in_business: str = ""
+    months_in_business: str = ""
+    states: str = ""
+    owner_first: str
+    owner_last: str
+    owner_email: str
+    owner_phone: str = ""
+    manager_same_as_owner: bool = True
+    manager_first: str = ""
+    manager_last: str = ""
+    manager_email: str = ""
+    manager_phone: str = ""
+    reason: str = "Manually created — warehouse ETL was down"
+    tag: str = _MANUAL_DEALER_DEFAULT_TAG
+
+
+def _resolve_manual_bdr(channel: str, assigned_bdr: str) -> str:
+    if assigned_bdr.strip():
+        return assigned_bdr.strip()
+    return "House" if channel.strip() == "Microf Direct" else "Partner"
+
+
+@app.get("/create-dealer")
+async def create_dealer_page(admin=Depends(_require_admin)):
+    return FileResponse("static/create-dealer.html")
+
+
+@app.get("/api/create-dealer/filter-options")
+async def create_dealer_filter_options(admin=Depends(_require_admin)):
+    _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
+    channels = [o["value"] for o in ftypes.get("channel", {}).get("options", [])]
+    bdrs = [o["value"] for o in ftypes.get("assigned-bdr", {}).get("options", [])]
+    return {
+        "channels":         channels,
+        "statuses":         _SLP_STATUSES,
+        "account_statuses": _TAG_ACCOUNT_STATUSES,
+        "bdrs":             bdrs,
+    }
+
+
+@app.post("/api/create-dealer/check")
+async def create_dealer_check(body: _ManualDealerIn, admin=Depends(_require_admin)):
+    did = body.dealer_id.strip()
+    biz = body.business_name.strip()
+    issues = []
+    blocking = False
+
+    slp_resp = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}",
+                             {"filters[fields.dealer-id]": did, "limit": 5})
+    existing_slps = slp_resp.get("records", [])
+    if existing_slps:
+        f = {x["id"]: x["value"] for x in existing_slps[0]["fields"]}
+        issues.append(f"An SLP already exists for dealer_id {did}: "
+                       f"\"{f.get('name','')}\" ({f.get('slp-status-detail','')}, {f.get('channel','')})")
+        blocking = True
+
+    acc_resp = await ac_get("accounts", {"search": biz, "limit": 20})
+    exact = [a for a in acc_resp.get("accounts", []) if (a.get("name") or "").strip().lower() == biz.lower()]
+    if exact:
+        issues.append(f"An account named exactly \"{biz}\" already exists (account id {exact[0]['id']})")
+
+    if body.owner_email.strip():
+        c_resp = await ac_get("contacts", {"email": body.owner_email.strip()})
+        if int(c_resp.get("meta", {}).get("total", 0) or 0) > 0:
+            issues.append(f"A contact with email {body.owner_email.strip()} already exists")
+
+    return {"ok": True, "issues": issues, "blocking": blocking,
+            "resolved_bdr": _resolve_manual_bdr(body.channel, body.assigned_bdr)}
+
+
+@app.post("/api/create-dealer/execute")
+async def create_dealer_execute(body: _ManualDealerIn, admin=Depends(_require_admin)):
+    did = body.dealer_id.strip()
+    biz = body.business_name.strip()
+    if not did or not biz:
+        raise HTTPException(status_code=400, detail="dealer_id and business_name are required")
+
+    # Re-check right before writing — someone else may have created it since the last check
+    slp_resp = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}",
+                             {"filters[fields.dealer-id]": did, "limit": 5})
+    if slp_resp.get("records"):
+        raise HTTPException(status_code=409,
+                             detail=f"An SLP for dealer_id {did} already exists — refresh and check again")
+
+    acc = await ac_post("accounts", {"account": {"name": biz}})
+    account_id = acc["account"]["id"]
+
+    cfs = {
+        "18": did, "36": biz, "19": body.account_status.strip(),
+        "72": body.owner_email.strip(), "110": body.owner_last.strip(), "111": body.owner_first.strip(),
+    }
+    if body.owner_phone.strip():
+        cfs["11"] = body.owner_phone.strip()
+        cfs["142"] = body.owner_phone.strip()
+    if body.years_in_business.strip():
+        cfs["88"] = body.years_in_business.strip()
+
+    cf_errors = []
+    for cf_id, val in cfs.items():
+        if not val:
+            continue
+        try:
+            await ac_post("accountCustomFieldData", {"accountCustomFieldDatum": {
+                "customFieldId": cf_id, "customerAccountId": account_id, "fieldValue": val}})
+        except Exception as e:
+            cf_errors.append(f"cf {cf_id}: {e}")
+
+    months_note = f" Months in business: {body.months_in_business.strip()}." if body.months_in_business.strip() else ""
+    note_text = (
+        f"{body.reason.strip()}. Dealer ID {did}, Channel {body.channel}. "
+        f"Owner: {body.owner_first.strip()} {body.owner_last.strip()} "
+        f"({body.owner_email.strip()}, {body.owner_phone.strip()}).{months_note} "
+        f"If the source system later pushes a duplicate for this dealer, reconcile against this account."
+    )
+    try:
+        await ac_post("notes", {"note": {"note": note_text, "relid": account_id,
+                                          "reltype": "CustomerAccount", "userid": "1"}})
+    except Exception as e:
+        cf_errors.append(f"note: {e}")
+
+    contact = await ac_post("contacts", {"contact": {
+        "email": body.owner_email.strip(), "firstName": body.owner_first.strip(),
+        "lastName": body.owner_last.strip(), "phone": body.owner_phone.strip()}})
+    owner_contact_id = contact["contact"]["id"]
+    await ac_post("accountContacts", {"accountContact": {"contact": owner_contact_id, "account": account_id}})
+
+    manager_contact_id = None
+    if not body.manager_same_as_owner and body.manager_email.strip():
+        mcontact = await ac_post("contacts", {"contact": {
+            "email": body.manager_email.strip(), "firstName": body.manager_first.strip(),
+            "lastName": body.manager_last.strip(), "phone": body.manager_phone.strip()}})
+        manager_contact_id = mcontact["contact"]["id"]
+        await ac_post("accountContacts", {"accountContact": {"contact": manager_contact_id, "account": account_id}})
+
+    tag_name = body.tag.strip() or _MANUAL_DEALER_DEFAULT_TAG
+    try:
+        tag_id = await _ensure_tag(tag_name)
+        await _tag_contact(owner_contact_id, tag_id)
+        if manager_contact_id:
+            await _tag_contact(manager_contact_id, tag_id)
+    except Exception as e:
+        cf_errors.append(f"tag: {e}")
+
+    bdr = _resolve_manual_bdr(body.channel, body.assigned_bdr)
+    slp_fields = [
+        {"id": "dealer-id", "value": did},
+        {"id": "name", "value": biz},
+        {"id": "channel", "value": body.channel},
+        {"id": "slp-status-detail", "value": body.slp_status.strip()},
+        {"id": "assigned-bdr", "value": bdr},
+    ]
+    if body.states.strip():
+        slp_fields.append({"id": "doing-business-in-states", "value": body.states.strip()})
+    slp_resp = await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", {
+        "record": {"schemaId": SLP_SCHEMA_ID, "fields": slp_fields, "relationships": {"account": [account_id]}}})
+    slp_id = slp_resp.get("record", {}).get("id") or slp_resp.get("id")
+
+    return {
+        "ok":                 True,
+        "account_id":         account_id,
+        "account_url":        ac_account_url(account_id),
+        "owner_contact_id":   owner_contact_id,
+        "owner_contact_url":  ac_contact_url(owner_contact_id),
+        "manager_contact_id": manager_contact_id,
+        "manager_contact_url": ac_contact_url(manager_contact_id) if manager_contact_id else None,
+        "slp_id":             slp_id,
+        "assigned_bdr":       bdr,
+        "tag":                tag_name,
+        "cf_errors":          cf_errors,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Webhook: deal-created → append row to SharePoint Excel
 # ─────────────────────────────────────────────────────────────────────────────
