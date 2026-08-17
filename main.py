@@ -9164,6 +9164,9 @@ async def create_dealer_execute(body: _ManualDealerIn, admin=Depends(_require_ad
         {"id": "channel", "value": body.channel},
         {"id": "slp-status-detail", "value": body.slp_status.strip()},
         {"id": "assigned-bdr", "value": bdr},
+        # Without this, records with no contractor-activated-date either are invisible
+        # to the Enrollment Report / Onboarding Live's default date-filtered views.
+        {"id": "enrollment-request-date", "value": date.today().isoformat()},
     ]
     if body.states.strip():
         slp_fields.append({"id": "doing-business-in-states", "value": body.states.strip()})
