@@ -9650,7 +9650,7 @@ async def webhook_deal_created(request: _Request, background_tasks: BackgroundTa
 # Careers: job application form (microf.com WordPress site) → email
 # ─────────────────────────────────────────────────────────────────────────────
 
-_CAREERS_EMAIL = os.getenv("CAREERS_EMAIL", "jsykes@microf.com")   # test address until go-live
+_CAREERS_EMAIL = os.getenv("CAREERS_EMAIL", "akava@microf.com")
 _CAREERS_MAX_RESUME_BYTES = 5 * 1024 * 1024   # 5MB, matches the form's own stated limit
 _CAREERS_ALLOWED_EXTS = {".pdf", ".doc", ".docx"}
 
