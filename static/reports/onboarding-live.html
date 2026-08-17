@@ -182,6 +182,16 @@
       <label>Search</label>
       <input type="text" id="search-box" placeholder="Dealer name, ID, or account…" oninput="applySearch()"/>
     </div>
+    <div class="filter-group">
+      <label>Sort By</label>
+      <select id="sort-preset" onchange="applySortPreset(this.value)">
+        <option value="">Default</option>
+        <option value="date_asc">Date: Oldest to Newest</option>
+        <option value="date_desc">Date: Newest to Oldest</option>
+        <option value="dealerid_asc">Dealer ID: Low to High</option>
+        <option value="dealerid_desc">Dealer ID: High to Low</option>
+      </select>
+    </div>
     <div class="filter-group" style="justify-content:flex-end;">
       <button class="back-btn" style="background:#23A455;color:#fff;" onclick="poll()">Apply</button>
     </div>
@@ -343,6 +353,13 @@ function daysInStatusCell(r) {
 let currentSlpRecords = [];  // currently displayed set (after search + sort) — used for CSV export
 let allFetchedRecords = [];  // full set from the server (after date/channel/BDR/status filters), pre-search
 let slpSortCol = null, slpSortAsc = true;
+let slpSortPreset = '';
+
+function applySortPreset(mode) {
+  slpSortPreset = mode;
+  slpSortCol = null;   // preset takes over from any column-click sort
+  renderSlpTable(allFetchedRecords);
+}
 
 function applySearch() {
   renderSlpTable(allFetchedRecords);
@@ -370,6 +387,9 @@ function exportCsv() {
 }
 
 function sortSlpBy(col) {
+  slpSortPreset = '';
+  const presetEl = document.getElementById('sort-preset');
+  if (presetEl) presetEl.value = '';
   if (slpSortCol === col) { slpSortAsc = !slpSortAsc; } else { slpSortCol = col; slpSortAsc = true; }
   renderSlpTable(allFetchedRecords);
 }
@@ -387,7 +407,25 @@ function renderSlpTable(records) {
     ? `${filtered.length.toLocaleString()} of ${records.length.toLocaleString()} records`
     : `${records.length.toLocaleString()} records`;
   let sorted = filtered;
-  if (slpSortCol) {
+  if (slpSortPreset === 'date_asc' || slpSortPreset === 'date_desc') {
+    const effDate = r => r.contractor_activated_date || r.enrollment_request_date || '';
+    sorted = [...filtered].sort((a, b) => {
+      const da = effDate(a), db = effDate(b);
+      if (!da && !db) return 0;
+      if (!da) return 1;   // records with no date at all always sort last
+      if (!db) return -1;
+      return slpSortPreset === 'date_asc' ? da.localeCompare(db) : db.localeCompare(da);
+    });
+  } else if (slpSortPreset === 'dealerid_asc' || slpSortPreset === 'dealerid_desc') {
+    const dealerNum = r => {
+      const n = parseInt(String(r.dealer_id || '').replace(/\D/g, ''), 10);
+      return isNaN(n) ? -Infinity : n;
+    };
+    sorted = [...filtered].sort((a, b) => {
+      const diff = dealerNum(a) - dealerNum(b);
+      return slpSortPreset === 'dealerid_asc' ? diff : -diff;
+    });
+  } else if (slpSortCol) {
     sorted = [...filtered].sort((a, b) => {
       const av = String(a[slpSortCol] ?? ''), bv = String(b[slpSortCol] ?? '');
       return slpSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
