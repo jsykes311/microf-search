@@ -270,7 +270,8 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
                "/api/health", "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
                "/api/accounts/nearest", "/api/accounts/by-state",
-               "/webhook/deal-created", "/webhook/debug-sp", "/webhook/reset-sp-file"}
+               "/webhook/deal-created", "/webhook/debug-sp", "/webhook/reset-sp-file",
+               "/api/careers/apply"}
 
     async def dispatch(self, request: _Request, call_next):
         path = request.url.path
@@ -9643,6 +9644,75 @@ async def webhook_deal_created(request: _Request, background_tasks: BackgroundTa
         import traceback as _tb
         print(f"[webhook/deal-created] ✗ {e}\n{_tb.format_exc()}")
         return JSONResponse(status_code=200, content={"ok": False, "error": str(e)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Careers: job application form (microf.com WordPress site) → email
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CAREERS_EMAIL = os.getenv("CAREERS_EMAIL", "jsykes@microf.com")   # test address until go-live
+_CAREERS_MAX_RESUME_BYTES = 5 * 1024 * 1024   # 5MB, matches the form's own stated limit
+_CAREERS_ALLOWED_EXTS = {".pdf", ".doc", ".docx"}
+
+@app.post("/api/careers/apply")
+async def careers_apply(
+    applicant_name: str = Form(...),
+    applicant_email: str = Form(...),
+    applicant_phone: str = Form(""),
+    job_title: str = Form("General Application"),
+    cover_letter: str = Form(""),
+    resume: UploadFile = File(...),
+):
+    """Public endpoint the Microf careers WordPress form posts to (replaces
+    that theme's local wp_mail() call). Emails the application, with the
+    resume attached, to _CAREERS_EMAIL via the same SMTP setup used for
+    report emails."""
+    resume_bytes = await resume.read()
+    if len(resume_bytes) > _CAREERS_MAX_RESUME_BYTES:
+        raise HTTPException(status_code=400, detail="Resume exceeds 5MB limit")
+    ext = os.path.splitext(resume.filename or "")[1].lower()
+    if ext not in _CAREERS_ALLOWED_EXTS:
+        raise HTTPException(status_code=400, detail="Resume must be a PDF, DOC, or DOCX file")
+    if not applicant_name.strip() or not applicant_email.strip():
+        raise HTTPException(status_code=400, detail="Name and email are required")
+
+    subject = f"Job Application: {job_title} — {applicant_name}"
+    body_html = (
+        f"<p>New application received from the Microf Careers page.</p>"
+        f"<p><b>Position:</b> {job_title}<br>"
+        f"<b>Name:</b> {applicant_name}<br>"
+        f"<b>Email:</b> {applicant_email}<br>"
+        f"<b>Phone:</b> {applicant_phone or '—'}</p>"
+        f"<p><b>Cover Letter</b><br>{(cover_letter or '(none provided)').replace(chr(10), '<br>')}</p>"
+        f"<p style='color:#6b7280;font-size:0.85em;'>Sent from microf-search</p>"
+    )
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"]    = f"{_SMTP_FROM} <{_SMTP_USER}>"
+    msg["To"]      = _CAREERS_EMAIL
+    msg["Reply-To"] = f"{applicant_name} <{applicant_email}>"
+    msg.attach(MIMEText(body_html, "html"))
+
+    part = MIMEBase("application", "octet-stream")
+    part.set_payload(resume_bytes)
+    _enc.encode_base64(part)
+    part.add_header("Content-Disposition", f'attachment; filename="{resume.filename}"')
+    msg.attach(part)
+
+    if not _SMTP_USER:
+        print(f"[careers] Email not configured — skipping: {subject}")
+        raise HTTPException(status_code=500, detail="Email not configured")
+
+    try:
+        await aiosmtplib.send(msg, hostname=_SMTP_HOST, port=_SMTP_PORT,
+                               username=_SMTP_USER, password=_SMTP_PASS, start_tls=True)
+        print(f"[careers] Sent '{subject}' → {_CAREERS_EMAIL}")
+    except Exception as exc:
+        print(f"[careers] Email failed: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to send application email")
+
+    return {"ok": True}
 
 
 @app.get("/reports/slp-health")
