@@ -8606,6 +8606,20 @@ _TAG_ACCOUNT_STATUSES = [
 ]
 _TAG_JOB_CONCURRENCY = 10
 _tag_jobs: dict = {}   # job_id -> progress dict
+_TAG_JOB_MAX_AGE = 2 * 60 * 60  # 2 hours — completed/errored jobs older than this get pruned
+
+
+def _prune_tag_jobs() -> None:
+    """Drop finished tag jobs older than _TAG_JOB_MAX_AGE so _tag_jobs doesn't
+    grow without bound — nothing else in the app ever removes entries, and
+    every job's error list stays in memory forever otherwise (confirmed cause
+    of a slow memory leak: Render's memory graph showed a smooth multi-hour
+    climb to the plan ceiling followed by an OOM restart, repeating ~3x/day)."""
+    now = _time.time()
+    stale = [jid for jid, j in _tag_jobs.items()
+             if j.get("status") in ("done", "error") and (now - j.get("created_at", now)) > _TAG_JOB_MAX_AGE]
+    for jid in stale:
+        del _tag_jobs[jid]
 
 
 def _dealer_id_to_slp_index() -> dict:
@@ -8819,8 +8833,9 @@ async def tag_dealers_preview_filters(body: _TagFiltersIn, user=Depends(require_
 async def tag_dealers_execute_filters(body: _TagFiltersIn, user=Depends(require_auth)):
     matches = _tag_filters_matches(body)
     account_ids = {_slp_account_id(rec) for rec in matches if _slp_account_id(rec)}
+    _prune_tag_jobs()
     job_id = str(_uuid.uuid4())[:8]
-    _tag_jobs[job_id] = {"status": "queued"}
+    _tag_jobs[job_id] = {"status": "queued", "created_at": _time.time()}
     asyncio.create_task(_run_tag_job(job_id, {body.tag.strip(): account_ids}))
     return {"job_id": job_id}
 
@@ -8901,8 +8916,9 @@ async def tag_dealers_execute_file(file: UploadFile = File(...), dealer_col: int
     if not tag_groups:
         raise HTTPException(status_code=400, detail="No dealer_id in the file matched an SLP with a linked account")
 
+    _prune_tag_jobs()
     job_id = str(_uuid.uuid4())[:8]
-    _tag_jobs[job_id] = {"status": "queued"}
+    _tag_jobs[job_id] = {"status": "queued", "created_at": _time.time()}
     asyncio.create_task(_run_tag_job(job_id, tag_groups))
     return {"job_id": job_id}
 
