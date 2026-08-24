@@ -1128,9 +1128,14 @@ async def _refresh_ta_cache() -> None:
 
     # Fetch notes and activity concurrently; contacts are paged below to avoid
     # holding 100K+ raw contact objects in memory at the same time.
+    # sequential=True on notes avoids fetch_all_pages's concurrent path, which
+    # builds a {offset: page} dict and only flattens it into the final list at
+    # the end — holding the full dataset in memory twice. That pattern was the
+    # confirmed cause of a prior OOM crash on accountCustomFieldData; notes is
+    # much smaller today but there's no reason to keep the unsafe path here.
     users_data, all_notes_raw, all_activity = await asyncio.gather(
         ac_get("users"),
-        _fap("notes", key="notes"),
+        _fap("notes", key="notes", sequential=True),
         ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
     )
 
