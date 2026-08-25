@@ -74,6 +74,17 @@
   .ac-link { color: #23A455; text-decoration: none; font-weight: 600; }
   .ac-link:hover { text-decoration: underline; }
 
+  .inline-select { border: 1px solid #d1d5db; border-radius: 6px; padding: 3px 6px; font-size: .78rem; font-family: inherit; background: #fff; color: #111827; max-width: 100%; }
+  .inline-select:focus { outline: none; border-color: #23A455; box-shadow: 0 0 0 2px rgba(35,164,85,.15); }
+  .inline-select.saving { opacity: .55; pointer-events: none; }
+  .status-select.s-activated   { background: #d1fae5; color: #065f46; border-color: #a7f3d0; }
+  .status-select.s-deactivated { background: #f3f4f6; color: #4b5563; border-color: #e5e7eb; }
+  .status-select.s-hold        { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+  .status-select.s-pending     { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+  .status-select.s-progress    { background: #dbeafe; color: #1e40af; border-color: #bfdbfe; }
+  .status-select.s-declined    { background: #fce7f3; color: #831843; border-color: #fbcfe8; }
+  .status-select.s-dormancy    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+
   .table-scroll { overflow: auto; max-height: calc(100vh - 340px); min-height: 240px; }
   table { width: 100%; border-collapse: collapse; font-size: .81rem; }
   th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; cursor: pointer; position: sticky; top: 0; z-index: 1; }
@@ -354,6 +365,78 @@ let currentSlpRecords = [];  // currently displayed set (after search + sort) �
 let allFetchedRecords = [];  // full set from the server (after date/channel/BDR/status filters), pre-search
 let slpSortCol = null, slpSortAsc = true;
 let slpSortPreset = '';
+let editOptions = { statuses: [], bdrs: [] };
+
+async function loadEditOptions() {
+  try {
+    const res = await fetch('/api/onboarding-live/edit-options');
+    editOptions = await res.json();
+  } catch (e) {
+    console.error('Failed to load edit options', e);
+  }
+}
+
+function optionsWithCurrent(list, current) {
+  return (current && !list.includes(current)) ? [...list, current] : list;
+}
+
+function renderBdrSelect(r) {
+  const opts = optionsWithCurrent(editOptions.bdrs || [], r.assigned_bdr);
+  const rows = ['<option value=""' + (!r.assigned_bdr ? ' selected' : '') + '>—</option>']
+    .concat(opts.map(b => `<option value="${esc(b)}" ${b === r.assigned_bdr ? 'selected' : ''}>${esc(b)}</option>`));
+  return `<select class="inline-select" data-slp-id="${esc(r.slp_id)}"
+            onchange="handleInlineEdit(this,'assigned-bdr')">${rows.join('')}</select>`;
+}
+
+function renderStatusSelect(r) {
+  const opts = optionsWithCurrent(editOptions.statuses || [], r.slp_status);
+  const rows = opts.map(s => `<option value="${esc(s)}" ${s === r.slp_status ? 'selected' : ''}>${esc(s)}</option>`);
+  return `<select class="inline-select status-select ${statusBadgeClass(r.slp_status)}" data-slp-id="${esc(r.slp_id)}"
+            onchange="handleInlineEdit(this,'slp-status-detail')">${rows.join('')}</select>`;
+}
+
+async function handleInlineEdit(selectEl, field) {
+  const slpId = selectEl.dataset.slpId;
+  const value = selectEl.value;
+  const record = allFetchedRecords.find(r => r.slp_id === slpId);
+  const prevValue = field === 'assigned-bdr' ? (record?.assigned_bdr || '') : (record?.slp_status || '');
+  const label = field === 'assigned-bdr' ? 'BDR' : 'Status';
+
+  selectEl.classList.add('saving');
+  try {
+    const res = await fetch('/api/onboarding-live/update-slp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slp_id: slpId, field, value }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    if (record) {
+      if (field === 'assigned-bdr') record.assigned_bdr = value; else record.slp_status = value;
+    }
+    if (field === 'slp-status-detail') {
+      selectEl.className = `inline-select status-select ${statusBadgeClass(value)}`;
+    }
+    toast(`${label} updated`, `${record?.slp_name || record?.account_name || slpId}: ${prevValue || '(blank)'} → ${value || '(blank)'}`);
+  } catch (e) {
+    selectEl.value = prevValue;
+    toast(`${label} update failed`, e.message, true);
+  } finally {
+    selectEl.classList.remove('saving');
+  }
+}
+
+function toast(title, body, isError) {
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  if (isError) el.style.background = '#7f1d1d';
+  el.innerHTML = `<b style="${isError ? 'color:#fca5a5' : ''}">${esc(title)}</b><br>${esc(body)}`;
+  stack.appendChild(el);
+  setTimeout(() => { el.classList.add('leaving'); setTimeout(() => el.remove(), 300); }, 5000);
+}
 
 function applySortPreset(mode) {
   slpSortPreset = mode;
@@ -448,9 +531,9 @@ function renderSlpTable(records) {
         <div class="sub-line"><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></div>
       </td>
       <td>${esc(r.channel)}</td>
-      <td>${esc(r.assigned_bdr) || '—'}</td>
+      <td>${r.slp_id ? renderBdrSelect(r) : (esc(r.assigned_bdr) || '—')}</td>
       <td>
-        <span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>${freshnessBadge(r)}
+        ${r.slp_id ? renderStatusSelect(r) : `<span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>`}${freshnessBadge(r)}
         ${r.decline_reason ? `<div class="sub-line">${esc(r.decline_reason)}</div>` : ''}
       </td>
       <td>${daysInStatusCell(r)}</td>
@@ -689,7 +772,10 @@ async function poll() {
 
 updateNotifBtn();
 renderFeed();
-applyPreset(); // sets the default last-90-days range and triggers the first poll
+(async () => {
+  await loadEditOptions();     // so the first table render has real BDR/Status dropdown options
+  applyPreset();               // sets the default last-90-days range and triggers the first poll
+})();
 setInterval(poll, POLL_MS);
 </script>
 </body>

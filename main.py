@@ -2978,6 +2978,80 @@ async def enrollment_report(
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# ONBOARDING LIVE — inline SLP status / BDR edit
+# ═══════════════════════════════════════════════════════════════════════════
+
+_SLP_EDITABLE_FIELDS = {"slp-status-detail", "assigned-bdr"}
+_SLP_FIELD_LABELS    = {"slp-status-detail": "Status", "assigned-bdr": "Assigned BDR"}
+
+
+@app.get("/api/onboarding-live/edit-options")
+async def onboarding_live_edit_options(user=Depends(require_auth)):
+    """Valid dropdown values for the inline Status/BDR editors."""
+    _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
+    bdrs = [o["value"] for o in ftypes.get("assigned-bdr", {}).get("options", [])]
+    return {"statuses": _SLP_STATUSES, "bdrs": bdrs}
+
+
+class _SlpFieldUpdateIn(_BaseModel):
+    slp_id: str
+    field:  str
+    value:  str
+
+
+@app.post("/api/onboarding-live/update-slp")
+async def onboarding_live_update_slp(body: _SlpFieldUpdateIn, user=Depends(require_auth)):
+    """Push a Status or Assigned BDR change from Onboarding Live straight to the SLP
+    record in AC — fetch the current record, merge in the new field value, POST it
+    back (same fetch-merge-POST pattern used everywhere else in this app), and log
+    an audit note on the linked account."""
+    field = body.field.strip()
+    if field not in _SLP_EDITABLE_FIELDS:
+        raise HTTPException(status_code=400, detail=f"Field '{field}' is not editable here")
+    value = body.value.strip()
+
+    try:
+        rec_resp = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}/{body.slp_id}")
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="SLP record not found") from e
+    rec = rec_resp.get("record")
+    if not rec:
+        raise HTTPException(status_code=404, detail="SLP record not found")
+
+    raw_fields = list(rec.get("fields", []))
+    old_value  = ""
+    found      = False
+    for f in raw_fields:
+        if f.get("id") == field:
+            old_value = f.get("value", "")
+            f["value"] = value
+            found = True
+            break
+    if not found:
+        raw_fields.append({"id": field, "value": value})
+
+    payload = {"record": {"id": rec["id"], "fields": raw_fields,
+                           "relationships": rec.get("relationships", {})}}
+    try:
+        await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"AC rejected the update: {e}") from e
+
+    account_id = (rec.get("relationships", {}).get("account") or [None])[0]
+    if account_id and old_value != value:
+        label = _SLP_FIELD_LABELS.get(field, field)
+        note_text = (f'{label} changed from "{old_value or "(blank)"}" to "{value or "(blank)"}" '
+                     f"via Onboarding Live by {user}.")
+        try:
+            await ac_post("notes", {"note": {"note": note_text, "relid": account_id,
+                                              "reltype": "CustomerAccount", "userid": "1"}})
+        except Exception as e:
+            print(f"[onboarding-live-edit] note failed (non-fatal): {e}")
+
+    return {"ok": True, "slp_id": body.slp_id, "field": field, "old_value": old_value, "new_value": value}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # PRE-BUILT REPORT: NOT ACTIVATED (SLPs without Contractor Activated status)
 # ═══════════════════════════════════════════════════════════════════════════
 
