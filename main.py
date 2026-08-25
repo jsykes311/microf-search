@@ -962,7 +962,13 @@ async def _refresh_acct_cf_cache() -> None:
 async def _acct_cf_cache_loop() -> None:
     """Background task: keep the account custom-field cache warm, refreshing every
     _ACCT_CF_TTL seconds, so report requests never have to wait on a cold rebuild."""
-    await asyncio.sleep(90)   # stagger away from other startup fetches
+    # Staggered 90/150/210/270s across the four post-boot cache loops (see _lc_cache_loop,
+    # _ta_cache_loop, _slp_cache_loop) — all four used to wake at the same 90s mark, piling
+    # up 5 concurrent bulk fetches (this one plus _build_dealer_id_index already running
+    # since t=0) right after every restart. That pileup was the likely cause of the tight
+    # crash-loop clusters seen in Render's memory graph (several restarts within minutes,
+    # distinct from the separate slow multi-hour leak fixed in _tag_jobs/_refresh_ta_cache).
+    await asyncio.sleep(150)
     while True:
         try:
             await _refresh_acct_cf_cache()
@@ -1108,7 +1114,7 @@ async def _refresh_lc_cache() -> None:
         print(f"[lc-cache] refreshed — {len(latest)} accounts with last-contacted date")
 
 async def _lc_cache_loop() -> None:
-    await asyncio.sleep(90)    # stagger slightly after SLP + dealer index
+    await asyncio.sleep(270)   # staggered last of the four post-boot cache loops — see _acct_cf_cache_loop
     while True:
         try:
             await _refresh_lc_cache()
@@ -1197,7 +1203,7 @@ async def _refresh_ta_cache() -> None:
           f"{len(contact_to_account)} contact→account mappings")
 
 async def _ta_cache_loop() -> None:
-    await asyncio.sleep(90)    # contacts+notes now concurrent — builds in ~10s
+    await asyncio.sleep(210)   # staggered third of the four post-boot cache loops — see _acct_cf_cache_loop
     while True:
         try:
             await _refresh_ta_cache()
@@ -1453,6 +1459,8 @@ async def _slp_cache_loop() -> None:
     their own TTLs match _SLP_CACHE_TTL, so this keeps them in lockstep
     with the 15-minute refresh instead of the old 24h TTL.
     """
+    # First of the four staggered post-boot cache loops (90/150/210/270s) — see
+    # _acct_cf_cache_loop for why they're spread out instead of all firing at 90s.
     await asyncio.sleep(90)   # give dealer index a head-start before first SLP fetch
     while True:
         try:
