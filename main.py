@@ -912,6 +912,23 @@ _ACCT_CF_TTL           = 600  # 10 minutes
 _acct_cf_lock             = asyncio.Lock()
 _acct_cf_refreshing: bool = False  # True while a refresh is in flight
 
+def _trim_acct_cf(item: dict) -> dict:
+    """Keep only the 3 fields _fetch_acct_cf_map actually reads, dropping
+    id/links/timestamps/accountCustomFieldMetumId. Measured locally (170,514
+    live records, same 1000/page-8-worker fetch as below): full records cost
+    ~282MB RSS, trimmed cost ~258MB — real but modest (~9%), nowhere near the
+    ~6x the raw JSON-byte-size difference (429 vs 69 bytes/record) suggested;
+    Python's per-object overhead dominates for many small dicts regardless of
+    field count. Worth keeping since it's free and strictly safe, but this
+    alone does not explain steady-state sitting at ~1.9-2GB — see the OOM
+    note below."""
+    return {
+        "customFieldId": item.get("customFieldId"),
+        "accountId":     item.get("accountId"),
+        "fieldValue":    item.get("fieldValue"),
+    }
+
+
 async def _refresh_acct_cf_cache() -> None:
     """Fetch ALL accountCustomFieldData records and atomically swap into _acct_cf_raw.
 
@@ -926,7 +943,21 @@ async def _refresh_acct_cf_cache() -> None:
     out-of-memory crash in production. Fetching at 1000 records/page with 8
     concurrent workers, extending a single shared list as each page completes
     (same page size/concurrency already used by _build_dealer_id_index),
-    avoids the double-buffering and still finishes in well under a minute."""
+    avoids the double-buffering and still finishes in well under a minute.
+
+    That fix held for a while, but by 2026-08-30 Render's memory graph showed
+    steady-state sitting flat at ~1.9-2.0GB (of a 2GB limit) for hours between
+    OOM crashes at unpredictable points along that plateau — up from the
+    ~850MB-1GB this cache's fix originally measured. This cache alone (170,514
+    records) measured at ~282MB full / ~258MB trimmed locally — a real but
+    modest ~9% cut (see _trim_acct_cf; the raw-JSON-byte-size ratio between
+    full and trimmed records is much larger, ~6x, but that does NOT translate
+    proportionally to Python RSS — per-object overhead dominates for many
+    small dicts). Kept anyway since it's free and strictly safe, but at ~258MB
+    this cache is only part of a ~1.9GB total — the SLP/team-activity/last-
+    contacted caches (same 90/150/210/270s stagger, main.py:~975) haven't been
+    measured the same way and are equally plausible contributors now. Treat
+    this as one incremental improvement, not a confirmed fix for the crash."""
     global _acct_cf_raw, _acct_cf_raw_ts, _acct_cf_refreshing
     async with _acct_cf_lock:
         if _acct_cf_raw and (_time.time() - _acct_cf_raw_ts) < _ACCT_CF_TTL:
@@ -937,7 +968,7 @@ async def _refresh_acct_cf_cache() -> None:
         raw: list = []
         try:
             first = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": 0})
-            raw.extend(first.get("accountCustomFieldData", []))
+            raw.extend(_trim_acct_cf(it) for it in first.get("accountCustomFieldData", []))
             total = int(first.get("meta", {}).get("total", 0))
 
             if total > PAGE:
@@ -945,7 +976,7 @@ async def _refresh_acct_cf_cache() -> None:
                 async def fetch_and_extend(offset: int):
                     async with sem:
                         page = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
-                        raw.extend(page.get("accountCustomFieldData", []))
+                        raw.extend(_trim_acct_cf(it) for it in page.get("accountCustomFieldData", []))
                 await asyncio.gather(*[fetch_and_extend(o) for o in range(PAGE, total, PAGE)])
 
             print(f"[acct-cf-cache] fetched {len(raw)} records")
