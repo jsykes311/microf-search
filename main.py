@@ -8504,6 +8504,101 @@ async def license_deactivations_deactivate_confirm(
     return results
 
 
+# ── Partner Platform License Expiration (dashboard) ───────────────────────────
+# The other half of LICENSE EXPIRATION REPORT FLOW.docx: for everyone NOT on
+# Microf Direct (Optimus, 360, ComfortConnect, etc.), Contractor Support sends
+# a report to the partner directly rather than tag-triggering a contractor
+# email — this endpoint is read-only, feeding a dashboard, not an automation.
+
+@app.get("/api/report/license-expiration-partners")
+async def license_expiration_partners_report(
+    channel:      Optional[str] = Query(None, description="Filter to one partner channel"),
+    state:        Optional[str] = Query(None, description="2-letter state abbreviation"),
+    license_type: Optional[str] = Query(None, description="Filter to one license type (e.g. 'Professional - HVAC', 'Business')"),
+    format:       str            = Query("json"),
+):
+    """License expirations for active (Contractor Activated) SLPs on any channel
+    other than Microf Direct, grouped by partner channel."""
+    today = date.today()
+    lic_records = await ac_get_all(f"customObjects/records/{LICENSE_SCHEMA_ID}", "records", {})
+    slp_records = await get_slp_cache()
+
+    acct_channel: dict = {}
+    for rec in slp_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        ch = fields.get("channel") or ""
+        if not ch or ch == _LICENSE_DEACT_CHANNEL:
+            continue
+        if fields.get("slp-status-detail") != "Contractor Activated":
+            continue
+        for aid in rec.get("relationships", {}).get("account", []):
+            acct_channel[str(aid)] = ch
+
+    results = []
+    for r in lic_records:
+        fields  = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        exp_str = fields.get("expiration-date") or ""
+        if not exp_str:
+            continue
+        try:
+            exp_date = (datetime.fromisoformat(str(exp_str).replace("Z", "+00:00")).date() if "T" in str(exp_str)
+                        else datetime.strptime(str(exp_str)[:10], "%Y-%m-%d").date())
+        except Exception:
+            continue
+
+        rel     = r.get("relationships", {}).get("account", [])
+        acct_id = str(rel[0]) if rel else None
+        if not acct_id:
+            continue
+        acct_channel_val = acct_channel.get(acct_id)
+        if not acct_channel_val:
+            continue
+        if channel and acct_channel_val != channel:
+            continue
+        if state and fields.get("state-of-issue", "").upper() != state.upper():
+            continue
+        if license_type and fields.get("license-type", "") != license_type:
+            continue
+
+        days_until = (exp_date - today).days
+        results.append({
+            "record_id":               r.get("id"),
+            "account_id":              acct_id,
+            "account_name":            _account_to_name.get(acct_id, fields.get("account-name", "")),
+            "dealer_id":               _account_to_dealer.get(acct_id, ""),
+            "channel":                 acct_channel_val,
+            "expiration_date":         exp_str,
+            "days_until_expiration":   days_until,
+            "status":                  "EXPIRED" if days_until < 0 else "EXPIRING",
+            "state_of_issue":          fields.get("state-of-issue", ""),
+            "license_type":            fields.get("license-type", ""),
+            "license_or_entity_number": fields.get("license-or-entity-number", ""),
+        })
+
+    results.sort(key=lambda x: x["days_until_expiration"])
+
+    channel_counts: dict = defaultdict(int)
+    license_type_counts: dict = defaultdict(int)
+    for row in results:
+        channel_counts[row["channel"]] += 1
+        license_type_counts[row["license_type"] or "(not set)"] += 1
+
+    if format == "csv":
+        out = io.StringIO()
+        if results:
+            w = csv.DictWriter(out, fieldnames=results[0].keys())
+            w.writeheader(); w.writerows(results)
+        fn = f"partner_license_expiration_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return StreamingResponse(iter([out.getvalue()]), media_type="text/csv",
+                                 headers={"Content-Disposition": f"attachment; filename={fn}"})
+    return {
+        "count":               len(results),
+        "records":             results,
+        "channel_counts":      dict(sorted(channel_counts.items(), key=lambda x: -x[1])),
+        "license_type_counts": dict(sorted(license_type_counts.items(), key=lambda x: -x[1])),
+    }
+
+
 # ── Move Records (Deal / Contact / SLP) ───────────────────────────────────────
 
 class _MoveIn(_BaseModel):

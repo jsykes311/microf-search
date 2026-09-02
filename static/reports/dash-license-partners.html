@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Partner License Expiration</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Open Sans', Arial, sans-serif; background: #f5f6fa; color: #1a1a2e; font-size: 14px; }
+  header { background: linear-gradient(135deg, #d97706 0%, #b45309 100%); color: #fff; padding: 0 28px; display: flex; align-items: center; gap: 16px; height: 52px; box-shadow: 0 2px 10px rgba(217,119,6,.3); }
+  header h1 { font-size: 1rem; font-weight: 700; flex: 1; }
+  .back-btn { background: rgba(255,255,255,.12); color: rgba(255,255,255,.9); border: none; border-radius: 6px; padding: 6px 14px; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .back-btn:hover { background: rgba(255,255,255,.22); color: #fff; }
+
+  .container { padding: 20px 24px; max-width: 1300px; margin: 0 auto; }
+
+  .banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 10px 16px; border-radius: 8px; font-size: .8rem; margin-bottom: 16px; }
+
+  .filters { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); padding: 16px 20px; margin-bottom: 18px; display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; }
+  .filter-group select, .filter-group input { border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 10px; font-size: .82rem; font-family: inherit; background: #fff; color: #111827; min-width: 140px; }
+  .filter-group select:focus, .filter-group input:focus { outline: none; border-color: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,.15); }
+  .filter-actions { display: flex; gap: 8px; margin-left: auto; }
+  .btn { border: none; border-radius: 7px; padding: 7px 18px; font-size: .82rem; font-weight: 700; cursor: pointer; font-family: inherit; }
+  .btn-primary { background: #d97706; color: #fff; }
+  .btn-primary:hover { background: #b45309; }
+  .btn-secondary { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+  .btn-secondary:hover { background: #fef3c7; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .stats { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat { background: #fff; border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 4px rgba(0,0,0,.07); min-width: 120px; flex: 1; border-left: 3px solid transparent; }
+  .stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: .72rem; color: #6b7280; margin-top: 5px; font-weight: 500; }
+  .stat-sub { font-size: .7rem; color: #9ca3af; margin-top: 3px; }
+
+  .mid-layout { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-bottom: 18px; align-items: start; }
+  @media (max-width: 900px) { .mid-layout { grid-template-columns: 1fr; } }
+
+  .channel-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .channel-header { padding: 12px 16px; border-bottom: 1px solid #f0f0f0; font-size: .82rem; font-weight: 700; color: #374151; }
+  .channel-row { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #f8f8f8; cursor: pointer; transition: background .1s; }
+  .channel-row:last-child { border-bottom: none; }
+  .channel-row:hover { background: #f9fafb; }
+  .channel-row.active-filter { background: #fffbeb; }
+  .ch-name { font-size: .78rem; font-weight: 600; color: #111827; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ch-count { font-size: .78rem; font-weight: 700; color: #374151; min-width: 28px; text-align: right; }
+  .ch-pct { font-size: .68rem; color: #9ca3af; min-width: 34px; text-align: right; }
+  .ch-bar-wrap { width: 60px; background: #f0f0f0; border-radius: 3px; height: 5px; flex-shrink: 0; }
+  .ch-bar-fill { height: 5px; border-radius: 3px; background: #d97706; }
+  .ch-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  .pipeline-grid { display: grid; gap: 10px; }
+  .pipeline-row { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .pipeline-header { padding: 11px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; user-select: none; }
+  .pipeline-header:hover { background: #fafafa; }
+  .ph-count { font-size: 1.1rem; font-weight: 700; color: #111827; min-width: 42px; }
+  .ph-bar-wrap { flex: 1; background: #f0f0f0; border-radius: 4px; height: 7px; max-width: 200px; }
+  .ph-bar-fill { height: 7px; border-radius: 4px; }
+  .ph-pct { font-size: .75rem; color: #6b7280; min-width: 36px; text-align: right; }
+  .ph-arrow { color: #9ca3af; font-size: .75rem; transition: transform .2s; margin-left: 4px; }
+  .pipeline-row.open .ph-arrow { transform: rotate(90deg); }
+  .pipeline-body { display: none; overflow-x: auto; }
+  .pipeline-row.open .pipeline-body { display: block; }
+
+  .status-badge { display: inline-block; padding: 2px 9px; border-radius: 99px; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+  .s-expired  { background: #fee2e2; color: #991b1b; }
+  .s-expiring { background: #fef3c7; color: #92400e; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .81rem; }
+  th { background: #f8f9fb; text-align: left; padding: 8px 14px; font-size: .68rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid #e8eaed; white-space: nowrap; cursor: pointer; }
+  th:hover { color: #374151; }
+  th.sort-asc::after { content: ' ↑'; }
+  th.sort-desc::after { content: ' ↓'; }
+  td { padding: 8px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f9fafb; }
+
+  .results-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+  .results-header { padding: 12px 18px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 12px; }
+  .results-title { font-size: .85rem; font-weight: 700; color: #374151; flex: 1; }
+  .results-count { font-size: .8rem; color: #6b7280; }
+
+  .loading { text-align: center; padding: 48px; color: #9ca3af; font-size: .9rem; }
+  .error { background: #fee2e2; color: #991b1b; padding: 16px; border-radius: 8px; margin: 16px 0; }
+
+  .ac-link { color: #d97706; text-decoration: none; font-weight: 600; }
+  .ac-link:hover { text-decoration: underline; }
+
+  @media (max-width: 700px) {
+    .filters { flex-direction: column; }
+    .filter-actions { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Partner License Expiration</h1>
+  <a class="back-btn" href="/admin/dashboards">All Dashboards</a>
+  <a class="back-btn" href="/">Hub</a>
+</header>
+<div class="container">
+
+  <div class="banner">This is a read-only view for pulling together the report Contractor Support sends to each partner (Optimus, 360, ComfortConnect, etc.) — it doesn't tag, email, or notify anyone on its own. Only Contractor Activated dealers on non-Microf-Direct channels are shown.</div>
+
+  <div class="filters">
+    <div class="filter-group">
+      <label>Partner Channel</label>
+      <select id="channel">
+        <option value="">All Partners</option>
+        <option>OPTIMUS</option>
+        <option>Optimus 2.0</option>
+        <option>Optimus - RTO Only</option>
+        <option>Optimus - FTL</option>
+        <option>Optimus - RTO</option>
+        <option>Optimus - Greensky</option>
+        <option>360 Finance</option>
+        <option>ComfortConnect</option>
+        <option>CustomFin</option>
+        <option>Finturf</option>
+        <option>FTL</option>
+        <option>GoodLeap</option>
+        <option>Greensky UCA</option>
+        <option>Momnt</option>
+        <option>PreviousLendingPartners</option>
+        <option>Rheem</option>
+        <option>ServiceFinance</option>
+        <option>SpectrumAC</option>
+        <option>SpectrumAC - WellsFargo</option>
+        <option>Upgrade</option>
+        <option>Wells Fargo</option>
+        <option>Greensky</option>
+        <option>Ottri</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>State</label>
+      <input type="text" id="state" maxlength="2" placeholder="e.g. TX" style="text-transform:uppercase;min-width:70px;"/>
+    </div>
+    <div class="filter-group">
+      <label>License Type</label>
+      <select id="license_type">
+        <option value="">All Types</option>
+        <option>Professional - HVAC</option>
+        <option>Business</option>
+        <option>Professional - General Contractor</option>
+        <option>Professional - Plumbing</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button class="btn btn-primary" onclick="runReport()" id="run-btn">Run Report</button>
+      <button class="btn btn-secondary" onclick="exportCsv()" id="csv-btn">CSV</button>
+    </div>
+  </div>
+
+  <div id="loading" class="loading" style="display:none;">Loading license data…</div>
+  <div id="error" class="error" style="display:none;"></div>
+
+  <div id="content" style="display:none;">
+    <div class="stats" id="stats"></div>
+
+    <div class="mid-layout">
+      <div class="pipeline-grid" id="pipeline"></div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="channel-card">
+          <div class="channel-header">By Partner</div>
+          <div id="channel-list"></div>
+        </div>
+        <div class="channel-card">
+          <div class="channel-header">By License Type</div>
+          <div id="license-type-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-card">
+      <div class="results-header">
+        <span class="results-title">All Records</span>
+        <span class="results-count" id="rec-count"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortBy('account_name')">Account</th>
+              <th onclick="sortBy('dealer_id')">Dealer ID</th>
+              <th onclick="sortBy('channel')">Partner</th>
+              <th onclick="sortBy('state_of_issue')">State</th>
+              <th onclick="sortBy('license_type')">License Type</th>
+              <th onclick="sortBy('expiration_date')">Expiration</th>
+              <th onclick="sortBy('days_until_expiration')">Days</th>
+              <th onclick="sortBy('status')">Status</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let allRecords = [];
+let sortCol = 'days_until_expiration';
+let sortAsc = true;
+let activeChannelFilter = null;
+let activeLicenseTypeFilter = null;
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmt(s) { return (s||'').replace('T',' ').slice(0,10) || '—'; }
+
+function buildUrl(fmt_param) {
+  const params = new URLSearchParams();
+  const channel = document.getElementById('channel').value;
+  const state   = document.getElementById('state').value;
+  const ltype   = document.getElementById('license_type').value;
+  if (channel) params.set('channel', channel);
+  if (state)   params.set('state', state);
+  if (ltype)   params.set('license_type', ltype);
+  if (fmt_param) params.set('format', fmt_param);
+  return `/api/report/license-expiration-partners?${params}`;
+}
+
+async function runReport() {
+  document.getElementById('loading').style.display = '';
+  document.getElementById('content').style.display  = 'none';
+  document.getElementById('error').style.display    = 'none';
+  document.getElementById('run-btn').disabled = true;
+
+  try {
+    const r = await fetch(buildUrl());
+    if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+    const d = await r.json();
+    allRecords = d.records || [];
+    activeChannelFilter = null;
+    activeLicenseTypeFilter = null;
+    renderStats(allRecords);
+    renderPipeline(allRecords);
+    renderChannel(allRecords);
+    renderLicenseType(allRecords);
+    renderTable(sortRecords(allRecords));
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = '';
+  } catch(e) {
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').style.display = '';
+    document.getElementById('error').textContent = 'Error loading data: ' + e.message;
+  } finally {
+    document.getElementById('run-btn').disabled = false;
+  }
+}
+
+function urgencyBucket(days) {
+  if (days < 0)  return 'Expired';
+  if (days <= 7)  return '0-7 days out';
+  if (days <= 30) return '8-30 days out';
+  if (days <= 60) return '31-60 days out';
+  return '60+ days out';
+}
+const URGENCY_ORDER = ['Expired','0-7 days out','8-30 days out','31-60 days out','60+ days out'];
+const URGENCY_COLORS = { 'Expired':'#dc2626', '0-7 days out':'#ea580c', '8-30 days out':'#d97706', '31-60 days out':'#3b82f6', '60+ days out':'#9ca3af' };
+
+function renderStats(records) {
+  const total    = records.length;
+  const expired  = records.filter(r => r.days_until_expiration < 0).length;
+  const within30 = records.filter(r => r.days_until_expiration >= 0 && r.days_until_expiration <= 30).length;
+  const within60 = records.filter(r => r.days_until_expiration > 30 && r.days_until_expiration <= 60).length;
+  const partners = [...new Set(records.map(r => r.channel))].length;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat" style="border-left-color:#d97706;">
+      <div class="stat-value" style="color:#d97706;">${total.toLocaleString()}</div>
+      <div class="stat-label">Total Licenses Tracked</div>
+    </div>
+    <div class="stat" style="border-left-color:#dc2626;">
+      <div class="stat-value" style="color:#dc2626;">${expired.toLocaleString()}</div>
+      <div class="stat-label">Already Expired</div>
+    </div>
+    <div class="stat" style="border-left-color:#ea580c;">
+      <div class="stat-value" style="color:#ea580c;">${within30.toLocaleString()}</div>
+      <div class="stat-label">Expiring ≤30 Days</div>
+    </div>
+    <div class="stat" style="border-left-color:#3b82f6;">
+      <div class="stat-value" style="color:#3b82f6;">${within60.toLocaleString()}</div>
+      <div class="stat-label">Expiring 31-60 Days</div>
+    </div>
+    <div class="stat" style="border-left-color:#9ca3af;">
+      <div class="stat-value" style="color:#6b7280;">${partners}</div>
+      <div class="stat-label">Partners Represented</div>
+    </div>
+  `;
+}
+
+function renderPipeline(records) {
+  const counts = {};
+  records.forEach(r => { const b = urgencyBucket(r.days_until_expiration); counts[b] = (counts[b]||0)+1; });
+  const sorted = URGENCY_ORDER.filter(b => counts[b]).map(b => [b, counts[b]]);
+  const maxCount = Math.max(...sorted.map(s=>s[1]),1);
+  const total = records.length || 1;
+
+  document.getElementById('pipeline').innerHTML = sorted.map(([bucket, count]) => {
+    const color = URGENCY_COLORS[bucket] || '#6b7280';
+    const pct   = Math.round(count/total*100);
+    const barW  = Math.round(count/maxCount*100);
+    const recs  = records.filter(r => urgencyBucket(r.days_until_expiration) === bucket);
+    const rows  = recs.slice(0,200).map(r => `
+      <tr>
+        <td><a class="ac-link" href="https://microf.activehosted.com/app/accounts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+        <td>${esc(r.dealer_id)}</td>
+        <td>${esc(r.channel)}</td>
+        <td>${esc(r.state_of_issue)}</td>
+        <td>${fmt(r.expiration_date)}</td>
+        <td>${r.days_until_expiration}</td>
+      </tr>`).join('');
+
+    return `
+      <div class="pipeline-row">
+        <div class="pipeline-header" onclick="toggle(this.parentElement)">
+          <span class="ph-count">${count}</span>
+          <span class="status-badge ${bucket==='Expired'?'s-expired':'s-expiring'}">${esc(bucket)}</span>
+          <span class="ph-bar-wrap" style="margin-left:12px;"><span class="ph-bar-fill" style="width:${barW}%;background:${color};"></span></span>
+          <span class="ph-pct">${pct}%</span>
+          <span class="ph-arrow">▶</span>
+        </div>
+        <div class="pipeline-body">
+          <table>
+            <thead><tr><th>Account</th><th>Dealer ID</th><th>Partner</th><th>State</th><th>Expiration</th><th>Days</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${recs.length>200 ? `<div style="padding:8px 16px;font-size:.75rem;color:#9ca3af;">Showing 200 of ${recs.length} — export CSV for full list.</div>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderChannel(records) {
+  const counts = {};
+  records.forEach(r => { counts[r.channel] = (counts[r.channel]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total  = records.length || 1;
+  const max    = Math.max(...sorted.map(s=>s[1]),1);
+
+  document.getElementById('channel-list').innerHTML = sorted.map(([ch, n]) => {
+    const pct  = Math.round(n/total*100);
+    const barW = Math.round(n/max*100);
+    const isActive = activeChannelFilter === ch;
+    return `
+      <div class="channel-row${isActive?' active-filter':''}" onclick="filterByChannel('${ch.replace(/'/,"\\'")}')" title="Click to filter table">
+        <span class="ch-dot" style="background:#d97706;"></span>
+        <span class="ch-name">${esc(ch)}</span>
+        <span class="ch-bar-wrap"><span class="ch-bar-fill" style="width:${barW}%;"></span></span>
+        <span class="ch-count">${n}</span>
+        <span class="ch-pct">${pct}%</span>
+      </div>`;
+  }).join('');
+}
+
+function applyBreakoutFilters() {
+  renderChannel(allRecords);
+  renderLicenseType(allRecords);
+  let filtered = allRecords;
+  if (activeChannelFilter)      filtered = filtered.filter(r => r.channel === activeChannelFilter);
+  if (activeLicenseTypeFilter)  filtered = filtered.filter(r => (r.license_type || '(not set)') === activeLicenseTypeFilter);
+  renderTable(sortRecords(filtered));
+}
+
+function filterByChannel(ch) {
+  activeChannelFilter = (activeChannelFilter === ch) ? null : ch;
+  applyBreakoutFilters();
+}
+
+function filterByLicenseType(lt) {
+  activeLicenseTypeFilter = (activeLicenseTypeFilter === lt) ? null : lt;
+  applyBreakoutFilters();
+}
+
+function renderLicenseType(records) {
+  const counts = {};
+  records.forEach(r => { const lt = r.license_type || '(not set)'; counts[lt] = (counts[lt]||0)+1; });
+  const sorted = Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+  const total  = records.length || 1;
+  const max    = Math.max(...sorted.map(s=>s[1]),1);
+
+  document.getElementById('license-type-list').innerHTML = sorted.map(([lt, n]) => {
+    const pct  = Math.round(n/total*100);
+    const barW = Math.round(n/max*100);
+    const isActive = activeLicenseTypeFilter === lt;
+    return `
+      <div class="channel-row${isActive?' active-filter':''}" onclick="filterByLicenseType('${lt.replace(/'/,"\\'")}')" title="Click to filter table">
+        <span class="ch-dot" style="background:#3b82f6;"></span>
+        <span class="ch-name">${esc(lt)}</span>
+        <span class="ch-bar-wrap"><span class="ch-bar-fill" style="width:${barW}%;background:#3b82f6;"></span></span>
+        <span class="ch-count">${n}</span>
+        <span class="ch-pct">${pct}%</span>
+      </div>`;
+  }).join('');
+}
+
+function sortRecords(records) {
+  return [...records].sort((a,b) => {
+    const av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'number' || typeof bv === 'number') {
+      return sortAsc ? (av-bv) : (bv-av);
+    }
+    return sortAsc ? String(av||'').localeCompare(String(bv||'')) : String(bv||'').localeCompare(String(av||''));
+  });
+}
+
+function sortBy(col) {
+  if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+  document.querySelectorAll('th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  event.target.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+  let base = allRecords;
+  if (activeChannelFilter)     base = base.filter(r => r.channel === activeChannelFilter);
+  if (activeLicenseTypeFilter) base = base.filter(r => (r.license_type || '(not set)') === activeLicenseTypeFilter);
+  renderTable(sortRecords(base));
+}
+
+function renderTable(records) {
+  document.getElementById('rec-count').textContent = `${records.length.toLocaleString()} records`;
+  const tbody = document.getElementById('tbody');
+  if (!records.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#9ca3af;">No records match current filters</td></tr>';
+    return;
+  }
+  tbody.innerHTML = records.slice(0,500).map(r => `
+    <tr>
+      <td><a class="ac-link" href="https://microf.activehosted.com/app/accounts/${esc(r.account_id)}" target="_blank">${esc(r.account_name||r.dealer_id)}</a></td>
+      <td>${esc(r.dealer_id)}</td>
+      <td>${esc(r.channel)}</td>
+      <td>${esc(r.state_of_issue)}</td>
+      <td>${esc(r.license_type)}</td>
+      <td>${fmt(r.expiration_date)}</td>
+      <td>${r.days_until_expiration}</td>
+      <td><span class="status-badge ${r.status==='EXPIRED'?'s-expired':'s-expiring'}">${esc(r.status)}</span></td>
+    </tr>`).join('');
+  if (records.length > 500) {
+    tbody.innerHTML += `<tr><td colspan="8" style="text-align:center;padding:10px;font-size:.75rem;color:#9ca3af;">Showing 500 of ${records.length} — export CSV for full list</td></tr>`;
+  }
+}
+
+function toggle(row) { row.classList.toggle('open'); }
+function exportCsv() { window.location.href = buildUrl('csv'); }
+
+runReport();
+</script>
+</body>
+</html>
