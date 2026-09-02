@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Deactivations — Microf</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans', Arial, sans-serif;background:#f3f2f1;color:#323130;min-height:100vh}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.apps-btn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn{margin-left:auto;background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.back-btn:hover{background:rgba(255,255,255,.18)}
+main{max-width:1100px;margin:0 auto;padding:24px 20px 60px}
+
+.summary-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
+@media (max-width:900px){.summary-row{grid-template-columns:repeat(2,1fr)}}
+.summary-tile{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s}
+.summary-tile:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.summary-tile.active{border-color:#1e3a5f;box-shadow:0 0 0 2px #1e3a5f inset}
+.summary-tile .n{font-size:1.6rem;font-weight:800;color:#1e3a5f}
+.summary-tile.danger .n{color:#b91c1c}
+.summary-tile .lbl{font-size:.74rem;color:#6b7280;font-weight:600;margin-top:2px}
+
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:20px}
+.card-title{font-size:.9rem;font-weight:700;color:#1e3a5f;margin-bottom:4px;display:flex;align-items:center;gap:10px;justify-content:space-between}
+.card-sub{font-weight:400;color:#6b7280;font-size:.8rem;margin-bottom:14px}
+
+.btn{padding:9px 18px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:hover{background:#162d4a}
+.btn:disabled{background:#9ca3af;cursor:not-allowed}
+.btn-danger{background:#b91c1c}
+.btn-danger:hover{background:#991b1b}
+.btn-sm{padding:6px 12px;font-size:.78rem}
+
+.status-msg{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:.83rem;display:none}
+.status-msg.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;display:block}
+.status-msg.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;display:block}
+.status-msg.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;display:block}
+.status-msg.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;display:block}
+
+table{width:100%;border-collapse:collapse;font-size:.82rem}
+th{text-align:left;padding:8px 10px;background:#f8fafc;color:#6b7280;font-weight:700;font-size:.72rem;text-transform:uppercase;letter-spacing:.02em;border-bottom:1px solid #e5e7eb}
+td{padding:8px 10px;border-bottom:1px solid #f1f5f9}
+tr:last-child td{border-bottom:none}
+.days{font-weight:700}
+.days.neg{color:#b91c1c}
+.days.warn{color:#92400e}
+.empty-row{color:#9ca3af;text-align:center;padding:20px;font-style:italic}
+.acct-link{color:#1e3a5f;text-decoration:none;font-weight:600}
+.acct-link:hover{text-decoration:underline}
+
+.section{display:none}
+.section.active{display:block}
+</style>
+</head>
+<body>
+
+<header>
+  <div style="flex:1">
+    <h1>🔻 Deactivations — HVAC License Expiration</h1>
+  </div>
+  <div style="margin-left:auto;display:flex;gap:8px;"><a class="back-btn" href="#" onclick="history.back();return false;">← Back</a><a class="apps-btn" href="/">⬡ Apps</a></div>
+</header>
+
+<main>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Automated tagging</span>
+      <button class="btn btn-sm" id="runBtn" onclick="runTagging()">▶ Run tagging now</button>
+    </div>
+    <div class="card-sub">Runs automatically once a day. Applies license-exp-30 / license-exp-15 / license-exp-call / license-grace-period tags to Microf Direct contacts based on days until license expiration. Those tags trigger the corresponding AC Automations — this page only shows what was matched, it doesn't send anything itself.</div>
+    <div id="runStatus" class="status-msg"></div>
+  </div>
+
+  <div class="summary-row" id="summaryRow"></div>
+
+  <div class="card">
+    <div class="card-title"><span id="sectionTitle">30 days out</span></div>
+    <div class="card-sub" id="sectionSub"></div>
+    <div id="sectionBody">Loading…</div>
+  </div>
+
+  <div class="card" id="deactivateCard" style="display:none">
+    <div class="card-title">
+      <span>Deactivate selected</span>
+      <button class="btn btn-danger btn-sm" id="deactivateBtn" onclick="deactivateSelected()" disabled>Deactivate selected accounts</button>
+    </div>
+    <div class="card-sub">Only accounts in the "Ready to deactivate" bucket (30+ days past expiration, past the grace period) can be selected. Confirms before doing anything — sets every Microf Direct SLP record to Deactivated, tags contacts, and logs an audit note on each account.</div>
+    <div id="deactivateStatus" class="status-msg"></div>
+  </div>
+
+</main>
+
+<script>
+let QUEUE = null;
+let currentBucket = 'license_exp_30';
+const BUCKET_META = {
+  license_exp_30:   {label: '30 days out',        sub: 'First reminder window (28-31 days out).'},
+  license_exp_15:   {label: '15 days out',         sub: 'Second reminder window (13-16 days out).'},
+  license_exp_call: {label: '2-3 days out',        sub: 'Contractor Support call queue — not an automated email.'},
+  license_grace:    {label: 'Grace period',        sub: 'Expired, within the 30-day grace period (0 to -29 days).'},
+  deactivate_ready: {label: 'Ready to deactivate', sub: 'Past the 30-day grace period with no updatedHVACLicense tag confirmed.'},
+};
+
+function daysClass(d) {
+  if (d < 0) return 'days neg';
+  if (d <= 3) return 'days warn';
+  return 'days';
+}
+
+function renderSummary() {
+  const row = document.getElementById('summaryRow');
+  row.innerHTML = '';
+  for (const key of Object.keys(BUCKET_META)) {
+    const rows = QUEUE[key] || [];
+    const tile = document.createElement('div');
+    tile.className = 'summary-tile' + (key === 'deactivate_ready' ? ' danger' : '') + (key === currentBucket ? ' active' : '');
+    tile.onclick = () => selectBucket(key);
+    tile.innerHTML = `<div class="n">${rows.length}</div><div class="lbl">${BUCKET_META[key].label}</div>`;
+    row.appendChild(tile);
+  }
+}
+
+function selectBucket(key) {
+  currentBucket = key;
+  renderSummary();
+  renderSection();
+  document.getElementById('deactivateCard').style.display = (key === 'deactivate_ready') ? 'block' : 'none';
+}
+
+function renderSection() {
+  const meta = BUCKET_META[currentBucket];
+  document.getElementById('sectionTitle').textContent = meta.label;
+  document.getElementById('sectionSub').textContent = meta.sub;
+  const rows = QUEUE[currentBucket] || [];
+  const body = document.getElementById('sectionBody');
+  if (!rows.length) {
+    body.innerHTML = '<div class="empty-row">Nothing in this bucket right now.</div>';
+    return;
+  }
+  const showCheckbox = currentBucket === 'deactivate_ready';
+  let html = '<table><thead><tr>';
+  if (showCheckbox) html += '<th><input type="checkbox" onchange="toggleAll(this)"></th>';
+  html += '<th>Account</th><th>Days</th><th>Expiration</th><th>State</th><th>Contacts</th></tr></thead><tbody>';
+  for (const r of rows) {
+    html += '<tr>';
+    if (showCheckbox) html += `<td><input type="checkbox" class="deact-cb" value="${r.account_id}" onchange="updateDeactivateBtn()"></td>`;
+    html += `<td><a class="acct-link" href="https://microf.activehosted.com/app/accounts/${r.account_id}" target="_blank">${r.account_name || r.account_id}</a></td>`;
+    html += `<td class="${daysClass(r.days_until)}">${r.days_until}</td>`;
+    html += `<td>${r.expiration_date || ''}</td>`;
+    html += `<td>${r.state_of_issue || ''}</td>`;
+    html += `<td>${r.contact_count}</td>`;
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  updateDeactivateBtn();
+}
+
+function toggleAll(cb) {
+  document.querySelectorAll('.deact-cb').forEach(el => el.checked = cb.checked);
+  updateDeactivateBtn();
+}
+
+function updateDeactivateBtn() {
+  const n = document.querySelectorAll('.deact-cb:checked').length;
+  const btn = document.getElementById('deactivateBtn');
+  btn.disabled = n === 0;
+  btn.textContent = n ? `Deactivate ${n} selected account${n > 1 ? 's' : ''}` : 'Deactivate selected accounts';
+}
+
+async function loadQueue() {
+  const res = await fetch('/api/admin/license-deactivations/queue');
+  QUEUE = await res.json();
+  renderSummary();
+  renderSection();
+}
+
+async function runTagging() {
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('runStatus');
+  btn.disabled = true;
+  status.className = 'status-msg info';
+  status.textContent = 'Running tagging pass…';
+  try {
+    const res = await fetch('/api/admin/license-deactivations/run-tagging', {method: 'POST'});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    const parts = Object.entries(data.summary || {}).map(([k, v]) => `${k}: ${v.newly_tagged_contacts} newly tagged`);
+    status.className = 'status-msg ok';
+    status.textContent = `Done — scanned ${data.candidates_scanned} license records. ${parts.join(' · ')}`;
+    await loadQueue();
+  } catch (e) {
+    status.className = 'status-msg err';
+    status.textContent = 'Failed: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deactivateSelected() {
+  const ids = Array.from(document.querySelectorAll('.deact-cb:checked')).map(el => el.value);
+  if (!ids.length) return;
+  if (!confirm(`Deactivate ${ids.length} account(s) for expired HVAC license? This sets their Microf Direct SLP status to Deactivated and cannot be undone from this page.`)) return;
+
+  const btn = document.getElementById('deactivateBtn');
+  const status = document.getElementById('deactivateStatus');
+  btn.disabled = true;
+  status.className = 'status-msg info';
+  status.textContent = 'Deactivating…';
+  try {
+    const res = await fetch('/api/admin/license-deactivations/deactivate/confirm', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({account_ids: ids}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Failed');
+    status.className = data.failed && data.failed.length ? 'status-msg warn' : 'status-msg ok';
+    status.textContent = `Deactivated ${data.deactivated_accounts.length}/${ids.length}.` +
+      (data.failed && data.failed.length ? ` ${data.failed.length} failed — see console.` : '');
+    if (data.failed && data.failed.length) console.warn('Deactivation failures:', data.failed);
+    await loadQueue();
+  } catch (e) {
+    status.className = 'status-msg err';
+    status.textContent = 'Failed: ' + e.message;
+  } finally {
+    updateDeactivateBtn();
+  }
+}
+
+loadQueue();
+</script>
+</body>
+</html>

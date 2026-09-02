@@ -406,6 +406,7 @@ async def _startup():
     asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
     asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
     asyncio.create_task(_acct_cf_cache_loop())  # waits 90s, then keeps account custom-field cache warm
+    asyncio.create_task(_license_deactivation_loop())  # waits 330s, then runs daily license-expiration tagging
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -8218,6 +8219,271 @@ async def optimus_reactivate_confirm(
                     print(f"[optimus-reactivate] note failed for acct {acct_id}: {ne}")
         except Exception as e:
             results["failed"].append({"id": rec_id, "error": str(e)})
+
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# LICENSE EXPIRATION DEACTIVATIONS  ("Deactivations" admin app)
+# ═══════════════════════════════════════════════════════════════════════════
+# Implements the flow in LICENSE EXPIRATION REPORT FLOW.docx, scoped to the
+# Microf Direct channel (the doc's "CAMPAIGNS-Microf Direct" section — Partner
+# Platform dealers get a separate report to the partner instead, not these
+# contractor-facing tags/automations: see /api/report/license-expiration
+# with platform filters for that half).
+#
+# Design: this job only ever APPLIES tags. The actual contractor emails are
+# owned by AC Automations triggered off each tag (same pattern as the
+# welcome-{channel}/resend-{channel} tags above) — those automations must be
+# built in AC directly; this code can't create them.
+#
+# Thresholds (days until expiration; today = 0):
+#   30 days out  → LICENSE_TAG_30    (reminder email #1)
+#   15 days out  → LICENSE_TAG_15    (reminder email #2)
+#   2-3 days out → LICENSE_TAG_CALL  (Contractor Support call queue, not an email tag)
+#   0 to -29     → LICENSE_TAG_GRACE (expired, 30-day grace period)
+#   <= -30       → deactivation-ready (surfaced via /queue, acted on via /deactivate/confirm)
+# Each bucket has a few days of tolerance so a daily run that slips a day
+# doesn't skip anyone. Applying an already-present tag is a no-op (checked
+# before applying) so the job is safe to run more than once a day.
+
+LICENSE_TAG_30         = "license-exp-30"
+LICENSE_TAG_15         = "license-exp-15"
+LICENSE_TAG_CALL       = "license-exp-call"
+LICENSE_TAG_GRACE      = "license-grace-period"
+LICENSE_TAG_UPDATED    = "updatedHVACLicense"           # applied manually once Contractor Support confirms renewal
+LICENSE_TAG_DEACTIVATED = "deactivation-hvac-license-exp"
+
+_LICENSE_DEACT_CHANNEL = "Microf Direct"  # doc's automated flow is scoped to this channel only
+
+
+def _license_bucket(days_until: int) -> Optional[str]:
+    """Map days-until-expiration to the tag it should carry, or None if it's
+    outside every window (nothing to do this run)."""
+    if 28 <= days_until <= 31:
+        return LICENSE_TAG_30
+    if 13 <= days_until <= 16:
+        return LICENSE_TAG_15
+    if 1 <= days_until <= 3:
+        return LICENSE_TAG_CALL
+    if -29 <= days_until <= 0:
+        return LICENSE_TAG_GRACE
+    return None
+
+
+async def _contact_has_tag(contact_id: str, tag_id: str) -> bool:
+    try:
+        d = await ac_get(f"contacts/{contact_id}/contactTags")
+        return any(str(t.get("tag")) == str(tag_id) for t in d.get("contactTags", []))
+    except Exception:
+        return False
+
+
+async def _apply_tag_if_missing(contact_id: str, tag_id: str) -> bool:
+    """Returns True if the tag was newly applied, False if it was already there or the call failed."""
+    if await _contact_has_tag(contact_id, tag_id):
+        return False
+    try:
+        s, _r = await ac_post("contactTags", {"contactTag": {"contact": contact_id, "tag": tag_id}})
+        return s in (200, 201)
+    except Exception as e:
+        print(f"[license-deact] tag apply failed for contact {contact_id}: {e}")
+        return False
+
+
+async def _license_expiration_candidates() -> list:
+    """Fetch all license records with a parseable expiration date and a linked
+    account on the Microf Direct channel. Returns one dict per license record
+    with days_until, bucket, account_id/name, and that account's contact ids."""
+    today = date.today()
+
+    lic_records = await ac_get_all(f"customObjects/records/{LICENSE_SCHEMA_ID}", "records", {})
+
+    # Bulk-fetch accountContacts once instead of one call per account.
+    all_links = await ac_get_all("accountContacts", "accountContacts", {"limit": 100})
+    acct_to_contacts: dict = defaultdict(list)
+    for link in all_links:
+        acct_to_contacts[str(link.get("account"))].append(str(link.get("contact")))
+
+    out = []
+    for r in lic_records:
+        fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
+        exp_str = fields.get("expiration-date") or ""
+        if not exp_str:
+            continue
+        try:
+            exp_date = (datetime.fromisoformat(str(exp_str).replace("Z", "+00:00")).date() if "T" in str(exp_str)
+                        else datetime.strptime(str(exp_str)[:10], "%Y-%m-%d").date())
+        except Exception:
+            continue
+
+        rel = r.get("relationships", {}).get("account", [])
+        acct_id = str(rel[0]) if rel else None
+        if not acct_id:
+            continue
+
+        channel = _account_to_platform.get(acct_id, "")  # sourced from SLP "channel" field, see _update_app_rpa_from_slp_cache
+        if channel != _LICENSE_DEACT_CHANNEL:
+            continue
+
+        days_until = (exp_date - today).days
+        out.append({
+            "record_id":    r.get("id"),
+            "account_id":   acct_id,
+            "account_name": _account_to_name.get(acct_id, fields.get("account-name", "")),
+            "expiration_date": exp_str,
+            "days_until":   days_until,
+            "bucket":       _license_bucket(days_until),
+            "deactivate_ready": days_until <= -30,
+            "contact_ids":  acct_to_contacts.get(acct_id, []),
+            "state_of_issue": fields.get("state-of-issue", ""),
+        })
+    return out
+
+
+async def _run_license_expiration_tagging() -> dict:
+    """The scheduled/manually-triggered job: tags every contact on every
+    qualifying account per its current bucket. Idempotent — see module docstring."""
+    print("[license-deact] Running license expiration tagging…")
+    candidates = await _license_expiration_candidates()
+
+    tag_ids = {}
+    for name in (LICENSE_TAG_30, LICENSE_TAG_15, LICENSE_TAG_CALL, LICENSE_TAG_GRACE):
+        tid = await _get_tag_id(name)
+        if not tid:
+            print(f"[license-deact] WARNING: tag '{name}' does not exist in AC — skipping that bucket")
+        tag_ids[name] = tid
+
+    summary = {name: {"matched_accounts": 0, "newly_tagged_contacts": 0} for name in tag_ids}
+    for c in candidates:
+        bucket = c["bucket"]
+        if not bucket or not tag_ids.get(bucket):
+            continue
+        summary[bucket]["matched_accounts"] += 1
+        for cid in c["contact_ids"]:
+            if await _apply_tag_if_missing(cid, tag_ids[bucket]):
+                summary[bucket]["newly_tagged_contacts"] += 1
+
+    print(f"[license-deact] tagging complete: {summary}")
+    return {"ran_at": datetime.utcnow().isoformat(), "candidates_scanned": len(candidates), "summary": summary}
+
+
+async def _license_deactivation_loop() -> None:
+    """Background task: run the tagging pass once a day. Staggered like the
+    other startup loops so it doesn't compete with cache warming."""
+    await asyncio.sleep(330)
+    while True:
+        try:
+            await _run_license_expiration_tagging()
+        except Exception as e:
+            print(f"[license-deact] loop error: {e}")
+        await asyncio.sleep(86400)  # 24h
+
+
+@app.get("/deactivations")
+async def deactivations_page(_admin=Depends(_require_admin)):
+    return FileResponse("static/deactivations.html")
+
+
+@app.get("/api/admin/license-deactivations/queue")
+async def license_deactivations_queue(_admin=Depends(_require_admin)):
+    """Current state of every Microf Direct account with a license on file,
+    bucketed for the admin UI. Read-only — does not tag or deactivate anything."""
+    candidates = await _license_expiration_candidates()
+    buckets: dict = defaultdict(list)
+    deactivate_ready = []
+    for c in candidates:
+        row = {
+            "record_id": c["record_id"], "account_id": c["account_id"], "account_name": c["account_name"],
+            "expiration_date": c["expiration_date"], "days_until": c["days_until"],
+            "state_of_issue": c["state_of_issue"], "contact_count": len(c["contact_ids"]),
+        }
+        if c["bucket"]:
+            buckets[c["bucket"]].append(row)
+        if c["deactivate_ready"]:
+            deactivate_ready.append(row)
+    for lst in list(buckets.values()) + [deactivate_ready]:
+        lst.sort(key=lambda r: r["days_until"])
+    return {
+        "license_exp_30":    buckets.get(LICENSE_TAG_30, []),
+        "license_exp_15":    buckets.get(LICENSE_TAG_15, []),
+        "license_exp_call":  buckets.get(LICENSE_TAG_CALL, []),
+        "license_grace":     buckets.get(LICENSE_TAG_GRACE, []),
+        "deactivate_ready":  deactivate_ready,
+        "scanned_total":     len(candidates),
+    }
+
+
+@app.post("/api/admin/license-deactivations/run-tagging")
+async def license_deactivations_run_tagging(_admin=Depends(_require_admin)):
+    """Manually trigger the tagging pass (same body the daily loop runs)."""
+    return await _run_license_expiration_tagging()
+
+
+class _LicenseDeactivateConfirmIn(_BaseModel):
+    account_ids: list   # accounts to deactivate for HVAC license expiration
+
+
+@app.post("/api/admin/license-deactivations/deactivate/confirm")
+async def license_deactivations_deactivate_confirm(
+    body: _LicenseDeactivateConfirmIn,
+    request: _Request,
+    user=Depends(require_auth),
+    _admin=Depends(_require_admin),
+):
+    """For each account: set every Microf Direct SLP record to Deactivated,
+    apply the deactivation tag to its contacts, and log an Account Activity
+    note. Mirrors optimus_deactivate_confirm's mechanics."""
+    from datetime import timezone
+    performed_by = _get_session_email(request) or user or "Microf Reports"
+    today_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    tag_id = await _get_tag_id(LICENSE_TAG_DEACTIVATED)
+    if not tag_id:
+        raise HTTPException(500, f"Tag '{LICENSE_TAG_DEACTIVATED}' does not exist in ActiveCampaign. Create it first.")
+
+    slp_cache = await get_slp_cache()
+    all_links = await ac_get_all("accountContacts", "accountContacts", {"limit": 100})
+    acct_to_contacts: dict = defaultdict(list)
+    for link in all_links:
+        acct_to_contacts[str(link.get("account"))].append(str(link.get("contact")))
+
+    results = {"deactivated_accounts": [], "failed": [], "notes": [], "tagged_contacts": []}
+    for acct_id in body.account_ids:
+        acct_id = str(acct_id)
+        try:
+            slp_recs = [r for r in slp_cache
+                        if acct_id in [str(a) for a in r.get("relationships", {}).get("account", [])]
+                        and {f["id"]: f.get("value", "") for f in r.get("fields", [])}.get("channel") == _LICENSE_DEACT_CHANNEL]
+            for rec in slp_recs:
+                existing = {f["id"]: f.get("value", "") for f in rec.get("fields", [])}
+                existing["slp-status-detail"] = "Deactivated"
+                payload = {"record": {"id": rec["id"],
+                                       "fields": [{"id": k, "value": v} for k, v in existing.items()],
+                                       "relationships": {"account": [int(acct_id)]}}}
+                await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
+
+            for cid in acct_to_contacts.get(acct_id, []):
+                if await _apply_tag_if_missing(cid, tag_id):
+                    results["tagged_contacts"].append(cid)
+
+            note_payload = {
+                "record": {
+                    "fields": [
+                        {"id": "activity-type",  "value": "System"},
+                        {"id": "subject",        "value": "HVAC License Expiration Deactivation"},
+                        {"id": "body",           "value": "Deactivated for expired HVAC license — no renewal confirmed within the 30-day grace period."},
+                        {"id": "activity-date",  "value": today_date},
+                        {"id": "performed-by-1", "value": performed_by},
+                        {"id": "source",         "value": "Microf Reports"},
+                    ],
+                    "relationships": {"account": [int(acct_id)]},
+                }
+            }
+            await ac_post(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", note_payload)
+            results["notes"].append(acct_id)
+            results["deactivated_accounts"].append(acct_id)
+        except Exception as e:
+            results["failed"].append({"account_id": acct_id, "error": str(e)})
 
     return results
 
