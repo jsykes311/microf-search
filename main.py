@@ -8293,11 +8293,28 @@ async def _apply_tag_if_missing(contact_id: str, tag_id: str) -> bool:
 
 async def _license_expiration_candidates() -> list:
     """Fetch all license records with a parseable expiration date and a linked
-    account on the Microf Direct channel. Returns one dict per license record
-    with days_until, bucket, account_id/name, and that account's contact ids."""
+    account that has an active Microf Direct enrollment (channel AND SLP
+    status "Contractor Activated" — a Deactivated/Declined/Not Started SLP on
+    Microf Direct should not get reminder tags or a second deactivation).
+    Returns one dict per license record with days_until, bucket, account_id/
+    name, and that account's contact ids."""
     today = date.today()
 
     lic_records = await ac_get_all(f"customObjects/records/{LICENSE_SCHEMA_ID}", "records", {})
+
+    # Build account_id → qualifies (at least one Microf Direct SLP that's
+    # Contractor Activated) directly from the SLP cache. _account_to_platform
+    # only carries channel, not status, so it's not enough on its own here.
+    slp_records = await get_slp_cache()
+    acct_qualifies: dict = {}
+    for rec in slp_records:
+        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+        if fields.get("channel") != _LICENSE_DEACT_CHANNEL:
+            continue
+        if fields.get("slp-status-detail") != "Contractor Activated":
+            continue
+        for aid in rec.get("relationships", {}).get("account", []):
+            acct_qualifies[str(aid)] = True
 
     # Bulk-fetch accountContacts once instead of one call per account.
     all_links = await ac_get_all("accountContacts", "accountContacts", {"limit": 100})
@@ -8322,8 +8339,7 @@ async def _license_expiration_candidates() -> list:
         if not acct_id:
             continue
 
-        channel = _account_to_platform.get(acct_id, "")  # sourced from SLP "channel" field, see _update_app_rpa_from_slp_cache
-        if channel != _LICENSE_DEACT_CHANNEL:
+        if not acct_qualifies.get(acct_id):
             continue
 
         days_until = (exp_date - today).days
