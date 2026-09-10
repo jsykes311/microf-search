@@ -405,7 +405,6 @@ async def _startup():
     asyncio.create_task(_slp_cache_loop())  # waits 90s, then fetches SLPs and kicks off location/state indexes
     asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
     asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
-    asyncio.create_task(_acct_cf_cache_loop())  # waits 90s, then keeps account custom-field cache warm
     asyncio.create_task(_license_deactivation_loop())  # waits 330s, then runs daily license-expiration tagging
     _load_schedules_from_disk()
     _scheduler.start()
@@ -513,6 +512,7 @@ _account_to_strategic_partners: dict = {} # account_id (str) → Strategic Partn
 _account_to_contractor_reactivation: dict = {} # account_id (str) → "Yes" or "" CF32
 _account_to_reactivation_date: dict = {}       # account_id (str) → Reactivation Date CF28
 _account_to_oracle_id: dict = {}               # account_id (str) → Oracle Producer ID (CF118)
+_account_to_partner_activation: dict = {}      # account_id (str) → Partner Activation Date (CF26)
 _account_to_activation_date: dict = {}         # account_id (str) → contractor-activated-date from SLP
 _account_to_slp_states: dict = {}              # account_id (str) → doing-business-in-states from SLP
 _user_id_to_name: dict = {}     # AC user_id (str) → "First Last"
@@ -624,6 +624,7 @@ async def _build_dealer_id_index() -> None:
     CONTRACTOR_REACT_CF = 32  # customFieldId for "Contractor Reactivation" (checkbox)
     REACT_DATE_CF  = 28    # customFieldId for "Reactivation Date"
     ORACLE_CF_ID   = 118   # customFieldId for "Oracle Producer ID"
+    PARTNER_ACT_CF = 26    # customFieldId for "Partner Activation Date"
     CF_PAGE        = 1000  # 1000 records/page → ~190 pages instead of ~1900
     CONCURRENCY    = 8     # 8 concurrent requests → index builds in ~10s instead of ~5min
 
@@ -659,6 +660,7 @@ async def _build_dealer_id_index() -> None:
         acct_to_react:      dict = {}
         acct_to_react_date: dict = {}
         acct_to_oracle_id:  dict = {}
+        acct_to_partner_act: dict = {}
 
         def _ingest(items: list) -> None:
             for item in items:
@@ -712,6 +714,8 @@ async def _build_dealer_id_index() -> None:
                     acct_to_react_date[aid] = val
                 elif cf_id == ORACLE_CF_ID:
                     acct_to_oracle_id[aid]  = val
+                elif cf_id == PARTNER_ACT_CF:
+                    acct_to_partner_act[aid] = val
 
         _ingest(first_page.get("accountCustomFieldData", []))
 
@@ -837,6 +841,7 @@ async def _build_dealer_id_index() -> None:
         _account_to_contractor_reactivation.clear(); _account_to_contractor_reactivation.update(acct_to_react)
         _account_to_reactivation_date.clear();       _account_to_reactivation_date.update(acct_to_react_date)
         _account_to_oracle_id.clear();               _account_to_oracle_id.update(acct_to_oracle_id)
+        _account_to_partner_activation.clear();       _account_to_partner_activation.update(acct_to_partner_act)
 
         # Reverse index: lowercase dealer program → set of account IDs
         new_prog: dict = {}
@@ -906,111 +911,13 @@ _slp_cache_lock             = asyncio.Lock()
 _SLP_CACHE_TTL              = 900  # 15 minutes — fetch takes ~1-2 min, no point hammering every 5
 _slp_refreshing:    bool   = False  # True while a refresh is in flight
 
-# ── Account custom-field data cache (shared across all report endpoints) ─────
-_acct_cf_raw:    list  = []   # all raw accountCustomFieldData records
-_acct_cf_raw_ts: float = 0.0
-_ACCT_CF_TTL           = 600  # 10 minutes
-_acct_cf_lock             = asyncio.Lock()
-_acct_cf_refreshing: bool = False  # True while a refresh is in flight
-
-def _trim_acct_cf(item: dict) -> dict:
-    """Keep only the 3 fields _fetch_acct_cf_map actually reads, dropping
-    id/links/timestamps/accountCustomFieldMetumId. Measured locally (170,514
-    live records, same 1000/page-8-worker fetch as below): full records cost
-    ~282MB RSS, trimmed cost ~258MB — real but modest (~9%), nowhere near the
-    ~6x the raw JSON-byte-size difference (429 vs 69 bytes/record) suggested;
-    Python's per-object overhead dominates for many small dicts regardless of
-    field count. Worth keeping since it's free and strictly safe, but this
-    alone does not explain steady-state sitting at ~1.9-2GB — see the OOM
-    note below."""
-    return {
-        "customFieldId": item.get("customFieldId"),
-        "accountId":     item.get("accountId"),
-        "fieldValue":    item.get("fieldValue"),
-    }
-
-
-async def _refresh_acct_cf_cache() -> None:
-    """Fetch ALL accountCustomFieldData records and atomically swap into _acct_cf_raw.
-
-    A cold rebuild over the full account custom-field dataset (~160K+ records)
-    took ~9.5 minutes at 100 records/page, one page at a time — long enough to
-    hang any report depending on this cache (e.g. Contractor Activations)
-    whenever it went stale. A first attempt at fixing this used
-    ac_client.fetch_all_pages's concurrent path, which builds a {offset: page}
-    dict for every page and only flattens it into the final list at the end —
-    momentarily holding the entire ~160K-record dataset in memory TWICE. That
-    was confirmed (via Render's logs/metrics) to be the direct cause of an
-    out-of-memory crash in production. Fetching at 1000 records/page with 8
-    concurrent workers, extending a single shared list as each page completes
-    (same page size/concurrency already used by _build_dealer_id_index),
-    avoids the double-buffering and still finishes in well under a minute.
-
-    That fix held for a while, but by 2026-08-30 Render's memory graph showed
-    steady-state sitting flat at ~1.9-2.0GB (of a 2GB limit) for hours between
-    OOM crashes at unpredictable points along that plateau — up from the
-    ~850MB-1GB this cache's fix originally measured. This cache alone (170,514
-    records) measured at ~282MB full / ~258MB trimmed locally — a real but
-    modest ~9% cut (see _trim_acct_cf; the raw-JSON-byte-size ratio between
-    full and trimmed records is much larger, ~6x, but that does NOT translate
-    proportionally to Python RSS — per-object overhead dominates for many
-    small dicts). Kept anyway since it's free and strictly safe, but at ~258MB
-    this cache is only part of a ~1.9GB total — the SLP/team-activity/last-
-    contacted caches (same 90/150/210/270s stagger, main.py:~975) haven't been
-    measured the same way and are equally plausible contributors now. Treat
-    this as one incremental improvement, not a confirmed fix for the crash."""
-    global _acct_cf_raw, _acct_cf_raw_ts, _acct_cf_refreshing
-    async with _acct_cf_lock:
-        if _acct_cf_raw and (_time.time() - _acct_cf_raw_ts) < _ACCT_CF_TTL:
-            return
-        _acct_cf_refreshing = True
-        print("[acct-cf-cache] Refreshing account custom field data…")
-        PAGE, CONCURRENCY = 1000, 8
-        raw: list = []
-        try:
-            first = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": 0})
-            raw.extend(_trim_acct_cf(it) for it in first.get("accountCustomFieldData", []))
-            total = int(first.get("meta", {}).get("total", 0))
-
-            if total > PAGE:
-                sem = asyncio.Semaphore(CONCURRENCY)
-                async def fetch_and_extend(offset: int):
-                    async with sem:
-                        page = await ac_get("accountCustomFieldData", {"limit": PAGE, "offset": offset})
-                        raw.extend(_trim_acct_cf(it) for it in page.get("accountCustomFieldData", []))
-                await asyncio.gather(*[fetch_and_extend(o) for o in range(PAGE, total, PAGE)])
-
-            print(f"[acct-cf-cache] fetched {len(raw)} records")
-            if raw:
-                _acct_cf_raw    = raw
-                _acct_cf_raw_ts = _time.time()
-            else:
-                print("[acct-cf-cache] WARNING: 0 records returned — keeping existing cache, will retry")
-        except Exception as _e:
-            print(f"[acct-cf-cache] fetch failed: {_e}")
-        finally:
-            _acct_cf_refreshing = False
-
-async def _acct_cf_cache_loop() -> None:
-    """Background task: keep the account custom-field cache warm, refreshing every
-    _ACCT_CF_TTL seconds, so report requests never have to wait on a cold rebuild."""
-    # Staggered 90/150/210/270s across the four post-boot cache loops (see _lc_cache_loop,
-    # _ta_cache_loop, _slp_cache_loop) — all four used to wake at the same 90s mark, piling
-    # up 5 concurrent bulk fetches (this one plus _build_dealer_id_index already running
-    # since t=0) right after every restart. That pileup was the likely cause of the tight
-    # crash-loop clusters seen in Render's memory graph (several restarts within minutes,
-    # distinct from the separate slow multi-hour leak fixed in _tag_jobs/_refresh_ta_cache).
-    await asyncio.sleep(150)
-    while True:
-        try:
-            await _refresh_acct_cf_cache()
-        except Exception as _e:
-            print(f"[acct-cf-cache] loop error: {_e}")
-        if _acct_cf_raw:
-            await asyncio.sleep(_ACCT_CF_TTL)
-        else:
-            print("[acct-cf-cache] cache still empty — retrying in 30s")
-            await asyncio.sleep(30)
+# ── Account custom-field lookups ────────────────────────────────────────────
+# The old _acct_cf_raw cache held ALL ~40 field types x 171K accountCustomFieldData
+# rows resident (~660MB RSS) and rebuilt itself every 10 min with double-buffering
+# — the dominant driver of the 2GB OOMs. Every caller of _fetch_acct_cf_map only
+# ever asks for 6 field IDs {15,19,22,23,26,118}, all of which are now in the small
+# _account_to_* dicts built by _build_dealer_id_index. So the cache is gone and
+# _fetch_acct_cf_map is a thin shim over those dicts (see below, near line ~6200).
 
 async def _refresh_slp_cache() -> None:
     """Fetch ALL SLP records from AC and atomically swap into _slp_cache_records.
@@ -1146,7 +1053,7 @@ async def _refresh_lc_cache() -> None:
         print(f"[lc-cache] refreshed — {len(latest)} accounts with last-contacted date")
 
 async def _lc_cache_loop() -> None:
-    await asyncio.sleep(270)   # staggered last of the four post-boot cache loops — see _acct_cf_cache_loop
+    await asyncio.sleep(270)   # staggered last of the post-boot cache loops (see _slp_cache_loop stagger note)
     while True:
         try:
             await _refresh_lc_cache()
@@ -1235,7 +1142,7 @@ async def _refresh_ta_cache() -> None:
           f"{len(contact_to_account)} contact→account mappings")
 
 async def _ta_cache_loop() -> None:
-    await asyncio.sleep(210)   # staggered third of the four post-boot cache loops — see _acct_cf_cache_loop
+    await asyncio.sleep(210)   # staggered among the post-boot cache loops (see _slp_cache_loop stagger note)
     while True:
         try:
             await _refresh_ta_cache()
@@ -1492,7 +1399,7 @@ async def _slp_cache_loop() -> None:
     with the 15-minute refresh instead of the old 24h TTL.
     """
     # First of the four staggered post-boot cache loops (90/150/210/270s) — see
-    # _acct_cf_cache_loop for why they're spread out instead of all firing at 90s.
+    # the stagger note here for why they're spread out instead of all firing at 90s.
     await asyncio.sleep(90)   # give dealer index a head-start before first SLP fetch
     while True:
         try:
@@ -6208,24 +6115,40 @@ def _resolve_date_range(
     return (start or default_start), (end or default_end)
 
 
-async def _fetch_acct_cf_map(field_ids: set) -> dict:
-    """Bulk-fetch account custom fields. Returns {account_id: {field_id_str: value}}.
-    Backed by the shared _acct_cf_raw cache (kept warm by _acct_cf_cache_loop);
-    only blocks on a live refresh if the cache is empty or has gone stale."""
-    if not _acct_cf_raw or (_time.time() - _acct_cf_raw_ts) > _ACCT_CF_TTL:
-        await _refresh_acct_cf_cache()
+# Every field _fetch_acct_cf_map is ever asked for, mapped to the in-memory
+# index that already holds it (all built by _build_dealer_id_index). No bulk
+# fetch, no resident 171K-row cache — that was the 2GB-OOM driver.
+_ACCT_CF_INDEX_SOURCES = {
+    "15":  lambda: _account_to_dba,                  # DBA Name
+    "19":  lambda: _account_to_status,               # Account Status
+    "22":  lambda: _account_to_states,               # Doing Business in States
+    "23":  lambda: _account_to_region,               # Sales Region
+    "26":  lambda: _account_to_partner_activation,   # Partner Activation Date
+    "118": lambda: _account_to_oracle_id,            # Oracle Producer ID
+}
 
-    field_ids_int = {int(f) for f in field_ids}
-    result: dict  = defaultdict(dict)
-    for item in _acct_cf_raw:
-        fid = int(item.get("customFieldId", 0))
-        if fid not in field_ids_int:
-            continue
-        aid = str(item.get("accountId", ""))
-        fv  = item.get("fieldValue") or ""
-        val = (fv if isinstance(fv, str) else (str(fv[0]) if fv else "")).strip()
-        if aid and val:
-            result[aid][str(fid)] = val
+
+async def _fetch_acct_cf_map(field_ids: set) -> dict:
+    """Return {account_id: {field_id_str: value}} for the requested account CFs,
+    served from the _account_to_* indexes. Only the 6 fields any caller actually
+    uses are backed here — an unbacked id raises rather than silently returning
+    blanks. If the dealer index hasn't built yet, build it first (mirrors the
+    old 'refresh if cache empty' guard)."""
+    if not _account_to_name:
+        await _build_dealer_id_index()
+
+    result: dict = defaultdict(dict)
+    for fid in field_ids:
+        fid = str(fid)
+        src = _ACCT_CF_INDEX_SOURCES.get(fid)
+        if src is None:
+            raise ValueError(
+                f"_fetch_acct_cf_map: field {fid} is not backed by an index — "
+                f"add it to _build_dealer_id_index and _ACCT_CF_INDEX_SOURCES"
+            )
+        for aid, val in src().items():
+            if val:
+                result[aid][fid] = val
     return dict(result)
 
 
