@@ -395,12 +395,23 @@ function renderStatusSelect(r) {
             onchange="handleInlineEdit(this,'slp-status-detail')">${rows.join('')}</select>`;
 }
 
+function renderChannelSelect(r) {
+  const opts = optionsWithCurrent(editOptions.channels || [], r.channel);
+  const rows = ['<option value=""' + (!r.channel ? ' selected' : '') + '>—</option>']
+    .concat(opts.map(c => `<option value="${esc(c)}" ${c === r.channel ? 'selected' : ''}>${esc(c)}</option>`));
+  return `<select class="inline-select" data-slp-id="${esc(r.slp_id)}"
+            onchange="handleInlineEdit(this,'channel')">${rows.join('')}</select>`;
+}
+
 async function handleInlineEdit(selectEl, field) {
   const slpId = selectEl.dataset.slpId;
   const value = selectEl.value;
   const record = allFetchedRecords.find(r => r.slp_id === slpId);
-  const prevValue = field === 'assigned-bdr' ? (record?.assigned_bdr || '') : (record?.slp_status || '');
-  const label = field === 'assigned-bdr' ? 'BDR' : 'Status';
+  const FIELD_ACCESSOR = { 'assigned-bdr': 'assigned_bdr', 'slp-status-detail': 'slp_status', 'channel': 'channel' };
+  const FIELD_LABEL    = { 'assigned-bdr': 'BDR', 'slp-status-detail': 'Status', 'channel': 'Channel' };
+  const acc = FIELD_ACCESSOR[field];
+  const prevValue = record?.[acc] || '';
+  const label = FIELD_LABEL[field] || field;
 
   selectEl.classList.add('saving');
   try {
@@ -413,9 +424,7 @@ async function handleInlineEdit(selectEl, field) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-    if (record) {
-      if (field === 'assigned-bdr') record.assigned_bdr = value; else record.slp_status = value;
-    }
+    if (record) { record[acc] = value; }
     if (field === 'slp-status-detail') {
       selectEl.className = `inline-select status-select ${statusBadgeClass(value)}`;
     }
@@ -530,7 +539,7 @@ function renderSlpTable(records) {
         <a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.slp_name || r.account_name || r.dealer_id)}</a>
         <div class="sub-line"><a class="ac-link" href="${acctUrl}" target="_blank">${esc(r.dealer_id)}</a></div>
       </td>
-      <td>${esc(r.channel)}</td>
+      <td>${r.slp_id ? renderChannelSelect(r) : (esc(r.channel) || '—')}</td>
       <td>${r.slp_id ? renderBdrSelect(r) : (esc(r.assigned_bdr) || '—')}</td>
       <td>
         ${r.slp_id ? renderStatusSelect(r) : `<span class="status-badge ${statusBadgeClass(r.slp_status)}">${esc(r.slp_status)}</span>`}${freshnessBadge(r)}

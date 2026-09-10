@@ -595,6 +595,17 @@ select, input { font-family: inherit; }
 .acui-field-row:last-child { border-bottom: none; }
 .acui-field-label { font-size: 0.74rem; color: var(--ms-g90); width: 200px; flex-shrink: 0; font-weight: 500; }
 .acui-field-value { font-size: 0.74rem; color: var(--ms-g160); flex: 1; }
+.acui-field-edit { font-size: 0.74rem; color: var(--ms-g160); flex: 1; border: 1px solid transparent; background: transparent;
+  border-radius: 5px; padding: 2px 6px; margin: -2px 0; font-family: inherit; width: 100%; max-width: 320px; }
+.acui-field-edit:hover { border-color: var(--ms-g20); background: #fff; }
+.acui-field-edit:focus { outline: none; border-color: #6366f1; background: #fff; box-shadow: 0 0 0 2px rgba(99,102,241,.15); }
+.acui-field-edit.saving { opacity: .55; pointer-events: none; }
+.acui-field-edit.saved { border-color: #16a34a; }
+.ms-toast-stack { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+.ms-toast { background: #1e293b; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 0.78rem; max-width: 340px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.25); animation: msToastIn .18s ease; }
+.ms-toast.err { background: #7f1d1d; }
+@keyframes msToastIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* Custom object tabs */
 .acui-co-tabs {
@@ -2607,9 +2618,16 @@ function _navToHash(hash) {
 window.addEventListener('hashchange', () => _navToHash(window.location.hash));
 
 // ── Boot ───────────────────────────────────────────────────────
+let _acctEditable = { fields: {}, by_label: {} };  // loaded from /api/account/edit-options
+
 async function init() {
   // Route to the tab indicated by the URL hash (or default to accounts)
   _navToHash(window.location.hash || '#accounts');
+
+  // Which account fields are inline-editable in the About card
+  fetch('/api/account/edit-options').then(r => r.json())
+    .then(d => { _acctEditable = d; })
+    .catch(() => {});
 
   // Lazy-load tool data in background
   fetch('/api/objects').then(r => r.json()).then(data => {
@@ -4192,8 +4210,30 @@ function abRenderDetail(d) {
 
   const STATUS_FIELDS = new Set(['Account Status','Contractor Status','Dealer Status']);
 
+  function editorFor(label, val) {
+    const spec = _acctEditable.fields[_acctEditable.by_label[label]];
+    if (!spec) return null;
+    const v = String(val || '');
+    if (spec.type === 'dropdown') {
+      const opts = spec.options.slice();
+      if (v && !opts.includes(v)) opts.unshift(v);
+      return `<select class="acui-field-edit" data-label="${esc(label)}"
+                onchange="saveAcctField(this,'${esc(a.id)}')">
+                <option value="">—</option>
+                ${opts.map(o => `<option value="${esc(o)}"${o===v?' selected':''}>${esc(o)}</option>`).join('')}
+              </select>`;
+    }
+    const inputType = spec.type === 'date' ? 'date' : 'text';
+    return `<input class="acui-field-edit" type="${inputType}" value="${esc(v)}" data-label="${esc(label)}"
+              data-orig="${esc(v)}" placeholder="—"
+              onchange="saveAcctField(this,'${esc(a.id)}')">`;
+  }
+
   function fieldRow(label, val) {
-    const display = STATUS_FIELDS.has(label) ? acctStatusBadge(val) : `<span class="acui-field-value">${esc(String(val))}</span>`;
+    const editor = editorFor(label, val);
+    const display = editor
+      ? editor
+      : (STATUS_FIELDS.has(label) ? acctStatusBadge(val) : `<span class="acui-field-value">${esc(String(val))}</span>`);
     return `<div class="acui-field-row">
       <span class="acui-field-label">${esc(label)}</span>
       ${display}
@@ -4203,7 +4243,9 @@ function abRenderDetail(d) {
   const sections = FIELD_GROUPS.map((g,i) => {
     // Business absorbs any fields not covered by other groups
     const extra = (g.label === 'Business') ? otherEntries.map(([k,v]) => fieldRow(k,v)).join('') : '';
-    const rows  = g.keys.filter(k => a.fields[k]).map(k => fieldRow(k, a.fields[k])).join('') + extra;
+    // Show a key if it has a value OR it's an editable field (so blanks can be filled in)
+    const showKeys = g.keys.filter(k => a.fields[k] || _acctEditable.by_label[k]);
+    const rows  = showKeys.map(k => fieldRow(k, a.fields[k] || '')).join('') + extra;
     if (!rows) return '';
     return `<div class="acui-section-row">
       <button class="acui-section-toggle ${i===0?'open':''}" onclick="abToggleSection(this)">
@@ -4557,6 +4599,42 @@ async function acuiSubmitTraining(accountId, acctName, dealerId) {
 function abToggleSection(btn) {
   btn.classList.toggle('open');
   btn.nextElementSibling.classList.toggle('open');
+}
+
+function msToast(msg, isErr) {
+  let stack = document.querySelector('.ms-toast-stack');
+  if (!stack) { stack = document.createElement('div'); stack.className = 'ms-toast-stack'; document.body.appendChild(stack); }
+  const el = document.createElement('div');
+  el.className = 'ms-toast' + (isErr ? ' err' : '');
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => el.remove(), 4500);
+}
+
+async function saveAcctField(el, accountId) {
+  const label = el.dataset.label;
+  const value = el.value;
+  const orig  = el.tagName === 'SELECT'
+    ? (Array.from(el.options).find(o => o.defaultSelected)?.value ?? '')
+    : (el.dataset.orig ?? '');
+  if (value === orig) return;
+  el.classList.add('saving');
+  try {
+    const res = await fetch('/api/account/update-field', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: accountId, field: label, value }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail || `HTTP ${res.status}`); }
+    el.classList.remove('saving'); el.classList.add('saved');
+    setTimeout(() => el.classList.remove('saved'), 1500);
+    if (el.tagName === 'SELECT') { Array.from(el.options).forEach(o => o.defaultSelected = (o.value === value)); }
+    else { el.dataset.orig = value; }
+    msToast(`${label}: ${orig || '(blank)'} → ${value || '(blank)'}`);
+  } catch (e) {
+    el.classList.remove('saving');
+    if (el.tagName === 'SELECT') el.value = orig; else el.value = orig;
+    msToast(`${label} update failed: ${e.message}`, true);
+  }
 }
 
 function abCoTab(key, btn) {

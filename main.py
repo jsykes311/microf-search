@@ -3013,16 +3013,18 @@ async def enrollment_report(
 # ONBOARDING LIVE — inline SLP status / BDR edit
 # ═══════════════════════════════════════════════════════════════════════════
 
-_SLP_EDITABLE_FIELDS = {"slp-status-detail", "assigned-bdr"}
-_SLP_FIELD_LABELS    = {"slp-status-detail": "Status", "assigned-bdr": "Assigned BDR"}
+_SLP_EDITABLE_FIELDS = {"slp-status-detail", "assigned-bdr", "channel"}
+_SLP_FIELD_LABELS    = {"slp-status-detail": "Status", "assigned-bdr": "Assigned BDR",
+                        "channel": "Channel"}
 
 
 @app.get("/api/onboarding-live/edit-options")
 async def onboarding_live_edit_options(user=Depends(require_auth)):
-    """Valid dropdown values for the inline Status/BDR editors."""
+    """Valid dropdown values for the inline Status / BDR / Channel editors."""
     _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
-    bdrs = [o["value"] for o in ftypes.get("assigned-bdr", {}).get("options", [])]
-    return {"statuses": _SLP_STATUSES, "bdrs": bdrs}
+    bdrs     = [o["value"] for o in ftypes.get("assigned-bdr", {}).get("options", [])]
+    channels = [o["value"] for o in ftypes.get("channel", {}).get("options", [])]
+    return {"statuses": _SLP_STATUSES, "bdrs": bdrs, "channels": channels}
 
 
 class _SlpFieldUpdateIn(_BaseModel):
@@ -3081,6 +3083,98 @@ async def onboarding_live_update_slp(body: _SlpFieldUpdateIn, user=Depends(requi
             print(f"[onboarding-live-edit] note failed (non-fatal): {e}")
 
     return {"ok": True, "slp_id": body.slp_id, "field": field, "old_value": old_value, "new_value": value}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INLINE ACCOUNT CUSTOM-FIELD EDITS
+# Whitelist chosen from a change-frequency analysis of accountCustomFieldData
+# (created vs updated timestamps): the fields humans actually hand-edit.
+# Deliberately EXCLUDES fields a sync owns (Legal Business Name, Annual Revenue
+# bucket) — a manual editor there would just get overwritten.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# cf_id -> {"label", "type": text|dropdown|date, "options": [...]}
+_ACCT_EDITABLE_FIELDS = {
+    "19":  {"label": "Account Status", "type": "dropdown",
+            "options": ["Active", "Not Active", "Deactivated", "Pre-Activation",
+                        "Waiting on BDR", "Waiting on Docs to be signed",
+                        "Under Review by OPS Manager"]},
+    "23":  {"label": "Sales Region", "type": "dropdown",
+            "options": ["Mid-Atlantic", "Southeast", "Midwest", "West", "Other"]},
+    "119": {"label": "Assigned BDR", "type": "dropdown",
+            "options": ["Blake Sanders", "Barb Yeskey", "Chip Harden", "Phil Arnold"]},
+    "148": {"label": "How did you hear about us?", "type": "dropdown",
+            "options": ["Microf Sales Team (BDR or Account Manager)", "Contractor Referral",
+                        "HVAC Distributor", "Industry Event / Trade Show",
+                        "Online (Search, Website, Social)", "Financing / Business Partner",
+                        "Referral", "Other - Lead Type not identified in the above list"]},
+    "118": {"label": "Oracle Producer ID", "type": "text"},
+    "15":  {"label": "DBA Name", "type": "text"},
+    "39":  {"label": "Website", "type": "text"},
+    "22":  {"label": "Doing Business in States", "type": "text"},
+    "18":  {"label": "Parent Dealer ID", "type": "text"},
+    "147": {"label": "Annual Revenue Amount", "type": "text"},
+    "26":  {"label": "Partner Activation Date", "type": "date"},
+}
+# label -> cf_id, so the frontend can key editors off the AC labels it already renders
+_ACCT_EDITABLE_BY_LABEL = {v["label"]: k for k, v in _ACCT_EDITABLE_FIELDS.items()}
+
+
+@app.get("/api/account/edit-options")
+async def account_edit_options(user=Depends(require_auth)):
+    """Whitelist + dropdown options for the inline account-field editors."""
+    return {"fields": _ACCT_EDITABLE_FIELDS, "by_label": _ACCT_EDITABLE_BY_LABEL}
+
+
+class _AcctFieldUpdateIn(_BaseModel):
+    account_id: str
+    field:      str   # cf_id (string) OR the AC label
+    value:      str
+
+
+@app.post("/api/account/update-field")
+async def account_update_field(body: _AcctFieldUpdateIn, user=Depends(require_auth)):
+    """Upsert one whitelisted account custom field and log an audit note.
+    Same fetch-old / write / note pattern as onboarding-live/update-slp."""
+    key = body.field.strip()
+    cf_id = key if key in _ACCT_EDITABLE_FIELDS else _ACCT_EDITABLE_BY_LABEL.get(key)
+    if not cf_id:
+        raise HTTPException(status_code=400, detail=f"Field '{key}' is not editable here")
+    spec  = _ACCT_EDITABLE_FIELDS[cf_id]
+    value = body.value.strip()
+    if spec["type"] == "dropdown" and value and value not in spec["options"]:
+        raise HTTPException(status_code=400,
+                            detail=f"'{value}' is not a valid {spec['label']} option")
+
+    # Read current value for the audit trail
+    old_value = ""
+    try:
+        cur = await ac_get(f"accounts/{body.account_id}/accountCustomFieldData")
+        for cf in cur.get("customerAccountCustomFieldData", []):
+            if str(cf.get("custom_field_id")) == cf_id:
+                old_value = _extract_cf_value(cf)
+                break
+    except Exception:
+        pass
+
+    try:
+        await ac_post("accountCustomFieldData", {"accountCustomFieldDatum": {
+            "customFieldId": int(cf_id), "customerAccountId": body.account_id,
+            "fieldValue": value}})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"AC rejected the update: {e}") from e
+
+    if old_value != value:
+        note_text = (f'{spec["label"]} changed from "{old_value or "(blank)"}" to '
+                     f'"{value or "(blank)"}" via Microf Search by {user}.')
+        try:
+            await ac_post("notes", {"note": {"note": note_text, "relid": body.account_id,
+                                              "reltype": "CustomerAccount", "userid": "1"}})
+        except Exception as e:
+            print(f"[account-field-edit] note failed (non-fatal): {e}")
+
+    return {"ok": True, "account_id": body.account_id, "field": spec["label"],
+            "old_value": old_value, "new_value": value}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
