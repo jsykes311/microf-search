@@ -255,7 +255,12 @@
 </div>
 
 <script>
-const POLL_MS = 60000;
+// Backend SLP data only refreshes every 15 minutes (_SLP_CACHE_TTL in main.py), so
+// polling every 60s re-fetched the same data 14 times out of 15 for nothing — the
+// single biggest driver of this page's bandwidth (up to ~3.8MB/poll with wide filters,
+// confirmed as the dominant cause of blowing through Render's workspace bandwidth cap).
+// 5 minutes still feels live without the waste.
+const POLL_MS = 300000;
 // Per-status "days in status" thresholds before something is flagged as
 // needing attention. Statuses not listed here (terminal states like
 // Contractor Activated, Declined, Deactivated, etc.) are never flagged.
@@ -773,7 +778,7 @@ async function poll() {
     bumpUnread(changesFound);
 
     document.getElementById('poll-status').innerHTML =
-      `Last checked <b>${new Date().toLocaleTimeString()}</b> — next check in ~60s. Backend data refreshes every 15 minutes.`;
+      `Last checked <b>${new Date().toLocaleTimeString()}</b> — next check in ~5 min. Backend data refreshes every 15 minutes.`;
   } catch (e) {
     document.getElementById('poll-status').textContent = 'Error checking for updates: ' + e.message;
   }
