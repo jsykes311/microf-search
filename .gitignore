@@ -16,3 +16,15 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+!marketing.py
+!marketing-ui/
+!marketing-ui/**
+!tests/
+!tests/**
+marketing-ui/node_modules/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
