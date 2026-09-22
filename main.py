@@ -291,7 +291,12 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
         if not email:
             if path.startswith("/api/"):
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
-            return RedirectResponse(url="/login", status_code=302)
+            response = RedirectResponse(url="/login", status_code=302)
+            if path == "/marketing-projects":
+                destination = path + ("?" + request.url.query if request.url.query else "")
+                response.set_cookie("marketing_return", _signer.dumps(destination, salt="marketing-return"),
+                                    max_age=1800, httponly=True, samesite="lax", secure=True)
+            return response
         # Record last-seen for authenticated users (write to disk only when date changes)
         _record_last_seen(email)
         return await call_next(request)
@@ -329,6 +334,7 @@ async def auth_start():
 
 @app.get("/auth/callback")
 async def auth_callback(
+    request: _Request,
     code:  Optional[str] = Query(None),
     error: Optional[str] = Query(None),
 ):
@@ -368,7 +374,15 @@ async def auth_callback(
     _record_last_seen(email)
 
     session_token = _signer.dumps(email)
-    response = RedirectResponse(url="/search", status_code=302)
+    destination = "/search"
+    try:
+        saved = _signer.loads(request.cookies.get("marketing_return", ""), salt="marketing-return", max_age=1800)
+        if saved == "/marketing-projects" or saved.startswith("/marketing-projects?"):
+            destination = saved
+    except (BadSignature, SignatureExpired):
+        pass
+    response = RedirectResponse(url=destination, status_code=302)
+    response.delete_cookie("marketing_return")
     response.set_cookie(
         "session", session_token,
         max_age=_COOKIE_MAX_AGE, httponly=True, samesite="lax", secure=True,
