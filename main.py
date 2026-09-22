@@ -13465,3 +13465,7 @@ async def dash_training_funnel(admin=Depends(_require_admin)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+# Marketing Projects: authenticated intake and durable notification queue.
+from marketing import install_marketing
+install_marketing(app, _get_session_email)
