@@ -147,9 +147,9 @@ export function App() {
   async function addFiles(id, files) {
     const data = new FormData();
     [...files].forEach((f) => data.append("files", f));
-    replaceProject(
-      await api("/projects/" + id + "/files", { method: "POST", body: data }),
-    );
+    const updated = await api("/projects/" + id + "/files", { method: "POST", body: data });
+    replaceProject(updated);
+    return updated;
   }
   const visible = projects
     .filter(
@@ -948,7 +948,10 @@ function ProjectDetails({
               disabled={saving}
               onChange={(e) => {
                 const files = [...e.target.files];
-                if (files.length) perform(() => onFiles(files));
+                if (files.length) perform(async () => {
+                  const updated = await onFiles(files);
+                  if (updated.version === editVersion.current + 1) editVersion.current = updated.version;
+                });
                 e.target.value = "";
               }}
             />
