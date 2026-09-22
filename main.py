@@ -11506,6 +11506,168 @@ async def welcome_send(
     }
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# AWAITING INSTALL — serial-number reminder email
+# ═══════════════════════════════════════════════════════════════════════════
+# One-off email to a contractor reminding them to submit Make/Model/Serial
+# Number for a specific RTO once install is complete. The body is fixed
+# (matches the template Contractor Support already sends by hand) — only the
+# dealer name/city/state line, the RTO/customer-name/address line, and the
+# portal name change per send.
+
+_AWAITING_INSTALL_SUBJECT = "Microf Serial Numbers Needed Reminder-Funding unsubmitted"
+
+
+def _awaiting_install_body(dealer_label: str, rto: str, cu_name: str, cu_address: str,
+                            portal: str, sender_name: str) -> str:
+    return (
+        f"{dealer_label}\n\n"
+        f"{rto} {cu_name} {cu_address}  - Serial Numbers Needed Reminder!\n\n"
+        f"Good Afternoon!\n\n"
+        f"Below is just a friendly reminder for the above referenced application. \U0001F60A\n\n"
+        f"After installation is complete, please submit the serial number(s) affiliated with the "
+        f"installation into your {portal} portal. Once serial number(s) are received Microf will "
+        f"begin the funding process.\n\n"
+        f"If you have any questions, please do not hesitate to contact Microf at 855.498.8200 or "
+        f"contractorsupport@microf.com.\n\n"
+        f"Thank you for your business.\n\n"
+        f"MICROF\n\n"
+        f"Thanks again & I hope you have a wonderful day!\n\n"
+        f"{sender_name}\n"
+        f"Contractor Support\n"
+        f"Contractor Hotline: 855.498.8200\n"
+        f"Microf.com\n"
+        f"2849 Paces Ferry Rd SE Suite 625\n"
+        f"Atlanta, GA 30339"
+    )
+
+
+@app.get("/awaiting-install")
+async def awaiting_install_page(user=Depends(require_auth)):
+    return FileResponse("static/awaiting-install.html")
+
+
+@app.get("/api/awaiting-install/account-info/{account_id}")
+async def awaiting_install_account_info(account_id: str, user=Depends(require_auth)):
+    """Given an account, return the dealer name/city/state line, its contacts
+    (for the To-email dropdown), and the most-recently-activated SLP's channel
+    as the suggested portal."""
+    name  = _account_to_name.get(account_id, "").split(" (AC:")[0].strip()
+    city  = _account_to_city.get(account_id, "")
+    state = _account_to_state_prov.get(account_id, "")
+    dealer_label = " ".join(p for p in [name, city, state] if p).upper()
+
+    contacts = []
+    try:
+        links_resp = await ac_get("accountContacts", {"filters[account]": account_id, "limit": 20})
+        for link in links_resp.get("accountContacts", []):
+            cid = link.get("contact")
+            c = (await ac_get(f"contacts/{cid}")).get("contact", {})
+            if c.get("email"):
+                contacts.append({
+                    "id":    cid,
+                    "name":  f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
+                    "email": c["email"],
+                })
+    except Exception as e:
+        print(f"[awaiting-install] contact lookup failed for {account_id}: {e}")
+
+    suggested_portal, best_date = "", ""
+    try:
+        slp_resp = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}",
+                                 {"filters[relationships.account]": account_id, "limit": 20})
+        for r in slp_resp.get("records", []):
+            f = {x["id"]: x.get("value", "") for x in r.get("fields", [])}
+            ch  = (f.get("channel") or "").strip()
+            act = (f.get("contractor-activated-date") or "").strip()
+            if ch and (not suggested_portal or act > best_date):
+                suggested_portal, best_date = ch, act
+    except Exception as e:
+        print(f"[awaiting-install] SLP lookup failed for {account_id}: {e}")
+
+    return {
+        "account_id":       account_id,
+        "dealer_label":     dealer_label,
+        "name": name, "city": city, "state": state,
+        "contacts":         contacts,
+        "suggested_portal": suggested_portal,
+    }
+
+
+@app.get("/api/awaiting-install/portal-options")
+async def awaiting_install_portal_options(user=Depends(require_auth)):
+    _, ftypes = await _schema_fields(SLP_SCHEMA_ID)
+    return {"portals": [o["value"] for o in ftypes.get("channel", {}).get("options", [])]}
+
+
+class _AwaitingInstallSendIn(_BaseModel):
+    account_id:   str
+    to_email:     str
+    cc:           str = ""
+    dealer_label: str
+    rto:          str
+    cu_name:      str
+    cu_address:   str
+    portal:       str
+
+
+@app.post("/api/awaiting-install/send")
+async def awaiting_install_send(body: _AwaitingInstallSendIn, user=Depends(require_auth)):
+    if not _SMTP_USER or not _SMTP_PASS:
+        raise HTTPException(status_code=503, detail="Email not configured (SMTP_USER / SMTP_PASS missing)")
+    to_email = body.to_email.strip()
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Recipient email is required")
+    if not body.rto.strip() or not body.cu_name.strip() or not body.cu_address.strip():
+        raise HTTPException(status_code=400, detail="RTO, customer name, and customer address are required")
+
+    sender_name = "Contractor Support"
+    try:
+        users_resp = await ac_get("users", {"limit": 100})
+        for u in users_resp.get("users", []):
+            if (u.get("email") or "").strip().lower() == (user or "").strip().lower():
+                nm = f"{u.get('firstName','')} {u.get('lastName','')}".strip()
+                if nm:
+                    sender_name = nm
+                break
+    except Exception as e:
+        print(f"[awaiting-install] sender-name lookup failed (non-fatal): {e}")
+
+    body_text = _awaiting_install_body(body.dealer_label.strip(), body.rto.strip(), body.cu_name.strip(),
+                                        body.cu_address.strip(), body.portal.strip(), sender_name)
+
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = _AWAITING_INSTALL_SUBJECT
+    msg["From"]    = f"Contractor Support <{_SMTP_USER}>"
+    msg["To"]      = to_email
+    cc_list = [c.strip() for c in body.cc.split(",") if c.strip()]
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    msg.attach(MIMEText(body_text, "plain"))
+
+    try:
+        await aiosmtplib.send(msg, hostname=_SMTP_HOST, port=_SMTP_PORT,
+                               username=_SMTP_USER, password=_SMTP_PASS, start_tls=True,
+                               recipients=[to_email] + cc_list)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Send failed: {e}")
+
+    note_text = (
+        f"Serial-number reminder email sent via Awaiting Install tool by {user}. "
+        f"RTO {body.rto.strip()}, Customer {body.cu_name.strip()}, Address {body.cu_address.strip()}, "
+        f"Portal {body.portal.strip()}, To {to_email}" +
+        (f", Cc {', '.join(cc_list)}" if cc_list else "") + "."
+    )
+    try:
+        await ac_post("notes", {"note": {"note": note_text, "relid": body.account_id,
+                                          "reltype": "CustomerAccount", "userid": "1"}})
+    except Exception as e:
+        print(f"[awaiting-install] note failed (non-fatal): {e}")
+
+    print(f"[awaiting-install] {user} sent reminder for account={body.account_id} RTO={body.rto} to={to_email}")
+    return {"ok": True, "to": to_email, "cc": cc_list, "subject": _AWAITING_INSTALL_SUBJECT, "body": body_text}
+
+
 # ── APEX Business Review ──────────────────────────────────────────────────────
 
 # Kept for backward-compat reference; logic now accepts any partner value

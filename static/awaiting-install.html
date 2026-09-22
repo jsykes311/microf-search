@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Awaiting Install · Microf Reports</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Open Sans', Arial, sans-serif; background: #f0f2f5; color: #1a1a2e; min-height: 100vh; font-size: 14px; }
+header { background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%); color: #fff; padding: 0 32px; display: flex; align-items: center; gap: 20px; height: 56px; box-shadow: 0 2px 12px rgba(180,83,9,.3); }
+.logo { font-size: 1.1rem; font-weight: 700; letter-spacing: -.3px; }
+.logo span { opacity: .7; font-weight: 400; }
+header nav { margin-left: auto; display: flex; gap: 8px; }
+header a { color: rgba(255,255,255,.85); text-decoration: none; font-size: .8rem; padding: 6px 12px; border-radius: 6px; background: rgba(255,255,255,.12); white-space: nowrap; font-weight: 600; }
+header a:hover { background: rgba(255,255,255,.22); color: #fff; }
+main { max-width: 760px; margin: 32px auto; padding: 0 24px; }
+.card { background: #fff; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,.04); padding: 24px; margin-bottom: 16px; }
+h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; letter-spacing: -.3px; }
+.subtitle { color: #6b7280; font-size: .84rem; margin-bottom: 20px; }
+.card-title { font-size: .85rem; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 12px; }
+label { display: block; font-size: .74rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; margin-top: 14px; }
+label:first-child { margin-top: 0; }
+input[type=text], input[type=email], select, textarea { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 9px 12px; font-size: .88rem; font-family: inherit; background: #fff; color: #111827; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.15); }
+.hint { font-size: .72rem; color: #9ca3af; margin-top: 3px; }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; }
+.btn { padding: 9px 18px; font-size: .85rem; font-weight: 700; border: none; border-radius: 8px; cursor: pointer; font-family: inherit; }
+.btn-primary { background: #f59e0b; color: #fff; }
+.btn-primary:hover { background: #d97706; }
+.btn-primary:disabled { background: #d1d5db; cursor: not-allowed; }
+.btn-secondary { background: #f3f4f6; color: #374151; }
+.btn-secondary:hover { background: #e5e7eb; }
+#search-results { margin-top: 10px; max-height: 260px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; display: none; }
+.result-row { padding: 10px 14px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+.result-row:last-child { border-bottom: none; }
+.result-row:hover { background: #fffbeb; }
+.result-name { font-weight: 600; font-size: .86rem; }
+.result-sub { font-size: .74rem; color: #9ca3af; margin-top: 2px; }
+.selected-banner { display: flex; align-items: center; justify-content: space-between; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin-top: 10px; font-size: .84rem; }
+.selected-banner b { color: #92400e; }
+.selected-banner button { background: none; border: none; color: #92400e; font-weight: 700; cursor: pointer; font-size: .78rem; text-decoration: underline; }
+#compose-section, #preview-section { display: none; }
+pre#preview-body { white-space: pre-wrap; font-family: inherit; font-size: .84rem; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; color: #374151; line-height: 1.5; }
+.preview-meta { font-size: .8rem; color: #6b7280; margin-bottom: 10px; }
+.preview-meta b { color: #111827; }
+#toast-stack { position: fixed; top: 66px; right: 20px; display: flex; flex-direction: column; gap: 10px; z-index: 999; max-width: 340px; }
+.toast { background: #1a1a2e; color: #fff; border-radius: 8px; padding: 12px 16px; box-shadow: 0 6px 20px rgba(0,0,0,.25); font-size: .82rem; animation: slideIn .25s ease-out; }
+.toast.err { background: #7f1d1d; }
+.toast.leaving { animation: fadeOut .3s ease-in forwards; }
+@keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes fadeOut { to { opacity: 0; transform: translateX(20px); } }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Microf <span>Reports</span></div>
+  <nav>
+    <a href="/">Hub</a>
+  </nav>
+</header>
+
+<div id="toast-stack"></div>
+
+<main>
+  <div class="card">
+    <h1>📦 Awaiting Install</h1>
+    <p class="subtitle">Send a contractor the standard "we need Make/Model/Serial Number" reminder for a specific RTO.</p>
+
+    <div class="card-title">1. Find the contractor</div>
+    <div class="search-row">
+      <input type="text" id="search-box" placeholder="Dealer name or Dealer ID…" oninput="onSearchInput()"/>
+    </div>
+    <div id="search-results"></div>
+    <div id="selected-banner" class="selected-banner" style="display:none;">
+      <span>Selected: <b id="selected-name"></b></span>
+      <button onclick="clearSelection()">Change</button>
+    </div>
+  </div>
+
+  <div class="card" id="compose-section">
+    <div class="card-title">2. Email details</div>
+
+    <label>To (contractor email)</label>
+    <select id="to-email"></select>
+    <div class="hint" id="to-email-hint"></div>
+
+    <label>Cc (optional, comma-separated)</label>
+    <input type="text" id="cc" placeholder="e.g. southeast@microf.com"/>
+
+    <label>Dealer name / city / state line</label>
+    <input type="text" id="dealer-label"/>
+    <div class="hint">Prefilled from the account — edit if it doesn't read right.</div>
+
+    <label>RTO number</label>
+    <input type="text" id="rto" placeholder="RTO-002328752" oninput="renderPreview()"/>
+
+    <label>Customer name</label>
+    <input type="text" id="cu-name" placeholder="AMBRAM HAWTHORNE" oninput="renderPreview()"/>
+
+    <label>Customer address</label>
+    <input type="text" id="cu-address" placeholder="16259 Magnolia Grove Way, Jacksonville FL 32218" oninput="renderPreview()"/>
+
+    <label>Portal</label>
+    <select id="portal" onchange="renderPreview()"></select>
+  </div>
+
+  <div class="card" id="preview-section">
+    <div class="card-title">3. Preview &amp; send</div>
+    <div class="preview-meta">
+      <b>Subject:</b> <span id="preview-subject"></span><br/>
+      <b>To:</b> <span id="preview-to"></span><br/>
+      <b>Cc:</b> <span id="preview-cc"></span>
+    </div>
+    <pre id="preview-body"></pre>
+    <div style="margin-top:16px;">
+      <button class="btn btn-primary" id="send-btn" onclick="sendEmail()">Send Email</button>
+    </div>
+  </div>
+</main>
+
+<script>
+let selectedAccount = null;
+let searchTimer = null;
+
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function toast(title, body, isError) {
+  const stack = document.getElementById('toast-stack');
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' err' : '');
+  el.innerHTML = `<b>${esc(title)}</b><br>${esc(body)}`;
+  stack.appendChild(el);
+  setTimeout(() => { el.classList.add('leaving'); setTimeout(() => el.remove(), 300); }, 6000);
+}
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  const q = document.getElementById('search-box').value.trim();
+  const results = document.getElementById('search-results');
+  if (!q) { results.style.display = 'none'; results.innerHTML = ''; return; }
+  searchTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/global-search?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      const accounts = (data.accounts || []).slice(0, 15);
+      if (!accounts.length) {
+        results.innerHTML = '<div class="result-row" style="color:#9ca3af;">No matching accounts.</div>';
+      } else {
+        results.innerHTML = accounts.map(a => `
+          <div class="result-row" onclick='selectAccount(${JSON.stringify(a.id)}, ${JSON.stringify(a.name)})'>
+            <div class="result-name">${esc(a.name)}</div>
+            <div class="result-sub">Dealer ID ${esc(a.dealer_id || '—')}</div>
+          </div>`).join('');
+      }
+      results.style.display = 'block';
+    } catch (e) {
+      results.innerHTML = `<div class="result-row" style="color:#dc2626;">Search failed: ${esc(e.message)}</div>`;
+      results.style.display = 'block';
+    }
+  }, 250);
+}
+
+async function selectAccount(id, name) {
+  document.getElementById('search-results').style.display = 'none';
+  document.getElementById('search-box').value = '';
+  document.getElementById('selected-name').textContent = name;
+  document.getElementById('selected-banner').style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/awaiting-install/account-info/${id}`);
+    const info = await res.json();
+    selectedAccount = info;
+
+    document.getElementById('dealer-label').value = info.dealer_label || name;
+
+    const toSel = document.getElementById('to-email');
+    const hint = document.getElementById('to-email-hint');
+    if (info.contacts && info.contacts.length) {
+      toSel.innerHTML = info.contacts.map(c =>
+        `<option value="${esc(c.email)}">${esc(c.name || c.email)} — ${esc(c.email)}</option>`).join('');
+      hint.textContent = '';
+    } else {
+      toSel.innerHTML = '<option value="">— no contact email found, add one manually —</option>';
+      hint.textContent = 'No contacts with an email were found on this account.';
+    }
+
+    await loadPortalOptions(info.suggested_portal);
+
+    document.getElementById('compose-section').style.display = 'block';
+    document.getElementById('preview-section').style.display = 'block';
+    renderPreview();
+  } catch (e) {
+    toast('Couldn\'t load account', e.message, true);
+  }
+}
+
+function clearSelection() {
+  selectedAccount = null;
+  document.getElementById('selected-banner').style.display = 'none';
+  document.getElementById('compose-section').style.display = 'none';
+  document.getElementById('preview-section').style.display = 'none';
+}
+
+let portalOptionsCache = null;
+async function loadPortalOptions(suggested) {
+  if (!portalOptionsCache) {
+    const res = await fetch('/api/awaiting-install/portal-options');
+    portalOptionsCache = (await res.json()).portals || [];
+  }
+  const sel = document.getElementById('portal');
+  sel.innerHTML = portalOptionsCache.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+  if (suggested && portalOptionsCache.includes(suggested)) sel.value = suggested;
+}
+
+function renderPreview() {
+  if (!selectedAccount) return;
+  const to     = document.getElementById('to-email').value;
+  const cc     = document.getElementById('cc').value;
+  const label  = document.getElementById('dealer-label').value;
+  const rto    = document.getElementById('rto').value;
+  const cuName = document.getElementById('cu-name').value;
+  const cuAddr = document.getElementById('cu-address').value;
+  const portal = document.getElementById('portal').value;
+
+  document.getElementById('preview-subject').textContent = 'Microf Serial Numbers Needed Reminder-Funding unsubmitted';
+  document.getElementById('preview-to').textContent = to || '—';
+  document.getElementById('preview-cc').textContent = cc || '—';
+
+  const body =
+`${label}
+
+${rto || '[RTO]'} ${cuName || '[Customer Name]'} ${cuAddr || '[Customer Address]'}  - Serial Numbers Needed Reminder!
+
+Good Afternoon!
+
+Below is just a friendly reminder for the above referenced application. \u{1F60A}
+
+After installation is complete, please submit the serial number(s) affiliated with the installation into your ${portal || '[Portal]'} portal. Once serial number(s) are received Microf will begin the funding process.
+
+If you have any questions, please do not hesitate to contact Microf at 855.498.8200 or contractorsupport@microf.com.
+
+Thank you for your business.
+
+MICROF
+
+Thanks again & I hope you have a wonderful day!
+
+[Your name]
+Contractor Support
+Contractor Hotline: 855.498.8200
+Microf.com
+2849 Paces Ferry Rd SE Suite 625
+Atlanta, GA 30339`;
+  document.getElementById('preview-body').textContent = body;
+}
+
+// Re-render preview when To/Cc/label/portal change too
+['to-email','cc','dealer-label'].forEach(id => {
+  document.getElementById(id).addEventListener('input', renderPreview);
+  document.getElementById(id).addEventListener('change', renderPreview);
+});
+
+async function sendEmail() {
+  if (!selectedAccount) return;
+  const to     = document.getElementById('to-email').value.trim();
+  const cc     = document.getElementById('cc').value.trim();
+  const label  = document.getElementById('dealer-label').value.trim();
+  const rto    = document.getElementById('rto').value.trim();
+  const cuName = document.getElementById('cu-name').value.trim();
+  const cuAddr = document.getElementById('cu-address').value.trim();
+  const portal = document.getElementById('portal').value;
+
+  if (!to) { toast('Missing recipient', 'Enter or select a To email.', true); return; }
+  if (!rto || !cuName || !cuAddr) { toast('Missing info', 'RTO, customer name, and customer address are required.', true); return; }
+
+  const btn = document.getElementById('send-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const res = await fetch('/api/awaiting-install/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account_id: selectedAccount.account_id, to_email: to, cc,
+        dealer_label: label, rto, cu_name: cuName, cu_address: cuAddr, portal,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    toast('Email sent', `Reminder sent to ${to}`);
+    document.getElementById('rto').value = '';
+    document.getElementById('cu-name').value = '';
+    document.getElementById('cu-address').value = '';
+    renderPreview();
+  } catch (e) {
+    toast('Send failed', e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Email';
+  }
+}
+</script>
+</body>
+</html>
