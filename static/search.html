@@ -401,7 +401,7 @@
           const sub     = a.dealer_id ? `Dealer ID ${a.dealer_id}` : '';
           const tag     = a.matched_on === 'dealer id' ? 'dealer id' :
                           a.matched_on === 'contact'   ? 'via contact' : '';
-          const url     = a.account_url || '#';
+          const url     = a.id ? '/dealer-workspace?account=' + encodeURIComponent(a.id) : a.account_url || '#';
           cards.insertAdjacentHTML('beforeend', card('🏢', name, sub, tag, url));
         });
       }
@@ -423,7 +423,7 @@
         slps.forEach(s => {
           const name = s.dealer_id ? `Dealer ID ${s.dealer_id}` : s.record_id;
           const sub  = s.channel ? `Channel: ${s.channel}` : '';
-          const url  = s.account_url || '#';   // always the account, not the SLP
+          const url  = s.account_id ? '/dealer-workspace?account=' + encodeURIComponent(s.account_id) : s.account_url || '#';
           cards.insertAdjacentHTML('beforeend', card('📋', name, sub, 'slp', url));
         });
       }
@@ -431,7 +431,7 @@
 
     function card(icon, name, sub, tag, url) {
       return `
-        <a class="result-card" href="${esc(url)}" target="_blank" rel="noopener">
+        <a class="result-card" href="${esc(url)}" ${url.startsWith('/dealer-workspace') ? '' : 'target="_blank" rel="noopener"'}>
           <span class="card-icon">${icon}</span>
           <div class="card-body">
             <div class="card-name">${esc(name)}${tag ? `<span class="card-tag">${esc(tag)}</span>` : ''}</div>

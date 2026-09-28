@@ -292,7 +292,7 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
             if path.startswith("/api/"):
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
             response = RedirectResponse(url="/login", status_code=302)
-            if path == "/marketing-projects":
+            if path in {"/marketing-projects", "/dealer-workspace"}:
                 destination = path + ("?" + request.url.query if request.url.query else "")
                 response.set_cookie("marketing_return", _signer.dumps(destination, salt="marketing-return"),
                                     max_age=1800, httponly=True, samesite="lax", secure=True)
@@ -377,7 +377,7 @@ async def auth_callback(
     destination = "/search"
     try:
         saved = _signer.loads(request.cookies.get("marketing_return", ""), salt="marketing-return", max_age=1800)
-        if saved == "/marketing-projects" or saved.startswith("/marketing-projects?"):
+        if any(saved == route or saved.startswith(route + "?") for route in ("/marketing-projects", "/dealer-workspace")):
             destination = saved
     except (BadSignature, SignatureExpired):
         pass
@@ -4634,7 +4634,7 @@ async def accounts_nearest(address: str = "", limit: int = 10):
 
 
 @app.get("/api/accounts/{account_id}/detail")
-async def account_detail(account_id: str):
+async def account_detail(account_id: str, include_contacts: bool = True):
     """Fast 360° account view — fetches data scoped to this account only."""
 
     # Stage 1: account core data + custom fields + contacts + notes (parallel)
@@ -4648,6 +4648,9 @@ async def account_detail(account_id: str):
     )
 
     account = acc_data.get("account", {}) if isinstance(acc_data, dict) else {}
+    if not account:
+        raise HTTPException(502, "The dealer could not be loaded from ActiveCampaign. Please retry.")
+    warnings = [label for label, value in [("Account fields", acc_cf_data), ("Contacts", acc_contacts)] if isinstance(value, Exception)]
 
     # Build named custom field map — use AC labels, read all value types
     named_cfs = {}
@@ -4683,6 +4686,8 @@ async def account_detail(account_id: str):
                             {"filters[relationships.account]": account_id, "limit": 50})
 
     slp_r, deal_r, alt_con_r = await asyncio.gather(slp_task, deal_task, alt_con_task, return_exceptions=True)
+
+    warnings.extend(label for label, value in [("Programs", slp_r), ("Deals", deal_r), ("Alternate contacts", alt_con_r)] if isinstance(value, Exception))
 
     def flatten_co(records):
         seen_ids, result = set(), []
@@ -4724,7 +4729,7 @@ async def account_detail(account_id: str):
 
     # Fetch contacts
     contacts = []
-    if contact_ids:
+    if contact_ids and include_contacts:
         contact_tasks = [ac_get(f"contacts/{cid}") for cid in contact_ids[:15]]
         contact_results = await asyncio.gather(*contact_tasks, return_exceptions=True)
         for cr in contact_results:
@@ -4751,6 +4756,7 @@ async def account_detail(account_id: str):
         },
         "slps":          slps,
         "contacts":      contacts,
+        "warnings":      warnings,
         "alt_contacts":  alt_contacts,
         "deals":         deals,
         "summary": {
@@ -13491,3 +13497,8 @@ if __name__ == "__main__":
 # Marketing Projects: authenticated intake and durable notification queue.
 from marketing import install_marketing
 install_marketing(app, _get_session_email)
+
+# Dealer workspace uses the existing Microsoft session and ActiveCampaign client.
+from dealer_workspace import install_workspace
+install_workspace(app, lambda request: _get_session_email(request) if _AZ_CLIENT_ID else 'dev@microf.com',
+                  ac_get, ac_post, ac_put, AC_UI_BASE)
