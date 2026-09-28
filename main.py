@@ -268,7 +268,7 @@ def require_auth(request: _Request):
 class _MSAuthMiddleware(BaseHTTPMiddleware):
     """Block unauthenticated requests. Redirects pages → /login, 401s for APIs."""
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
-               "/api/health", "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
+               "/api/health", "/api/map-config", "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
                "/api/accounts/nearest", "/api/accounts/by-state",
                "/webhook/deal-created", "/webhook/debug-sp", "/webhook/reset-sp-file",
                "/api/careers/apply"}
@@ -400,6 +400,14 @@ async def logout():
 @app.get("/search")
 async def search_page(_: None = Depends(require_auth)):
     return FileResponse("static/search.html")
+
+@app.get("/api/map-config")
+async def map_config():
+    """Public browser map key; restrict its allowed Referer in CARTO."""
+    return JSONResponse(
+        {"cartoKey": os.getenv("CARTO_BASEMAP_API_KEY", "").strip()},
+        headers={"Cache-Control": "no-store"},
+    )
 
 @app.get("/dealer-locator")
 @app.get("/dealer-locator-beta")

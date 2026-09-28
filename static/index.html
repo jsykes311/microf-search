@@ -923,6 +923,7 @@ select, input { font-family: inherit; }
 }          </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/carto-basemap.js"></script>
 <style>
 /* ── Team Performance drill-down drawer ── */
 #tp-overlay {
@@ -4701,7 +4702,7 @@ function initMicrofMap() {
   _mfPinLayer = L.layerGroup().addTo(_mfMap);
   const map = _mfMap;
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(map);
+  addMicrofBasemap(map);
 
   L.tileLayer(
     `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${API_KEY}`,

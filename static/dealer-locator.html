@@ -9,6 +9,7 @@
   <title>Microf Dealer Locator</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/static/js/carto-basemap.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Open Sans', Arial, sans-serif; background: #f3f2f1; color: #323130; min-height: 100vh; }
@@ -396,7 +397,7 @@ async function mfFindNearest(retryCount = 0) {
   _mfMap = L.map('mf-map').setView([39.5, -98.35], 4);
   _mfPinLayer = L.layerGroup().addTo(_mfMap);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(_mfMap);
+  addMicrofBasemap(_mfMap);
   L.tileLayer(`https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${API_KEY}`, { opacity: 0.6 }).addTo(_mfMap);
 
   _mfMap.on('click', async function(e) {

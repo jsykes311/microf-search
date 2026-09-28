@@ -6,7 +6,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>AC Reporter — Account Manager User Guide</title>
+<title>Microf-Search — Shared Apps User Guide</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <style>
@@ -864,7 +864,7 @@ code {
   .callout { page-break-inside: avoid; break-inside: avoid; }
   h2, h3 { page-break-after: avoid; break-after: avoid; }
   a { color: inherit; text-decoration: none; }
-}          
+}
   /* ── Mobile responsive ─────────────────────────────── */
   @media (max-width: 600px) {
     body { font-size: 14px; padding-bottom: env(safe-area-inset-bottom); }
@@ -874,17 +874,22 @@ code {
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
   }
-  </style>
+
+/* Updated shared-apps guide presentation. */
+:root{--blue:#078c44;--blue-light:#e8f4ec;--blue-dark:#075d31;--bg:#f9f8f6;--note-bg:#eef7f1}
+.hero{background:#08783e!important}.guide-capture{margin:28px 0}.guide-capture img{width:100%;height:auto;display:block;border:1px solid var(--border);border-radius:8px}.guide-capture figcaption{font-size:13px;color:var(--text3);margin-top:10px;line-height:1.5}.section>ol:not(.steps){padding-left:24px;margin:16px 0 24px}.section>ol:not(.steps) li{padding:5px 0}.guide-links{display:flex;gap:20px;margin-top:20px}.guide-links a{color:white;font-weight:600;text-decoration:underline;text-underline-offset:4px}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+</style>
 </head>
 <body>
 
 <!-- Page header hero -->
 <div class="hero">
   <div style="max-width:900px;margin:0 auto;">
-    <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;background:rgba(255,255,255,0.18);padding:3px 10px;border-radius:99px;display:inline-block;margin-bottom:14px;">Account Manager Guide</span>
-    <h1 style="font-size:2rem;font-weight:700;line-height:1.2;margin-bottom:10px;">AC Reporter — Account Manager Guide</h1>
-    <p style="font-size:1rem;opacity:.88;max-width:560px;">Everything you need to find accounts, run reports, and explore dealer data in the Microf web app.</p>
-    <p style="margin-top:16px;font-size:0.8rem;opacity:.65;">Last updated May 2026</p>
+    <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;background:rgba(255,255,255,0.18);padding:3px 10px;border-radius:99px;display:inline-block;margin-bottom:14px;">Shared Apps Guide</span>
+    <h1 style="font-size:2rem;font-weight:700;line-height:1.2;margin-bottom:10px;">Microf-Search — Shared Apps Guide</h1>
+    <p style="font-size:1rem;opacity:.88;max-width:560px;">Find accounts, use shared tools, request marketing work, and run reports in Microf-Search.</p>
+    <p style="margin-top:16px;font-size:0.8rem;opacity:.85;">Last updated September 28, 2026</p><nav class="guide-links" aria-label="Return to app"><a href="/search">Search homepage</a><a href="/#admin">Shared Apps</a></nav>
   </div>
 </div>
 
@@ -894,13 +899,13 @@ code {
   <aside class="toc">
     <div class="toc-title">On This Page</div>
     <a href="#logging-in">1. Logging In</a>
-    <a href="#apps-grid">2. The Apps Grid</a>
-    <a href="#global-search">3. Global Search</a>
+    <a href="#apps-grid">2. Shared Apps</a>
+    <a href="#global-search">3. Search Homepage</a>
     <a href="#account-view">4. Account View</a>
     <a href="#account-view" style="padding-left:20px;font-size:0.78rem;color:var(--text3);">↳ Logging Notes &amp; Training</a>
     <a href="#prebuilt-reports">5. Pre-Built Reports</a>
     <a href="#report-builder">6. Report Builder</a>
-    <a href="#dealer-locator">7. Dealer Locator</a>
+    <a href="#dealer-locator">7. Dealer Locator</a><a href="#marketing-projects">8. Marketing Projects</a><a href="#onboarding-live">9. Onboarding Live</a><a href="#awaiting-install">10. Awaiting Install</a><a href="#other-shared-tools">11. Other Shared Tools</a>
   </aside>
 
   <!-- Main content -->
@@ -910,14 +915,14 @@ code {
     <section class="section" id="logging-in">
       <div class="section-label">Section 1</div>
       <h2>Logging In</h2>
-      <p>AC Reporter uses your existing <strong>Microf Microsoft account</strong> for authentication. No separate password is required — just sign in with the same credentials you use for Outlook and Teams.</p>
+      <p>Microf-Search uses your existing <strong>Microf Microsoft account</strong> for authentication. No separate password is required — just sign in with the same credentials you use for Outlook and Teams.</p>
 
       <ol class="steps">
         <li>
           <div class="step-num">1</div>
           <div class="step-body">
             <strong>Open the app in your browser</strong>
-            <p>Navigate to the Render URL your team has shared (e.g., <code>https://microf-search.onrender.com</code>). You can bookmark it for quick access.</p>
+            <p>Open <a href="/search">the search homepage</a> at <code>https://microf-search.onrender.com/search</code>. Bookmark it for quick access.</p>
           </div>
         </li>
         <li>
@@ -931,14 +936,14 @@ code {
           <div class="step-num">3</div>
           <div class="step-body">
             <strong>Use your @microf.com account</strong>
-            <p>Enter your <code>firstname.lastname@microf.com</code> email and password. If your organization uses multi-factor authentication, complete the MFA prompt.</p>
+            <p>Enter your work <code>@microf.com</code> email address and password. If your organization uses multi-factor authentication, complete the MFA prompt.</p>
           </div>
         </li>
         <li>
           <div class="step-num">4</div>
           <div class="step-body">
-            <strong>You're in — you'll land on the Apps Grid</strong>
-            <p>After successful authentication, you're taken directly to the Apps page where you can choose what to do.</p>
+            <strong>Start on the search homepage</strong>
+            <p>After normal sign-in, the search homepage opens. Use the large search bar to find records, or select Apps in the top navigation for shared tools. A direct Marketing Projects link can return you to that workspace after sign-in.</p>
           </div>
         </li>
       </ol>
@@ -972,7 +977,7 @@ code {
         <div class="mock-login-bg">
           <div class="mock-login-card">
             <div class="mock-login-logo">Moogle</div>
-            <div class="mock-login-tagline">Microf ActiveCampaign Reporter</div>
+            <div class="mock-login-tagline">Microf Dealer Search &amp; Reports</div>
             <div class="mock-ms-btn">
               <svg width="18" height="18" viewBox="0 0 21 21" fill="none">
                 <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
@@ -989,107 +994,22 @@ code {
 
     </section>
 
-    <!-- ── 2. Apps Grid ── -->
     <section class="section" id="apps-grid">
-      <div class="section-label">Section 2</div>
-      <h2>The Apps Grid</h2>
-      <p>After logging in, you land on the <strong>Apps Grid</strong> — a Launchpad-style page showing all the tools available to you. As an Account Manager you'll see five app cards. There is no left sidebar on this page.</p>
-
-      <div class="callout tip">
-        <span class="callout-icon">💡</span>
-        <div class="callout-body">
-          <strong>Tip — No sidebar needed</strong>
-          The Apps Grid is your home base. Some apps open within the main app; Dealer Locator opens in a new tab so you can keep the grid open.
-        </div>
-      </div>
-
-      <table class="doc-table">
-        <thead>
-          <tr>
-            <th>App</th>
-            <th>What it does</th>
-            <th>Opens in</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><strong>📋 Pre-Built Reports</strong></td>
-            <td>Run curated reports: Activations, License Expiration, Last App Date, BDR Performance, and more. Filter by date, region, platform.</td>
-            <td>Same tab</td>
-          </tr>
-          <tr>
-            <td><strong>⚙️ Report Builder</strong></td>
-            <td>Build custom ad-hoc queries by choosing any combination of fields. For one-off questions not covered by pre-built reports.</td>
-            <td>Same tab</td>
-          </tr>
-          <tr>
-            <td><strong>🌐 Global Search</strong></td>
-            <td>Search across accounts, contacts, and SLP records simultaneously from a single search box. Find anything by name, dealer ID, email, oracle ID, or keyword.</td>
-            <td>Same tab</td>
-          </tr>
-          <tr>
-            <td><strong>📍 Dealer Locator</strong></td>
-            <td>Interactive map of active Microf dealers. Browse by territory, click pins for account details. Useful for coverage planning.</td>
-            <td>New tab (<code>/dealer-locator</code>)</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Apps grid mockup -->
-      <div class="mockup">
-        <div class="browser-chrome">
-          <div class="browser-dots">
-            <span class="dot-red"></span>
-            <span class="dot-yellow"></span>
-            <span class="dot-green"></span>
-          </div>
-          <div class="browser-url"><span class="protocol">https://</span>microf-search.onrender.com/</div>
-        </div>
-        <div style="background:#f2f2f7;padding:28px 24px 32px;">
-          <div style="font-size:1.15rem;font-weight:700;color:#1c1c1e;margin-bottom:4px;">Apps</div>
-          <div style="font-size:0.78rem;color:#636366;margin-bottom:24px;">Good morning, Sarah — choose an app to get started.</div>
-          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:20px 8px;max-width:560px;">
-
-            <!-- Pre-Built Reports -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;">
-              <div style="width:72px;height:72px;border-radius:17px;background:linear-gradient(145deg,#1a73e8,#0d47a1);box-shadow:0 3px 10px rgba(0,0,0,0.18),0 0 0 0.5px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:2rem;">📋</div>
-              <div style="font-size:0.7rem;font-weight:400;color:#3a3a3c;text-align:center;line-height:1.3;max-width:72px;">Pre-Built Reports</div>
-            </div>
-
-            <!-- Report Builder -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;">
-              <div style="width:72px;height:72px;border-radius:17px;background:linear-gradient(145deg,#5e5ce6,#3634a3);box-shadow:0 3px 10px rgba(0,0,0,0.18),0 0 0 0.5px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:2rem;">⚙️</div>
-              <div style="font-size:0.7rem;font-weight:400;color:#3a3a3c;text-align:center;line-height:1.3;max-width:72px;">Report Builder</div>
-            </div>
-
-            <!-- Global Search -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;">
-              <div style="width:72px;height:72px;border-radius:17px;background:linear-gradient(145deg,#30b0c7,#0e7a90);box-shadow:0 3px 10px rgba(0,0,0,0.18),0 0 0 0.5px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:2rem;">🌐</div>
-              <div style="font-size:0.7rem;font-weight:400;color:#3a3a3c;text-align:center;line-height:1.3;max-width:72px;">Global Search</div>
-            </div>
-
-            <!-- Dealer Locator -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;">
-              <div style="width:72px;height:72px;border-radius:17px;background:linear-gradient(145deg,#ff6b35,#c73e00);box-shadow:0 3px 10px rgba(0,0,0,0.18),0 0 0 0.5px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:2rem;">🌡️</div>
-              <div style="font-size:0.7rem;font-weight:400;color:#3a3a3c;text-align:center;line-height:1.3;max-width:72px;">Dealer Locator</div>
-            </div>
-
-            <!-- User Guide -->
-            <div style="display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;">
-              <div style="width:72px;height:72px;border-radius:17px;background:linear-gradient(145deg,#5856d6,#3634a3);box-shadow:0 3px 10px rgba(0,0,0,0.18),0 0 0 0.5px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:2rem;">📖</div>
-              <div style="font-size:0.7rem;font-weight:400;color:#3a3a3c;text-align:center;line-height:1.3;max-width:72px;">User Guide</div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
+      <div class="section-label">Section 2</div><h2>Shared Apps</h2>
+      <p>Select <strong>Apps</strong> in the top navigation to open the shared tool directory. The new layout uses three groups: <strong>Accounts &amp; Dealers</strong>, <strong>Marketing &amp; Operations</strong>, and <strong>Reporting</strong>.</p>
+      <p>This guide covers shared apps. The tools you see depend on your access; your list may differ from a teammate’s. A tool’s presence does not grant permission to every action inside it.</p>
+      <h3>Find and open a tool</h3>
+      <ol><li>Type a tool name or keyword in <strong>Find a tool…</strong>. The directory filters as you type; Search applies the same filter.</li><li>Select the tool’s row to open it. Some tools open in a new browser tab.</li><li>Clear the field or press Escape to restore the full list. Select <strong>Search</strong> at the top to return to the search homepage.</li></ol>
+      <div class="callout note"><div class="callout-body"><strong>Two different searches</strong>The homepage searches account, contact, and dealer data. <strong>Find a tool…</strong> on Apps filters tool names and descriptions; it does not search records.</div></div>
+      <figure class="guide-capture"><a href="/static/guide_screens/refresh/shared-apps.png" target="_blank" rel="noopener"><img src="/static/guide_screens/refresh/shared-apps.png" alt="Shared Apps directory with three columns and a Find a tool search field" loading="lazy"/></a><figcaption>Shared-access example of the updated directory. Select the image to view it full size. Available tools vary by access.</figcaption></figure>
+      <table class="doc-table"><thead><tr><th>Shared app</th><th>Group</th><th>Use it to</th><th>Opens in</th></tr></thead><tbody><tr><td>Accounts</td><td>Accounts & Dealers</td><td>Browse accounts and open their details.</td><td>Same tab</td></tr><tr><td>Dealer Locator</td><td>Accounts & Dealers</td><td>Find dealers by location and explore nearby coverage.</td><td>New tab</td></tr><tr><td>Bulk Tag Dealers</td><td>Accounts & Dealers</td><td>Apply tags to selected dealer records. Review the selection before applying changes.</td><td>New tab</td></tr><tr><td>Marketing Projects</td><td>Marketing & Operations</td><td>Submit marketing requests, attach files, and follow progress.</td><td>Same tab</td></tr><tr><td>Onboarding Live</td><td>Marketing & Operations</td><td>Follow onboarding activity by date and channel.</td><td>New tab</td></tr><tr><td>Awaiting Install</td><td>Marketing & Operations</td><td>Prepare and send a contractor reminder requesting make, model, and serial number for an RTO.</td><td>New tab</td></tr><tr><td>OPTIMUS Deactivation / Reactivation</td><td>Marketing & Operations</td><td>Preview eligible accounts, then confirm the intended status change.</td><td>Same tab</td></tr><tr><td>Pre-Built Reports</td><td>Reporting</td><td>Run existing reports with filters and export results.</td><td>Same tab</td></tr><tr><td>Report Builder</td><td>Reporting</td><td>Choose fields and filters for a custom report.</td><td>Same tab</td></tr><tr><td>Global Search</td><td>Reporting</td><td>Search across accounts, contacts, and SLP records.</td><td>Same tab</td></tr><tr><td>User Guide</td><td>Reporting</td><td>Open this guide.</td><td>New tab</td></tr></tbody></table>
+      <p>The green icons, brief entrance animations, and hover feedback help you find your place. On smaller screens, the groups stack vertically. Reduced-motion preferences are respected.</p>
     </section>
 
-    <!-- ── 3. Global Search ── -->
+    <!-- ── 3. Search Homepage ── -->
     <section class="section" id="global-search">
       <div class="section-label">Section 3</div>
-      <h2>Global Search</h2>
+      <h2>Search Homepage</h2>
       <p>Global Search lets you query <strong>all data objects at once</strong> — accounts, contacts, and SLP records — from a single search box. It's the fastest way to find anything when you're not sure exactly where to look.</p>
 
       <h3>How to search</h3>
@@ -1097,8 +1017,8 @@ code {
         <li>
           <div class="step-num">1</div>
           <div class="step-body">
-            <strong>Click Global Search from the Apps Grid</strong>
-            <p>The search box opens inline. You can search by account name (or partial name), dealer ID, contact email, oracle ID, channel name, or any keyword.</p>
+            <strong>Start with the homepage search bar</strong>
+            <p>Select Search in the top navigation, then enter an account name, contact, dealer ID, or other search term. Results update after a short pause; press Enter to search immediately. The Global Search tool in Apps is another way to search across records.</p>
           </div>
         </li>
         <li>
@@ -1111,8 +1031,8 @@ code {
         <li>
           <div class="step-num">3</div>
           <div class="step-body">
-            <strong>Click a result</strong>
-            <p>Clicking navigates to the full account or contact detail in ActiveCampaign.</p>
+            <strong>Open a result or clear the search</strong>
+            <p>Homepage results link to the account or contact in ActiveCampaign. Select the clear button or press Escape to clear the query and return to the starting view.</p>
           </div>
         </li>
         <li>
@@ -1132,76 +1052,14 @@ code {
         </div>
       </div>
 
-      <!-- Global Search mockup -->
-      <div class="mockup">
-        <div class="browser-chrome">
-          <div class="browser-dots">
-            <span class="dot-red"></span>
-            <span class="dot-yellow"></span>
-            <span class="dot-green"></span>
-          </div>
-          <div class="browser-url"><span class="protocol">https://</span>microf-search.onrender.com/ — Global Search</div>
-        </div>
-        <div style="background:#fff;padding:24px 20px;">
-          <div style="max-width:480px;margin:0 auto;">
-            <div style="background:#f3f4f6;border:1.5px solid #0078d4;border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:18px;">
-              <span style="color:#9ca3af;font-size:1rem;">🔍</span>
-              <span style="font-size:0.88rem;color:#1c1c1e;">COMFORT AIR</span>
-              <span style="margin-left:auto;font-size:0.72rem;color:#aeaeb2;background:#e5e7eb;padding:1px 7px;border-radius:4px;font-family:monospace;">⌘K</span>
-            </div>
-
-            <div style="font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#636366;margin-bottom:6px;">Accounts</div>
-            <div class="mock-search-result" style="margin-bottom:6px;">
-              <div class="mock-result-avatar" style="background:#0078d4;border-radius:7px;width:32px;height:32px;font-size:.72rem;">CA</div>
-              <div class="mock-result-info">
-                <div class="mock-result-name">COMFORT AIR LLC-44821 DBA ARS of Dallas</div>
-                <div class="mock-result-meta">Dealer #44821 &nbsp;·&nbsp; Southeast &nbsp;·&nbsp; Contractor</div>
-              </div>
-              <span style="color:#aeaeb2;font-size:0.8rem;">↗</span>
-            </div>
-            <div class="mock-search-result" style="margin-bottom:6px;">
-              <div class="mock-result-avatar" style="background:#7c3aed;border-radius:7px;width:32px;height:32px;font-size:.72rem;">CA</div>
-              <div class="mock-result-info">
-                <div class="mock-result-name">COMFORT AIR SOLUTIONS-38274 DBA ARS of Houston</div>
-                <div class="mock-result-meta">Dealer #38274 &nbsp;·&nbsp; Southeast &nbsp;·&nbsp; Contractor</div>
-              </div>
-              <span style="color:#aeaeb2;font-size:0.8rem;">↗</span>
-            </div>
-
-            <div style="font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#636366;margin:12px 0 6px;">Contacts</div>
-            <div class="mock-search-result" style="margin-bottom:6px;">
-              <div class="mock-result-avatar" style="background:#059669;border-radius:50%;width:32px;height:32px;font-size:.72rem;">JM</div>
-              <div class="mock-result-info">
-                <div class="mock-result-name">Jennifer Martinez</div>
-                <div class="mock-result-meta">j.martinez@arsoftexas.com &nbsp;·&nbsp; <span class="mock-result-badge badge-purple-sm">via contact</span> Dealer #44821</div>
-              </div>
-              <span style="color:#aeaeb2;font-size:0.8rem;">↗</span>
-            </div>
-
-            <div style="font-size:0.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#636366;margin:12px 0 6px;">SLP Records</div>
-            <div class="mock-search-result">
-              <div class="mock-result-avatar" style="background:#7c3aed;border-radius:7px;width:32px;height:32px;font-size:.7rem;">SLP</div>
-              <div class="mock-result-info">
-                <div class="mock-result-name">COMFORT AIR LLC-44821 — 360 Finance</div>
-                <div class="mock-result-meta">Contractor Activated &nbsp;·&nbsp; TX-01612 &nbsp;·&nbsp; Dealer #44821</div>
-              </div>
-              <span style="color:#aeaeb2;font-size:0.8rem;">↗</span>
-            </div>
-
-            <div style="margin-top:14px;text-align:right;">
-              <button style="background:#059669;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.78rem;cursor:pointer;">⬇ Export CSV</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      <figure class="guide-capture"><a href="/static/guide_screens/refresh/search-home.png" target="_blank" rel="noopener"><img src="/static/guide_screens/refresh/search-home.png" alt="Microf-Search homepage with a centered search bar and Search, Accounts, Apps, and Reports navigation" loading="lazy"/></a><figcaption>The search homepage remains your starting point. Select Apps to browse shared tools.</figcaption></figure>
     </section>
 
     <!-- ── 4. Account View ── -->
     <section class="section" id="account-view">
       <div class="section-label">Section 4</div>
       <h2>Account View</h2>
-      <p>The Account View shows everything about a single account — its core fields, SLP (Strategic Lending Partner) program records, and associated contacts. You reach it by clicking any result in Global Search, or via the account lookup within the main app.</p>
+      <p>The Account View shows everything about a single account — its core fields, SLP (Strategic Lending Partner) program records, and associated contacts. Open Accounts from the top navigation and select an account. Homepage search results instead link to the matching record in ActiveCampaign.</p>
 
       <h3>Core Account Information</h3>
       <p>At the top of the detail panel you'll see:</p>
@@ -1243,7 +1101,7 @@ code {
             <span class="dot-yellow"></span>
             <span class="dot-green"></span>
           </div>
-          <div class="browser-url"><span class="protocol">https://</span>microf-search.onrender.com/search#account/44821</div>
+          <div class="browser-url"><span class="protocol">https://</span>microf-search.onrender.com/#account/44821</div>
         </div>
         <div class="mock-detail-bg">
           <div class="mock-detail-topbar">
@@ -1324,13 +1182,13 @@ code {
       </div>
 
       <h3>Logging Activity Notes</h3>
-      <p>The <strong>Activity Notes</strong> panel in the account sidebar lets you log any interaction with a dealer directly in ActiveCampaign — without leaving AC Reporter.</p>
+      <p>The <strong>Activity Notes</strong> panel in the account sidebar lets you log any interaction with a dealer directly in ActiveCampaign — without leaving Microf-Search.</p>
       <ol class="steps">
         <li>
           <div class="step-num">1</div>
           <div class="step-body">
             <strong>Open an account</strong>
-            <p>Use Global Search to find the account. The Activity Notes panel appears in the right sidebar of the account detail view.</p>
+            <p>Open Accounts and select the account. The Activity Notes panel appears in the account detail view.</p>
           </div>
         </li>
         <li>
@@ -1493,7 +1351,7 @@ code {
     <section class="section" id="prebuilt-reports">
       <div class="section-label">Section 5</div>
       <h2>Pre-Built Reports</h2>
-      <p>The Reports library gives you one-click access to curated data exports. Each report has pre-configured fields and built-in filters. Click the <strong>Pre-Built Reports</strong> card on the Apps Grid to open the report library.</p>
+      <p>The Reports library gives you one-click access to curated data exports. Each report has pre-configured fields and built-in filters. Select <strong>Reports</strong> in the top navigation, or choose <strong>Pre-Built Reports</strong> under Reporting on the Apps page.</p>
 
       <h3>Available Reports for Account Managers</h3>
       <table class="doc-table">
@@ -1822,16 +1680,16 @@ code {
       <p>The Dealer Locator opens at <code>/dealer-locator</code> in a new tab and shows an <strong>interactive map</strong> of active Microf dealers across your territory. Use it to quickly see dealer density in a region, verify coverage for a zip code, or look up a specific dealer by clicking its pin.</p>
 
       <h3>Using the Map</h3>
+      <p>Enter a zip code or city and state, choose a search radius, and select <strong>Find</strong>. The list shows up to ten matching contractors. Click the map for local demand conditions.</p>
       <ul style="margin:8px 0 14px 20px;color:var(--text2);">
         <li><strong>Green pins</strong> — Contractor Activated dealers</li>
-        <li><strong>Blue pins</strong> — dealers with other active statuses</li>
-        <li><strong>Orange pins</strong> — dealers on hold or with limited activity</li>
-        <li><strong>Click any pin</strong> to open a summary card in the right panel showing the account name, dealer ID, program, and activation date</li>
+        <li><strong>Red pin</strong> — your search location</li>
+        <li><strong>Click any pin</strong> to open the dealer’s details</li>
         <li><strong>Zoom and pan</strong> using standard map controls or your scroll wheel</li>
       </ul>
 
       <h3>Side Panel — Ranked by Last App Date</h3>
-      <p>The right panel lists nearby <strong>Microf-channel dealers</strong> ranked by <strong>Last App Date</strong> using a 3-tier system. The dealer with the most recent application is ranked <strong>1st Choice</strong>, the second most recent is <strong>2nd Choice</strong>, and all others are <strong>3rd Choice</strong>. Within each tier, dealers are sorted by distance.</p>
+      <p>The left panel lists nearby <strong>Microf-channel dealers</strong> ranked by <strong>Last App Date</strong> using a 3-tier system. The dealer with the most recent application is ranked <strong>1st Choice</strong>, the second most recent is <strong>2nd Choice</strong>, and all others are <strong>3rd Choice</strong>. Within each tier, dealers are sorted by distance.</p>
       <ul style="margin:8px 0 14px 20px;color:var(--text2);">
         <li><span style="background:#dcfce7;color:#15803d;font-size:0.75rem;font-weight:700;padding:1px 6px;border-radius:4px;">1st Choice</span> — most recently active dealer in the area</li>
         <li><span style="background:#dbeafe;color:#1d4ed8;font-size:0.75rem;font-weight:700;padding:1px 6px;border-radius:4px;">2nd Choice</span> — second most recently active dealer</li>
@@ -1852,7 +1710,7 @@ code {
         <span class="callout-icon">💡</span>
         <div class="callout-body">
           <strong>Territory planning use case</strong>
-          Zoom into a metro area — the side panel immediately shows you which dealers are actively using Microf (recent last app dates at the top) and which have gone quiet. Use this to prioritize re-engagement calls before heading into the field.
+          Search for a zip code or city and state, then choose a search radius. The side panel shows you which dealers are actively using Microf (recent last app dates at the top) and which have gone quiet. Use this to prioritize re-engagement calls before heading into the field.
         </div>
       </div>
 
@@ -1925,10 +1783,29 @@ code {
 
     </section>
 
-    <!-- ── 8. Global Search ── -->
+
+    <section class="section" id="marketing-projects"><div class="section-label">Section 8</div><h2>Marketing Projects</h2>
+      <p>Open <a href="/marketing-projects">Marketing Projects</a> from Marketing &amp; Operations to request work and follow progress.</p>
+      <ol><li>Select <strong>Request a Project</strong>.</li><li>Add a clear title, project type, audience, and description. Select the correct person under <strong>Requested by</strong>, identify the approver, and include the requested deadline.</li><li>Attach relevant files or examples and submit the request.</li><li>Use <strong>My Requests</strong> for your submissions or <strong>All Projects</strong> for team visibility. Search, filter by status, or switch between list and board views.</li><li>Open a project to review its files and add questions or feedback under <strong>Updates &amp; feedback</strong>.</li></ol>
+      <p>Requested deadlines are confirmed after review. The marketing manager manages status, priority, and confirmed dates. New requests and notes notify the manager; completion notifications go to the selected requester.</p>
+    </section>
+    <section class="section" id="onboarding-live"><div class="section-label">Section 9</div><h2>Onboarding Live</h2>
+      <p>Open <a href="/onboarding-live" target="_blank" rel="noopener">Onboarding Live</a> from Marketing &amp; Operations. It opens in a new tab.</p>
+      <ol><li>Choose a <strong>Date Range</strong>, or select a custom range and enter From and To dates.</li><li>Select the <strong>Channel</strong> you want to review.</li><li>Review the board and its update indicator as onboarding activity changes.</li><li>If you want browser notifications, choose <strong>Enable Alerts</strong> and respond to the browser’s permission prompt.</li></ol>
+    </section>
+    <section class="section" id="awaiting-install"><div class="section-label">Section 10</div><h2>Awaiting Install</h2>
+      <p>Use <a href="/awaiting-install" target="_blank" rel="noopener">Awaiting Install</a> to send the standard contractor reminder requesting equipment make, model, and serial number for a specific RTO.</p>
+      <ol><li>Find the contractor by dealer name or Dealer ID and select the correct account.</li><li>Review the contractor email recipient and add optional Cc recipients.</li><li>Check the dealer name / city / state line, then enter the RTO number, customer name, and customer address. Select the correct portal.</li><li>Review the subject, recipients, and message in <strong>Preview &amp; send</strong>.</li><li>Select <strong>Send Email</strong> only when the details are correct. This sends a real message to the selected recipients.</li></ol>
+    </section>
+    <section class="section" id="other-shared-tools"><div class="section-label">Section 11</div><h2>Other Shared Tools</h2>
+      <h3>Bulk Tag Dealers</h3><p>Open Bulk Tag Dealers from Accounts &amp; Dealers when you need to apply tags to dealer records. Review the selected dealers and tags before submitting changes.</p>
+      <h3>OPTIMUS Deactivation and Reactivation</h3><p>These shared tools open within the Apps workspace. Follow the tool’s preview step, review the eligible accounts, and confirm only the intended changes. Availability and action permissions depend on your access.</p>
+      <h3>Finding your way back</h3><p>The refreshed search homepage and Apps directory have Search, Accounts, Apps, and Reports navigation. Some existing tools retain their own navigation or open in another tab; return to the Apps tab or bookmark <a href="/#admin">the shared Apps directory</a>.</p>
+    </section>
+
     <!-- Footer -->
     <div style="padding:40px 0 20px;text-align:center;color:var(--text4);font-size:0.8rem;border-top:1px solid var(--border);margin-top:20px;">
-      AC Reporter User Guide &nbsp;·&nbsp; Microf &nbsp;·&nbsp; May 2026
+      Microf-Search Shared Apps Guide &nbsp;·&nbsp; Microf &nbsp;·&nbsp; September 2026
     </div>
 
   </main>
