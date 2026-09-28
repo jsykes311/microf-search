@@ -18,6 +18,7 @@ __pycache__/
 .DS_Store
 
 !marketing.py
+!dealer_workspace.py
 !marketing-ui/
 !marketing-ui/**
 !tests/
