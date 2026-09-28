@@ -2,6 +2,7 @@
 import copy
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -45,6 +46,11 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/workspace/7/contacts').status_code,401)
         self.assertEqual(self.client.post('/api/workspace/7/tasks',headers={'test-user':'alex'},json=self.task()).status_code,403)
         self.assertEqual(self.client.post('/api/workspace/7/tasks',headers={**self.headers,'Origin':'https://evil.example'},json=self.task()).status_code,403)
+    def test_render_proxy_origin(self):
+        with patch.dict('os.environ', {'RENDER_EXTERNAL_URL':'https://microf-search.onrender.com'}):
+            r=self.client.post('/api/workspace/7/tasks',headers={**self.headers,'Origin':'https://microf-search.onrender.com'},json=self.task())
+            self.assertEqual(r.status_code,200,r.text)
+
     def test_contact_partial_write_and_conflict(self):
         c=self.contact();payload={k:c[k] for k in ['firstName','lastName','email','phone','version']};payload['phone']='555-0222'
         self.assertEqual(self.client.put('/api/workspace/7/contacts/11',headers=self.headers,json=payload).status_code,200)

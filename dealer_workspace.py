@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import re
 from datetime import datetime, timedelta
 from typing import Literal
@@ -62,7 +63,10 @@ def install_workspace(app, get_email, ac_get, ac_post, ac_put, ui_base):
         if request.headers.get('X-Workspace-Request') != '1' or request.headers.get('Sec-Fetch-Site') == 'cross-site':
             raise HTTPException(403, 'Invalid workspace request')
         origin = request.headers.get('Origin')
-        if origin and origin.rstrip('/') != str(request.base_url).rstrip('/'):
+        allowed_origins = {str(request.base_url).rstrip('/')}
+        if os.getenv('RENDER_EXTERNAL_URL'):
+            allowed_origins.add(os.environ['RENDER_EXTERNAL_URL'].rstrip('/'))
+        if origin and origin.rstrip('/') not in allowed_origins:
             raise HTTPException(403, 'Invalid request origin')
         return email
 
