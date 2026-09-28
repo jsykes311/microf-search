@@ -6,7 +6,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-<title>AC Reporter</title>
+<title>Microf-Search</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -981,6 +981,8 @@ tr.tp-active td{background:#faf5ff !important;}
 tr[data-tp-row]{cursor:pointer;}
 tr[data-tp-row]:hover td{filter:brightness(.97);}
 </style>
+<link rel="stylesheet" href="/static/css/workspace-refresh.css?v=20260928"/>
+<script src="/static/js/workspace-refresh.js?v=20260928" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -1045,6 +1047,7 @@ tr[data-tp-row]:hover td{filter:brightness(.97);}
 
 <!-- Main content area -->
 <div class="app-main">
+<header class="mf-header mf-apps-header"><a class="mf-brand" href="/search"><span>Microf</span>-Search</a><nav aria-label="Main navigation"><a href="/search">Search</a><a href="#accounts" onclick="showTab('accounts', null);return false">Accounts</a><a href="#admin" aria-current="page" onclick="showTab('admin', null);return false">Apps</a><a href="#prebuilt" onclick="showTab('prebuilt', null);return false">Reports</a></nav><a class="mf-header-help" href="/am-guide" target="_blank" rel="noopener">User guide</a></header>
 
 <!-- Command bar -->
 <div class="ms-cmdbar">
@@ -1141,111 +1144,8 @@ tr[data-tp-row]:hover td{filter:brightness(.97);}
 <!-- ══════════════════════════════════════════════════════════ -->
 <div id="tab-admin" class="tab-panel">
   <div class="admin-hub">
-    <h2>Apps</h2>
-    <p class="admin-subtitle">Reports, search tools, and scheduler settings.</p>
-    <div class="admin-card-grid">
-<button class="admin-card" onclick="location.href='/marketing-projects'"><div class="ac-icon" style="background:#16984b">📣</div><div class="ac-title">Marketing Projects</div><div class="ac-desc">Request marketing work and track projects</div></button>
-      <button class="admin-card" id="admin-card-onboarding-live" onclick="window.open('/onboarding-live','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#23A455,#16703a);">🟢</div>
-        <div class="ac-title">Onboarding Live</div>
-      </button>
-      <button class="admin-card" id="admin-card-awaiting-install" onclick="window.open('/awaiting-install','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#f59e0b,#b45309);">📦</div>
-        <div class="ac-title">Awaiting Install</div>
-      </button>
-      <button class="admin-card" id="admin-card-prebuilt" onclick="showTab('prebuilt', null)">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#1a73e8,#0d47a1);">📋</div>
-        <div class="ac-title">Pre-Built Reports</div>
-      </button>
-      <button class="admin-card" id="admin-card-builder" onclick="showTab('builder', null)">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#5e5ce6,#3634a3);">⚙️</div>
-        <div class="ac-title">Report Builder</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-smartquery" onclick="showTab('smartquery', null)">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ff9f0a,#cc7700);">💡</div>
-        <div class="ac-title">Smart Search</div>
-      </button>
-      <button class="admin-card" id="admin-card-globalsearch" onclick="showTab('globalsearch', null)">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#30b0c7,#0e7a90);">🌐</div>
-        <div class="ac-title">Global Search</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-move" onclick="showMoveRecords()">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#bf5af2,#8944ab);">🔀</div>
-        <div class="ac-title">Move Records</div>
-      </button>
-      <button class="admin-card ac-group-admin ac-group-onboarding" id="admin-card-welcome" onclick="window.open('/welcome','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#23A455,#16703a);">✉️</div>
-        <div class="ac-title">Welcome Email</div>
-      </button>
-      <button class="admin-card" id="admin-card-weather" onclick="window.open('/dealer-locator','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ff6b35,#c73e00);">🌡️</div>
-        <div class="ac-title">Dealer Locator</div>
-      </button>
-      <button class="admin-card" id="admin-card-am-guide" onclick="window.open('/am-guide','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#5856d6,#3634a3);">📖</div>
-        <div class="ac-title">User Guide</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-scheduler" onclick="showTab('scheduler', null)">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#636366,#3a3a3c);">🕐</div>
-        <div class="ac-title">Scheduler</div>
-      </button>
-      <button class="admin-card" id="admin-card-optimus-deact" onclick="showOptimusDeactivator()">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ff3b30,#b01c14);">🚫</div>
-        <div class="ac-title">OPTIMUS Deactivation</div>
-      </button>
-      <button class="admin-card" id="admin-card-optimus-react" onclick="showOptimusReactivator()">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#30d158,#1a8a34);">✅</div>
-        <div class="ac-title">OPTIMUS Reactivation</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-account-slp" onclick="window.open('/reports/account-slp','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#2c5f8a,#1a3d5c);">🏢</div>
-        <div class="ac-title">Account / SLP Report</div>
-      </button>
-      <button class="admin-card ac-group-admin ac-group-sales_admin" id="admin-card-parent-child" onclick="window.open('/reports/parent-child','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ff9f0a,#a85e00);">🔗</div>
-        <div class="ac-title">Parent-Child Report</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-slp-health" onclick="window.open('/reports/slp-health','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ff2d55,#a8001e);">🩺</div>
-        <div class="ac-title">SLP Health Report</div>
-      </button>
-      <button class="admin-card ac-group-admin" id="admin-card-am-activity" onclick="window.open('/reports/am-activity','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#28a745,#155c26);">📈</div>
-        <div class="ac-title">AM Activity</div>
-      </button>
-      <button class="admin-card ac-group-admin ac-group-sales_admin" onclick="window.open('/reports/account-summary','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#0ea5e9,#0369a1);">🗂️</div>
-        <div class="ac-title">Account Summary</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/move-account','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#8b5cf6,#6d28d9);">🔀</div>
-        <div class="ac-title">Move Account</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/dealer-fix','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#f59e0b,#b45309);">🧭</div>
-        <div class="ac-title">Dealer in the Wrong Place?</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/create-dealer','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#16a34a,#14532d);">➕</div>
-        <div class="ac-title">Create Dealer</div>
-      </button>
-      <button class="admin-card" onclick="window.open('/tag-dealers','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#ec4899,#9d174d);">🏷️</div>
-        <div class="ac-title">Bulk Tag Dealers</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/strategic-partner-report','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#0ea5e9,#1e3a5f);">🤝</div>
-        <div class="ac-title">Partner Report</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/admin/dashboards','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#23A455,#0d5c2a);">📊</div>
-        <div class="ac-title">Admin Dashboards</div>
-      </button>
-      <button class="admin-card ac-group-admin" onclick="window.open('/deactivations','_blank')">
-        <div class="ac-icon" style="background:linear-gradient(145deg,#b91c1c,#7f1d1d);">🔻</div>
-        <div class="ac-title">Deactivations</div>
-      </button>
-    </div>
+    <div class="mf-directory-intro"><div><h2>Apps</h2><p class="admin-subtitle">Reports, search tools, and scheduler settings.</p></div><form id="mf-tool-search" role="search"><label class="mf-search-field"><img src="/static/icons/search.svg" alt="" width="24" height="24"/><input id="mf-tool-query" type="search" aria-label="Search tools" placeholder="Find a tool…" autocomplete="off"/></label><button type="submit">Search</button></form></div>
+<div class="mf-directory"><section class="mf-tool-group"><h3>Accounts & Dealers</h3><p>Find and manage accounts and dealer information.</p><div class="mf-tool-list"><button class="admin-card" onclick="showTab('accounts', null)"><img class="mf-tool-icon" src="/static/icons/users.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Accounts</span><span class="ac-desc">Search and manage accounts.</span></span></button><button class="admin-card" id="admin-card-weather" onclick="window.open('/dealer-locator','_blank')"><img class="mf-tool-icon" src="/static/icons/map-pin.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Dealer Locator</span><span class="ac-desc">Find dealer locations and details.</span></span></button><button class="admin-card ac-group-admin ac-group-sales_admin" onclick="window.open('/reports/account-summary','_blank')"><img class="mf-tool-icon" src="/static/icons/file-text.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Account Summary</span><span class="ac-desc">View account details and activity.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/move-account','_blank')"><img class="mf-tool-icon" src="/static/icons/arrows-shuffle.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Move Account</span><span class="ac-desc">Move records between accounts.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/dealer-fix','_blank')"><img class="mf-tool-icon" src="/static/icons/compass.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Dealer in the Wrong Place?</span><span class="ac-desc">Correct a dealer’s location.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/create-dealer','_blank')"><img class="mf-tool-icon" src="/static/icons/user-plus.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Create Dealer</span><span class="ac-desc">Create a new dealer record.</span></span></button><button class="admin-card" onclick="window.open('/tag-dealers','_blank')"><img class="mf-tool-icon" src="/static/icons/tags.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Bulk Tag Dealers</span><span class="ac-desc">Apply tags to multiple dealers.</span></span></button></div></section><section class="mf-tool-group"><h3>Marketing & Operations</h3><p>Tools for marketing projects and account setup.</p><div class="mf-tool-list"><button class="admin-card" onclick="location.href='/marketing-projects'"><img class="mf-tool-icon" src="/static/icons/speakerphone.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Marketing Projects</span><span class="ac-desc">Manage marketing requests and projects.</span></span></button><button class="admin-card" id="admin-card-onboarding-live" onclick="window.open('/onboarding-live','_blank')"><img class="mf-tool-icon" src="/static/icons/user-plus.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Onboarding Live</span><span class="ac-desc">Track new account onboarding.</span></span></button><button class="admin-card" id="admin-card-awaiting-install" onclick="window.open('/awaiting-install','_blank')"><img class="mf-tool-icon" src="/static/icons/cube.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Awaiting Install</span><span class="ac-desc">View accounts awaiting install.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-scheduler" onclick="showTab('scheduler', null)"><img class="mf-tool-icon" src="/static/icons/calendar.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Scheduler</span><span class="ac-desc">Manage scheduled reports and tasks.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-move" onclick="showMoveRecords()"><img class="mf-tool-icon" src="/static/icons/arrows-shuffle.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Move Records</span><span class="ac-desc">Move deals, contacts, and SLP records.</span></span></button><button class="admin-card ac-group-admin ac-group-onboarding" id="admin-card-welcome" onclick="window.open('/welcome','_blank')"><img class="mf-tool-icon" src="/static/icons/mail.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Welcome Email</span><span class="ac-desc">Prepare dealer welcome emails.</span></span></button><button class="admin-card" id="admin-card-optimus-deact" onclick="showOptimusDeactivator()"><img class="mf-tool-icon" src="/static/icons/circle-off.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">OPTIMUS Deactivation</span><span class="ac-desc">Manage OPTIMUS deactivation.</span></span></button><button class="admin-card" id="admin-card-optimus-react" onclick="showOptimusReactivator()"><img class="mf-tool-icon" src="/static/icons/circle-check.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">OPTIMUS Reactivation</span><span class="ac-desc">Reactivate OPTIMUS accounts.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/deactivations','_blank')"><img class="mf-tool-icon" src="/static/icons/circle-off.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Deactivations</span><span class="ac-desc">Review and manage deactivations.</span></span></button></div></section><section class="mf-tool-group"><h3>Reporting</h3><p>Create, access, and explore reports.</p><div class="mf-tool-list"><button class="admin-card" id="admin-card-prebuilt" onclick="showTab('prebuilt', null)"><img class="mf-tool-icon" src="/static/icons/file-text.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Pre-Built Reports</span><span class="ac-desc">Access standard reports.</span></span></button><button class="admin-card" id="admin-card-builder" onclick="showTab('builder', null)"><img class="mf-tool-icon" src="/static/icons/settings.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Report Builder</span><span class="ac-desc">Build and customize reports.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-smartquery" onclick="showTab('smartquery', null)"><img class="mf-tool-icon" src="/static/icons/search.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Smart Search</span><span class="ac-desc">Search across accounts and data.</span></span></button><button class="admin-card" id="admin-card-globalsearch" onclick="showTab('globalsearch', null)"><img class="mf-tool-icon" src="/static/icons/world.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Global Search</span><span class="ac-desc">Search accounts, contacts, and SLPs.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/strategic-partner-report','_blank')"><img class="mf-tool-icon" src="/static/icons/chart-bar.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Partner Report</span><span class="ac-desc">View partner-related reports.</span></span></button><button class="admin-card" id="admin-card-am-guide" onclick="window.open('/am-guide','_blank')"><img class="mf-tool-icon" src="/static/icons/bookmark.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">User Guide</span><span class="ac-desc">Get help using Microf-Search.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-account-slp" onclick="window.open('/reports/account-slp','_blank')"><img class="mf-tool-icon" src="/static/icons/building.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Account / SLP Report</span><span class="ac-desc">Explore accounts and SLP records.</span></span></button><button class="admin-card ac-group-admin ac-group-sales_admin" id="admin-card-parent-child" onclick="window.open('/reports/parent-child','_blank')"><img class="mf-tool-icon" src="/static/icons/hierarchy.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Parent-Child Report</span><span class="ac-desc">Review parent and child relationships.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-slp-health" onclick="window.open('/reports/slp-health','_blank')"><img class="mf-tool-icon" src="/static/icons/heart.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">SLP Health Report</span><span class="ac-desc">Review SLP record health.</span></span></button><button class="admin-card ac-group-admin" id="admin-card-am-activity" onclick="window.open('/reports/am-activity','_blank')"><img class="mf-tool-icon" src="/static/icons/chart-line.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">AM Activity</span><span class="ac-desc">Review account manager activity.</span></span></button><button class="admin-card ac-group-admin" onclick="window.open('/admin/dashboards','_blank')"><img class="mf-tool-icon" src="/static/icons/layout-dashboard.svg" width="40" height="40" alt=""/><span class="mf-tool-copy"><span class="ac-title">Admin Dashboards</span><span class="ac-desc">Explore operational dashboards.</span></span></button></div></section></div><p id="mf-tools-empty" role="status" hidden>No matching tools. Try “marketing”, “dealer”, or “report”.</p>
 
     <!-- Move Records Panel -->
     <div id="move-records-panel" style="display:none;margin-top:32px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:24px;">
@@ -2592,6 +2492,7 @@ function showTab(id, btn, pushHistory = true) {
   }
   // Toggle accounts-mode (hides the left nav, shows Admin button)
   document.querySelector('.app-shell').classList.toggle('accounts-mode', id === 'accounts');
+  document.querySelector('.app-shell').classList.toggle('mf-apps-mode', id === 'admin');
   // Update URL hash without triggering hashchange listener
   if (pushHistory && window.location.hash !== '#' + id) {
     history.pushState(null, '', '#' + id);
