@@ -266,29 +266,28 @@
     .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
   }
   </style>
+<link rel="stylesheet" href="/static/css/workspace-refresh.css?v=20260928"/>
 </head>
 <body class="idle">
 
-  <div style="position:fixed;top:14px;right:16px;z-index:100;display:flex;gap:6px;">
-    <a href="#" onclick="history.back();return false;" style="padding:9px 16px;min-height:44px;background:rgba(0,0,0,0.48);color:#fff;border-radius:6px;font-size:0.76rem;font-weight:500;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">← Back</a>
-    <a href="/" style="padding:9px 16px;min-height:44px;background:#23A455;color:#fff;border-radius:6px;font-size:0.76rem;font-weight:600;text-decoration:none;font-family:'Open Sans',Arial,sans-serif;box-shadow:0 1px 3px rgba(0,0,0,.15);-webkit-font-smoothing:antialiased;">⬡ Apps</a>
-  </div>
+<header class="mf-header mf-search-header"><a class="mf-brand" href="/search"><span>Microf</span>-Search</a><nav aria-label="Main navigation"><a href="/search" aria-current="page">Search</a><a href="/#accounts">Accounts</a><a href="/#admin">Apps</a><a href="/#prebuilt">Reports</a></nav><a class="mf-header-help" href="/am-guide" target="_blank" rel="noopener">User guide</a></header>
 
   <div id="stage">
     <div class="logo">
-      <span class="logo-dark">Microf</span><span class="logo-blue"> Search</span>
+      <span class="logo-dark">Microf</span><span class="logo-blue">-Search</span>
     </div>
 
     <div class="search-wrap">
-      <span class="search-icon">🔍</span>
-      <input id="q" type="text" placeholder="Search accounts, contacts, dealer IDs…"
+      <img class="search-icon" src="/static/icons/search.svg" width="24" height="24" alt=""/>
+      <input id="q" type="text" aria-label="Search accounts, contacts, and dealer IDs" placeholder="Search accounts, contacts, dealer IDs…"
              autocomplete="off" spellcheck="false" />
       <button class="clear-btn" id="clearBtn" title="Clear">✕</button>
     </div>
   </div>
 
+  <div class="mf-search-hint">Accounts, contacts, and dealer information. One search.</div>
   <div id="results">
-    <div id="status"></div>
+    <div id="status" role="status" aria-live="polite"></div>
     <div id="cards"></div>
   </div>
 
