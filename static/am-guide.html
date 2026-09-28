@@ -813,6 +813,10 @@ code {
 /* ── Responsive ── */
 @media (max-width: 780px) {
   .guide-wrap { flex-direction: column; padding: 0 16px; }
+  .guide-main { width: 100%; overflow-wrap: anywhere; }
+  .step-body, .callout-body { min-width: 0; }
+  .mockup { max-width: 100%; overflow-x: auto; }
+  table.doc-table th, table.doc-table td { min-width: 130px; overflow-wrap: normal; }
   .toc { position: relative; top: auto; width: 100%; min-width: unset; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
   .mock-apps-grid { grid-template-columns: repeat(3, 1fr); }
   .mock-reports-grid { grid-template-columns: repeat(3, 1fr); }
