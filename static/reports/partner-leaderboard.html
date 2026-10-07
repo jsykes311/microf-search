@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Partner Leaderboard — Microf</title>
+<style>
+:root{
+  --navy:#1e3a5f; --navy-dark:#162d4a; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f3f2f1; --card:#fff;
+  --gold:#b7791f; --gold-bg:#fef3c7; --silver:#475569; --silver-bg:#e2e8f0; --bronze:#9a3412; --bronze-bg:#ffedd5;
+  --up:#15803d; --down:#b91c1c; --new:#1d4ed8; --bar:#2563eb; --bar-soft:#93c5fd; --bar-track:#eef2f7;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans',Arial,sans-serif;background:var(--bg);color:var(--ink);min-height:100vh}
+header{background:var(--navy);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.hbtn{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+.hbtn:hover{background:rgba(255,255,255,.25)}
+.hbtn.right{margin-left:auto}
+main{max-width:1100px;margin:0 auto;padding:22px 20px 60px}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+.controls label{font-size:.74rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+select,input[type=search]{font:inherit;font-size:.85rem;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:var(--ink)}
+select{min-width:230px}
+input[type=search]{flex:1;min-width:220px;max-width:340px}
+.btn{font:inherit;font-size:.8rem;font-weight:600;padding:8px 14px;border-radius:6px;border:1px solid #d1d5db;background:#fff;color:var(--navy);cursor:pointer}
+.btn:hover{background:#f8fafc}
+.btn:focus-visible,select:focus-visible,input:focus-visible,.prow-head:focus-visible{outline:3px solid #60a5fa;outline-offset:2px}
+.spacer{flex:1}
+
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+@media (max-width:760px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+.tile .n{font-size:1.7rem;font-weight:800;color:var(--navy);line-height:1.1}
+.tile .l{font-size:.74rem;color:var(--muted);font-weight:600;margin-top:3px}
+.tile .s{font-size:.72rem;color:var(--muted);margin-top:2px}
+
+.notes{font-size:.78rem;color:var(--muted);margin-bottom:14px;display:grid;gap:3px}
+.notes b{color:var(--ink);font-weight:600}
+.notice{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:6px;padding:9px 12px;font-size:.8rem;margin-bottom:14px}
+.empty{background:var(--card);border:1px dashed #cbd5e1;border-radius:8px;padding:34px 20px;text-align:center;color:var(--muted);font-size:.9rem}
+.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:14px 16px;font-size:.88rem}
+
+.board{display:grid;gap:10px}
+.prow{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.prow.top1{border-color:#f5d78a;box-shadow:0 1px 0 #f5d78a}
+.prow-head{all:unset;box-sizing:border-box;display:grid;grid-template-columns:52px minmax(160px,1.4fr) 74px minmax(150px,1.6fr) 84px 84px 24px;gap:12px;align-items:center;width:100%;padding:14px 16px;cursor:pointer}
+.prow-head:hover{background:#fafbfc}
+.rank{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1rem;background:#f1f5f9;color:#334155}
+.rank.r1{background:var(--gold-bg);color:var(--gold);box-shadow:0 0 0 2px #f5d78a inset}
+.rank.r2{background:var(--silver-bg);color:var(--silver);box-shadow:0 0 0 2px #cbd5e1 inset}
+.rank.r3{background:var(--bronze-bg);color:var(--bronze);box-shadow:0 0 0 2px #fdba74 inset}
+.who{display:block;min-width:0}
+.pname,.psub{display:block}
+.pname{font-weight:700;font-size:.98rem;color:var(--navy);overflow-wrap:break-word}
+.psub{font-size:.76rem;color:var(--muted);margin-top:2px}
+.move{font-size:.78rem;font-weight:700;white-space:nowrap}
+.move.up{color:var(--up)} .move.down{color:var(--down)} .move.same{color:var(--muted);font-weight:600} .move.new{color:var(--new)} .move.na{color:#9ca3af;font-weight:600}
+.barwrap{display:flex;flex-direction:column;gap:3px}
+.bar{height:10px;border-radius:5px;background:var(--bar-track);overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--bar);border-radius:5px;min-width:0}
+.barcap{font-size:.7rem;color:var(--muted)}
+.stat{text-align:right}
+.stat b{display:block;font-size:1.25rem;font-weight:800;color:var(--ink);line-height:1.1}
+.stat span{font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.chev{font-size:.9rem;color:var(--muted);transition:transform .15s;text-align:center}
+.prow.open .chev{transform:rotate(90deg)}
+.prow.zero .pname{color:#64748b}
+
+.detail{display:none;border-top:1px solid var(--line);padding:6px 16px 14px 80px;background:#fcfcfd}
+.prow.open .detail{display:block}
+.detail .hint{font-size:.76rem;color:var(--muted);margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{text-align:left;padding:7px 10px;color:var(--muted);font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--line)}
+th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+td{padding:7px 10px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+tr.idle td{color:#94a3b8}
+tr.match td:first-child{font-weight:700}
+.mini{width:110px}
+.mini .bar{height:7px}
+.mini .bar>i{background:var(--bar-soft)}
+tfoot td{font-weight:800;color:var(--navy);border-top:2px solid var(--line);border-bottom:none;background:#f8fafc}
+.dim{color:#94a3b8}
+a.acct{color:var(--navy);text-decoration:none;font-weight:600}
+a.acct:hover{text-decoration:underline}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+@media (max-width:760px){
+  header{padding:12px 14px} main{padding:16px 12px 50px}
+  .prow-head{grid-template-columns:40px minmax(0,1fr) 64px 64px 16px;grid-template-areas:"rk nm nm nm ch" "rk mv ap rp ch" "bar bar bar bar bar";row-gap:8px;column-gap:10px;padding:12px}
+  .prow-head>.rank{grid-area:rk;align-self:start;width:34px;height:34px;font-size:.9rem}
+  .prow-head>.who{grid-area:nm} .prow-head>.move{grid-area:mv} .prow-head>.barwrap{grid-area:bar}
+  .prow-head>.apps{grid-area:ap} .prow-head>.rpas{grid-area:rp} .prow-head>.chev{grid-area:ch;align-self:start}
+  .stat b{font-size:1.05rem}
+  .detail{padding:6px 10px 12px}
+  .mini,.hide-sm{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="hbtn" href="/">Apps</a>
+  <h1>Partner Leaderboard</h1>
+  <a class="hbtn right" href="/strategic-partner-report">Strategic Partner Report</a>
+</header>
+<main>
+  <div class="controls">
+    <label for="period">Period</label>
+    <select id="period" aria-label="Period"></select>
+    <input type="search" id="q" placeholder="Search partners or contractors" aria-label="Search partners and contractors"/>
+    <span class="spacer"></span>
+    <button class="btn" id="toggle-all" type="button">Expand all</button>
+    <button class="btn" id="csv" type="button">Download CSV</button>
+  </div>
+  <div id="tiles" class="tiles" hidden></div>
+  <div id="notes" class="notes"></div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="board" class="board"></div>
+</main>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var state={data:null,open:{},q:''};
+  var fmt=function(n){return Number(n||0).toLocaleString('en-US')};
+  var plural=function(n,w){return fmt(n)+' '+w+(n===1?'':'s')};
+  var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})};
+  var AC_ACCT='https://microf.activehosted.com/app/accounts/';
+
+  function setStatus(html,cls){$('status').innerHTML=html?'<div class="'+cls+'">'+html+'</div>':''}
+
+  async function load(period){
+    setStatus('Loading…','notice');
+    try{
+      var r=await fetch('/api/partner-board'+(period?('?period='+encodeURIComponent(period)):''),{credentials:'same-origin'});
+      if(r.status===403||r.status===401){setStatus('You need admin access to view the leaderboard.','error');return}
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      state.data=await r.json();
+    }catch(e){setStatus('Could not load the leaderboard ('+esc(e.message)+'). Try again in a moment.','error');return}
+    setStatus('');
+    fillPeriods();
+    render();
+  }
+
+  function fillPeriods(){
+    var d=state.data, sel=$('period'), groups={};
+    d.periods.options.forEach(function(o){(groups[o.group]=groups[o.group]||[]).push(o)});
+    sel.innerHTML=Object.keys(groups).map(function(g){
+      return '<optgroup label="'+esc(g)+'">'+groups[g].map(function(o){return '<option value="'+esc(o.value)+'">'+esc(o.label)+'</option>'}).join('')+'</optgroup>';
+    }).join('');
+    if(d.period&&d.period.value)sel.value=d.period.value;
+  }
+
+  function move(p){
+    if(p.is_new)return '<span class="move new" aria-label="New on the board">NEW</span>';
+    if(p.rank_change===null||p.rank_change===undefined)return '<span class="move na" title="No previous period to compare" aria-label="No previous period">—</span>';
+    if(p.rank_change>0)return '<span class="move up" aria-label="Up '+p.rank_change+' places">▲ '+p.rank_change+'</span>';
+    if(p.rank_change<0)return '<span class="move down" aria-label="Down '+(-p.rank_change)+' places">▼ '+(-p.rank_change)+'</span>';
+    return '<span class="move same" aria-label="No change in rank">● same</span>';
+  }
+
+  function match(c,q){return (c.dealer||'').toLowerCase().indexOf(q)>=0||String(c.dealer_id||'').indexOf(q)>=0}
+
+  function contractorTable(p,q,key){
+    var partnerHit=q&&p.partner.toLowerCase().indexOf(q)>=0;
+    var rows=p.contractor_rows;
+    var shown=(q&&!partnerHit)?rows.filter(function(c){return match(c,q)}):rows;
+    var maxR=Math.max.apply(null,rows.map(function(c){return c.rpas}).concat([1]));
+    var body=shown.map(function(c){
+      var idle=!c.apps&&!c.rpas;
+      var name=c.account_id?'<a class="acct" href="'+AC_ACCT+esc(c.account_id)+'" target="_blank" rel="noopener">'+esc(c.dealer)+'</a>':esc(c.dealer);
+      return '<tr class="'+(idle?'idle ':'')+(q&&match(c,q)?'match':'')+'"><td>'+name+'</td><td class="hide-sm">'+esc(c.dealer_id||'—')+'</td>'
+        +'<td class="num">'+fmt(c.apps)+'</td><td class="num">'+fmt(c.rpas)+'</td>'
+        +'<td class="mini"><div class="bar" aria-hidden="true"><i style="width:'+Math.round(100*c.rpas/maxR)+'%"></i></div></td></tr>';
+    }).join('');
+    var hint=(shown.length<rows.length)?'<div class="hint">Showing '+shown.length+' of '+rows.length+' contractors matching “'+esc(state.q)+'”. Partner totals above include all of them.</div>'
+      :'<div class="hint">'+p.active_contractors+' of '+plural(p.contractors,'contractor')+' had activity this period.'+(p.active_contractors<p.contractors?' Idle contractors are shown in gray.':'')+'</div>';
+    return hint+'<table><thead><tr><th>Contractor</th><th class="hide-sm">Dealer ID</th><th class="num">Apps</th><th class="num">RPAs</th><th class="mini" aria-hidden="true"></th></tr></thead><tbody>'+body+'</tbody>'
+      +'<tfoot><tr><td>Partner total ('+plural(p.contractors,'contractor')+')</td><td class="hide-sm"></td><td class="num">'+fmt(p.apps)+'</td><td class="num">'+fmt(p.rpas)+'</td><td class="mini"></td></tr></tfoot></table>';
+  }
+
+  function partnerRow(p,i,maxR,q){
+    var key='p'+i, open=!!state.open[p.partner]||(q&&p.contractor_rows.some(function(c){return match(c,q)})&&p.partner.toLowerCase().indexOf(q)<0);
+    var cls='prow'+(open?' open':'')+(p.rank===1?' top1':'')+((!p.apps&&!p.rpas)?' zero':'');
+    var rcls='rank'+(p.rank<=3?' r'+p.rank:'');
+    return '<section class="'+cls+'" data-partner="'+esc(p.partner)+'">'
+      +'<button class="prow-head" type="button" aria-expanded="'+open+'" aria-controls="d-'+key+'">'
+      +'<span class="'+rcls+'" aria-label="Rank '+p.rank+'">'+p.rank+'</span>'
+      +'<span class="who"><span class="pname">'+esc(p.partner)+'</span><span class="psub">'+p.active_contractors+' of '+plural(p.contractors,'contractor')+' active</span></span>'
+      +move(p)
+      +'<span class="barwrap"><span class="bar" aria-hidden="true"><i style="width:'+Math.round(100*p.rpas/maxR)+'%"></i></span><span class="barcap">'+(p.rpas?Math.round(100*p.rpas/Math.max(state.data.totals.rpas,1))+'% of all RPAs':'No RPAs yet')+'</span></span>'
+      +'<span class="stat apps"><b>'+fmt(p.apps)+'</b><span>Apps</span></span>'
+      +'<span class="stat rpas"><b>'+fmt(p.rpas)+'</b><span>RPAs</span></span>'
+      +'<span class="chev" aria-hidden="true">▶</span></button>'
+      +'<div class="detail" id="d-'+key+'">'+(open?contractorTable(p,q,key):'')+'</div></section>';
+  }
+
+  function render(){
+    var d=state.data, q=state.q.trim().toLowerCase();
+    $('tiles').hidden=!d.has_data;
+    if(!d.has_data){
+      $('tiles').innerHTML='';$('notes').innerHTML='';$('board').innerHTML='';
+      setStatus('No production data has been uploaded yet. Upload a Daily Sales Dump on the <a href="/strategic-partner-report">Strategic Partner Report</a> and this board fills in automatically.','empty');return;
+    }
+    var t=d.totals;
+    $('tiles').innerHTML=
+      '<div class="tile"><div class="n">'+fmt(t.partners)+'</div><div class="l">Partners ranked</div></div>'
+      +'<div class="tile"><div class="n">'+fmt(t.active_contractors)+'<span class="dim" style="font-size:1rem;font-weight:600"> / '+fmt(t.contractors)+'</span></div><div class="l">Contractors active</div><div class="s">had at least one app or RPA</div></div>'
+      +'<div class="tile"><div class="n">'+fmt(t.apps)+'</div><div class="l">Applications</div></div>'
+      +'<div class="tile"><div class="n">'+fmt(t.rpas)+'</div><div class="l">RPAs</div></div>';
+    var notes=[];
+    notes.push('<span><b>'+esc(d.period.label||'')+'</b> · ranked by RPAs, then applications'+(d.prior_label?' · movement compares to '+esc(d.prior_label):' · no earlier period to compare yet')+'</span>');
+    if(d.period.partial)notes.push('<span class="notice" style="margin:4px 0 0">This period only has <b>'+d.period.months.length+' of '+d.period.months_expected+' months</b> of uploaded data ('+d.period.months.map(esc).join(', ')+'). Partners are ranked on the months that exist.</span>');
+    var c=d.coverage;
+    if(c.partners_tagged_in_ac&&c.partners_with_data<c.partners_tagged_in_ac)notes.push('<span>Showing <b>'+c.partners_with_data+'</b> of '+c.partners_tagged_in_ac+' partners tagged in ActiveCampaign — the rest have no uploaded production data.</span>');
+    if(c.uploaded_at)notes.push('<span>Production data last uploaded '+esc(String(c.uploaded_at).slice(0,10))+'.</span>');
+    $('notes').innerHTML=notes.join('');
+    if(!d.partners.length){$('board').innerHTML='';setStatus('No partner production for this period.','empty');return}
+    var list=d.partners.filter(function(p){
+      if(!q)return true;
+      return p.partner.toLowerCase().indexOf(q)>=0||p.contractor_rows.some(function(x){return match(x,q)});
+    });
+    var maxR=Math.max.apply(null,d.partners.map(function(p){return p.rpas}).concat([1]));
+    $('board').innerHTML=list.length?list.map(function(p,i){return partnerRow(p,i,maxR,q)}).join(''):'';
+    if(!list.length)setStatus('Nothing matches “'+esc(state.q)+'”.','empty');else setStatus('');
+    // fill details lazily for rows opened by the user
+    var parts=Array.prototype.slice.call(document.querySelectorAll('.prow'));
+    parts.forEach(function(el){
+      var name=el.getAttribute('data-partner'), p=d.partners.find(function(x){return x.partner===name});
+      el.querySelector('.prow-head').addEventListener('click',function(){
+        state.open[name]=!el.classList.contains('open');
+        el.classList.toggle('open',state.open[name]);
+        this.setAttribute('aria-expanded',String(state.open[name]));
+        el.querySelector('.detail').innerHTML=state.open[name]?contractorTable(p,q,''):'';
+        syncToggle();
+      });
+    });
+    if(d.unassigned&&d.unassigned.contractors){
+      var u=d.unassigned;
+      $('board').insertAdjacentHTML('beforeend','<div class="notice">'+u.contractors+' contractor'+(u.contractors===1?'':'s')+' in this period ('+fmt(u.apps)+' apps, '+fmt(u.rpas)+' RPAs) could not be matched to a strategic partner, so they are not ranked.</div>');
+    }
+    syncToggle();
+  }
+
+  function syncToggle(){
+    var all=state.data&&state.data.partners.length&&state.data.partners.every(function(p){return state.open[p.partner]});
+    $('toggle-all').textContent=all?'Collapse all':'Expand all';
+  }
+
+  $('toggle-all').addEventListener('click',function(){
+    var d=state.data;if(!d)return;
+    var all=d.partners.every(function(p){return state.open[p.partner]});
+    d.partners.forEach(function(p){state.open[p.partner]=!all});
+    render();
+  });
+  $('period').addEventListener('change',function(){state.open={};load(this.value)});
+  var t;$('q').addEventListener('input',function(){clearTimeout(t);var v=this.value;t=setTimeout(function(){state.q=v;if(state.data)render()},150)});
+
+  $('csv').addEventListener('click',function(){
+    var d=state.data;if(!d||!d.partners.length)return;
+    var cell=function(v){v=String(v==null?'':v);if(/^[=+\-@\t\r]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"'};
+    var lines=[['Period','Rank','Partner','Contractor','Dealer ID','Apps','RPAs'].map(cell).join(',')];
+    d.partners.forEach(function(p){
+      p.contractor_rows.forEach(function(c){lines.push([d.period.label,p.rank,p.partner,c.dealer,c.dealer_id,c.apps,c.rpas].map(cell).join(','))});
+      lines.push([d.period.label,p.rank,p.partner,'PARTNER TOTAL','',p.apps,p.rpas].map(cell).join(','));
+    });
+    var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    a.download='partner-leaderboard-'+d.period.label.replace(/[^A-Za-z0-9]+/g,'-').replace(/^-|-$/g,'')+'.csv';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+  });
+
+  load('');
+})();
+</script>
+</body>
+</html>

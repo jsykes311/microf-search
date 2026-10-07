@@ -596,6 +596,7 @@ async function uploadDumpFile(file) {
     const summary = Object.entries(data.dealers_per_month)
       .map(([m, n]) => `${m}: ${n} dealers`).join(' · ');
     toast(`✓ Created/updated ${data.periods.length} period(s): ${data.periods.join(', ')}`);
+    if ((data.input_fixes || []).length) toast('ℹ ' + data.input_fixes.join(' '));
     statusEl.textContent = `✓ ${data.periods.length} period(s) imported`;
     document.getElementById('zone-dump').classList.add('has-data');
 
