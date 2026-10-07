@@ -11763,6 +11763,8 @@ def _lookup_enrolled_date(dealer_name: str, did: str = "") -> str:
 
 _DUMP_ENCODING_TRIES = [("utf-16", "\t"), ("utf-8", "\t"), ("utf-8", ","), ("latin-1", "\t"), ("latin-1", ",")]
 
+from tableau_dump import depivot_measures as _depivot_measures
+
 def _read_dump(content: bytes):
     """Try several encodings/separators; return the first DataFrame that looks like a dump."""
     if _pd is None:
@@ -11775,6 +11777,13 @@ def _read_dump(content: bytes):
             if "dealer id" in cols_lower and "inserted_time" in cols_lower:
                 # Rename columns to strip whitespace
                 df.columns = [c.strip() for c in df.columns]
+                # A pivoted Tableau export repeats every application once per measure; undo that.
+                df, fix = _depivot_measures(df)
+                if fix:
+                    msg = (f"Un-pivoted a Tableau export: {fix['rows_before']:,} rows became "
+                           f"{fix['rows_after']:,} applications ({', '.join(fix['measures'])} are now columns)")
+                    df.attrs["fixes"] = [msg]
+                    print(f"[apex-dump] {msg}")
                 return df
         except Exception:
             continue
@@ -12272,6 +12281,7 @@ async def apex_upload_daily_dump(
         "rollup_dealers":     len(rollup_rows),
         "apex_dealer_ids_used": len(apex_ids),
         "dealer_id_source":   source,
+        "input_fixes":        df.attrs.get("fixes", []),
     }
 
 
@@ -13502,3 +13512,17 @@ install_marketing(app, _get_session_email)
 from dealer_workspace import install_workspace
 install_workspace(app, lambda request: _get_session_email(request) if _AZ_CLIENT_ID else 'dev@microf.com',
                   ac_get, ac_post, ac_put, AC_UI_BASE)
+
+# Partner Leaderboard: rolls Strategic Partner Report production (apps, RPAs) up to each contractor's partner.
+def _partner_board_info():
+    lookup, tagged = {}, set()
+    for aid, sp_val in _account_to_strategic_partners.items():
+        if not sp_val or _account_to_type.get(aid, "").strip().lower() != "contractor":
+            continue
+        for did in _re.findall(r"\d+", str(_account_to_dealer.get(aid, ""))):
+            lookup[did] = sp_val
+        tagged.update(p.strip() for p in str(sp_val).split(",") if p.strip())
+    return lookup, len(tagged)
+
+from partner_board import install_partner_board
+install_partner_board(app, _require_admin, _load_apex_data, _partner_board_info)

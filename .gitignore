@@ -19,6 +19,8 @@ __pycache__/
 
 !marketing.py
 !dealer_workspace.py
+!partner_board.py
+!tableau_dump.py
 !marketing-ui/
 !marketing-ui/**
 !tests/
