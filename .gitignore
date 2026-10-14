@@ -21,6 +21,7 @@ __pycache__/
 !dealer_workspace.py
 !partner_board.py
 !tableau_dump.py
+!upload_guard.py
 !marketing-ui/
 !marketing-ui/**
 !tests/

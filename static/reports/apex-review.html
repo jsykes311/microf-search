@@ -187,7 +187,39 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
     table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .two-col, .three-col, .grid-2, .grid-3 { grid-template-columns: 1fr !important; }
   }
-  </style>
+  
+/* ── Upload review dialog ── */
+.rv-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }
+.rv-overlay.open { display: flex; }
+.rv-dialog { background: #fff; color: #111827; border-radius: 12px; width: min(860px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.35); }
+.rv-head { padding: 18px 22px 12px; border-bottom: 1px solid #e5e7eb; }
+.rv-head h2 { font-size: 1.05rem; font-weight: 700; color: #1e3a5f; }
+.rv-head p { font-size: .8rem; color: #6b7280; margin-top: 3px; }
+.rv-body { padding: 14px 22px; overflow-y: auto; }
+.rv-warn { border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; font-size: .82rem; line-height: 1.4; border: 1px solid; }
+.rv-warn b { display: block; margin-bottom: 2px; }
+.rv-danger { background: #fef2f2; border-color: #fca5a5; color: #7f1d1d; }
+.rv-warnl  { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+.rv-info   { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.rv-sum { font-size: .84rem; margin: 12px 0 8px; font-weight: 600; color: #1f2937; }
+.rv-tablewrap { max-height: 260px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; }
+.rv-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+.rv-table th { position: sticky; top: 0; background: #f8fafc; text-align: left; padding: 7px 10px; font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
+.rv-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; }
+.rv-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.rv-table .neg { color: #b91c1c; font-weight: 600; }
+.rv-table .pos { color: #15803d; }
+.rv-tag { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .68rem; font-weight: 700; }
+.rv-tag.new { background: #dcfce7; color: #166534; } .rv-tag.replace { background: #fef3c7; color: #92400e; }
+.rv-foot { padding: 12px 22px 16px; border-top: 1px solid #e5e7eb; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rv-foot .note { font-size: .74rem; color: #6b7280; flex: 1 1 260px; }
+.rv-ack { display: flex; gap: 8px; align-items: flex-start; font-size: .82rem; color: #7f1d1d; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+.rv-btn { font: inherit; font-size: .85rem; font-weight: 600; padding: 9px 18px; border-radius: 8px; cursor: pointer; border: 1px solid #d1d5db; background: #fff; color: #1e3a5f; }
+.rv-btn.primary { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+.rv-btn.primary.danger { background: #b91c1c; border-color: #b91c1c; }
+.rv-btn:disabled { opacity: .45; cursor: not-allowed; }
+.rv-btn:focus-visible, .rv-dialog:focus-visible { outline: 3px solid #60a5fa; outline-offset: 2px; }
+</style>
 </head>
 <body>
 
@@ -305,6 +337,17 @@ table.data-table tbody tr.grand-total { background: #f0f9ff; font-weight: 600; b
   </div>
 </div>
 
+<div class="rv-overlay" id="rv-overlay" role="presentation">
+  <div class="rv-dialog" role="dialog" aria-modal="true" aria-labelledby="rv-title" tabindex="-1" id="rv-dialog">
+    <div class="rv-head"><h2 id="rv-title">Review this upload</h2><p id="rv-sub"></p></div>
+    <div class="rv-body" id="rv-body"></div>
+    <div class="rv-foot">
+      <span class="note">A backup copy of the current data is saved before anything is replaced.</span>
+      <button class="rv-btn" id="rv-cancel" type="button">Cancel</button>
+      <button class="rv-btn primary" id="rv-apply" type="button">Apply upload</button>
+    </div>
+  </div>
+</div>
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
@@ -567,11 +610,15 @@ function onDrop(e, tableType) {
   if (file) uploadFileObj(file, tableType);
 }
 function uploadFile(input, tableType) { if (input.files[0]) uploadFileObj(input.files[0], tableType); }
-function uploadDump(input) { if (input.files[0]) uploadDumpFile(input.files[0]); }
+function uploadDump(input) {
+  const f = input.files[0];
+  input.value = '';            // so choosing the same file again (after Cancel) still triggers a new review
+  if (f) uploadDumpFile(f);
+}
 
 async function uploadDumpFile(file) {
   const statusEl = document.getElementById('status-dump');
-  statusEl.textContent = '⏳ Processing…';
+  statusEl.textContent = '⏳ Checking the file…';
   document.getElementById('zone-dump').classList.remove('has-data');
 
   const fd = new FormData();
@@ -586,17 +633,86 @@ async function uploadDumpFile(file) {
 
   const partnerQ = currentPartners.length ? `?partner=${encodeURIComponent(currentPartners.join(','))}` : '';
   try {
-    const res  = await fetch(`/api/apex/upload/daily-dump${partnerQ}`, {method: 'POST', body: fd});
+    // Step 1: read the file and work out what it would change. Nothing is saved yet.
+    const res  = await fetch(`/api/apex/upload/daily-dump/preview${partnerQ}`, {method: 'POST', body: fd});
     const data = await res.json();
     if (!res.ok) {
       toast(data.detail || 'Processing failed', false);
       statusEl.textContent = '✗ Failed';
       return;
     }
-    const summary = Object.entries(data.dealers_per_month)
-      .map(([m, n]) => `${m}: ${n} dealers`).join(' · ');
+    statusEl.textContent = 'Waiting for your review…';
+    showUploadReview(data, file.name);
+  } catch(e) {
+    toast(`Error: ${e.message}`, false);
+    statusEl.textContent = '✗ Error';
+  }
+}
+
+let rvToken = null, rvOpener = null;
+const fmtN = n => Number(n || 0).toLocaleString('en-US');
+
+function showUploadReview(a, fileName) {
+  rvToken = a.token;
+  rvOpener = document.activeElement;
+  const f = a.file || {};
+  document.getElementById('rv-sub').textContent =
+    `${fileName} · ${fmtN(f.rows)} rows · applications from ${f.date_min || '?'} to ${f.date_max || '?'}`;
+  const cls = {danger: 'rv-danger', warn: 'rv-warnl', info: 'rv-info'};
+  const lead = {danger: 'Check this first: ', warn: '', info: ''};
+  const warnings = (a.warnings || []).slice().sort((x, y) => ['danger','warn','info'].indexOf(x.level) - ['danger','warn','info'].indexOf(y.level));
+  const rows = (a.periods || []).map(p => {
+    const old = p.existing, nw = p.incoming;
+    let chg = '';
+    if (old && old.apps) {
+      const pct = (nw.apps - old.apps) / old.apps;
+      chg = `<span class="${pct < -0.1 ? 'neg' : (pct > 0.005 ? 'pos' : '')}">${pct > 0 ? '+' : ''}${(pct * 100).toFixed(0)}%</span>`;
+    }
+    return `<tr><td>${esc(p.label)}</td><td>${p.kind === 'quarter' ? 'Quarter' : 'Month'}</td>
+      <td><span class="rv-tag ${p.action}">${p.action === 'new' ? 'New' : 'Replaces'}</span></td>
+      <td class="num">${old ? fmtN(old.apps) + ' / ' + fmtN(old.rpas) : '—'}</td>
+      <td class="num">${fmtN(nw.apps)} / ${fmtN(nw.rpas)}</td><td class="num">${chg}</td></tr>`;
+  }).join('');
+  document.getElementById('rv-body').innerHTML =
+    warnings.map(w => `<div class="rv-warn ${cls[w.level] || 'rv-info'}"><b>${lead[w.level] || ''}${esc(w.title)}</b>${esc(w.detail)}</div>`).join('')
+    + `<div class="rv-sum">${a.counts.new} new period${a.counts.new === 1 ? '' : 's'}, ${a.counts.replace} existing period${a.counts.replace === 1 ? '' : 's'} will be replaced.</div>`
+    + `<div class="rv-tablewrap"><table class="rv-table"><thead><tr><th>Period</th><th>Type</th><th>What happens</th>
+        <th class="num">Stored now (apps / RPAs)</th><th class="num">After upload</th><th class="num">Apps change</th></tr></thead><tbody>${rows}</tbody></table></div>`
+    + (a.requires_ack ? `<label class="rv-ack"><input type="checkbox" id="rv-ack"> <span>I have read the warnings above and I want to overwrite the stored numbers anyway.</span></label>` : '');
+  const apply = document.getElementById('rv-apply');
+  apply.disabled = !!a.requires_ack;
+  apply.classList.toggle('danger', !!a.requires_ack);
+  const ack = document.getElementById('rv-ack');
+  if (ack) ack.addEventListener('change', () => { apply.disabled = !ack.checked; });
+  document.getElementById('rv-overlay').classList.add('open');
+  document.getElementById('rv-dialog').focus();
+}
+
+function closeUploadReview(msg) {
+  document.getElementById('rv-overlay').classList.remove('open');
+  rvToken = null;
+  document.getElementById('status-dump').textContent = msg || 'Upload cancelled — nothing was changed.';
+  if (rvOpener && rvOpener.focus) try { rvOpener.focus(); } catch(e) {}
+}
+
+async function applyUploadReview() {
+  const statusEl = document.getElementById('status-dump');
+  const apply = document.getElementById('rv-apply');
+  if (!rvToken || apply.disabled) return;
+  apply.disabled = true; apply.textContent = 'Applying…';
+  try {
+    // Step 2: save exactly what was reviewed.
+    const res  = await fetch('/api/apex/upload/daily-dump/apply', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({token: rvToken})});
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('rv-overlay').classList.remove('open');
+      toast(data.detail || 'Processing failed', false);
+      statusEl.textContent = '✗ Failed';
+      return;
+    }
+    document.getElementById('rv-overlay').classList.remove('open');
+    rvToken = null;
     toast(`✓ Created/updated ${data.periods.length} period(s): ${data.periods.join(', ')}`);
-    if ((data.input_fixes || []).length) toast('ℹ ' + data.input_fixes.join(' '));
     statusEl.textContent = `✓ ${data.periods.length} period(s) imported`;
     document.getElementById('zone-dump').classList.add('has-data');
 
@@ -609,8 +725,15 @@ async function uploadDumpFile(file) {
   } catch(e) {
     toast(`Error: ${e.message}`, false);
     statusEl.textContent = '✗ Error';
+  } finally {
+    apply.textContent = 'Apply upload';
   }
 }
+
+document.getElementById('rv-cancel').addEventListener('click', () => closeUploadReview());
+document.getElementById('rv-apply').addEventListener('click', applyUploadReview);
+document.getElementById('rv-overlay').addEventListener('click', e => { if (e.target.id === 'rv-overlay') closeUploadReview(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('rv-overlay').classList.contains('open')) closeUploadReview(); });
 
 async function uploadFileObj(file, tableType) {
   if (!currentPeriod) { toast('Select or create a period first', false); return; }
