@@ -102,7 +102,22 @@ _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",  
 # All groups that can access the Apps tab
 _APPS_EMAILS        = _ADMIN_EMAILS | _CONTRACTOR_SUPPORT_EMAILS | _ONBOARDING_EMAILS | _ACCT_MGMT_EMAILS | _SALES_ADMIN_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
 _SCHEDULES_FILE  = os.getenv("SCHEDULES_FILE",  os.path.join(os.path.dirname(__file__), "schedules.json"))
-_APEX_FILE       = os.getenv("APEX_DATA_FILE",  os.path.join(os.path.dirname(__file__), "apex_data.json"))
+import upload_guard as _upload_guard
+from pathlib import Path as _Path
+_ON_RENDER       = bool(os.getenv("RENDER"))
+_APEX_LEGACY     = os.path.join(os.path.dirname(__file__), "apex_data.json")
+_APEX_FILE       = _upload_guard.data_path("apex_data.json", os.getenv("APEX_DATA_FILE", ""), _ON_RENDER,
+                                           _Path(_upload_guard.PERSISTENT_DISK).is_mount(), os.path.dirname(__file__))
+if not os.getenv("APEX_DATA_FILE") and _APEX_FILE != _APEX_LEGACY and not os.path.exists(_APEX_FILE) and os.path.exists(_APEX_LEGACY):
+    try:                                                # one-time move of data saved before the persistent disk was used
+        import shutil as _shutil
+        _shutil.copy2(_APEX_LEGACY, _APEX_FILE)
+        print(f"[apex-data] copied existing report data from {_APEX_LEGACY} to {_APEX_FILE}")
+    except Exception as _exc:
+        print(f"[apex-data] WARNING: could not copy existing report data to {_APEX_FILE}: {_exc}")
+print(f"[apex-data] report data file: {_APEX_FILE}")
+if _upload_guard.storage_warning(_APEX_FILE, _ON_RENDER):
+    print("[apex-data] WARNING: report data is NOT on the persistent disk, so it is wiped on every deploy")
 _LOGINS_FILE     = os.getenv("LOGINS_FILE",     os.path.join(os.path.dirname(__file__), "logins.json"))
 _scheduler      = AsyncIOScheduler()
 _schedules: dict = {}   # job_id → schedule dict
@@ -11974,7 +11989,9 @@ def _dump_to_production(df: "_pd.DataFrame", apex_ids: set) -> dict:
             pending = grp[grp["Processing Status Description"].str.strip().isin(
                 ["Needs Review", "Decision Pending", "Partially Approved", "Fully Approved", "Preapproved"]
             )]
-            nia_count = grp[grp.get("Shrinkage", _pd.Series(dtype=str)).str.strip().str.startswith("5.", na=False)]
+            # Shrinkage can be missing or entirely blank in a small export; treat that as "none" instead of crashing
+            shrink = grp["Shrinkage"].astype(str).str.strip() if "Shrinkage" in grp.columns else _pd.Series("", index=grp.index)
+            nia_count = grp[shrink.str.startswith("5.", na=False)]
             did = str(grp["_did_str"].iloc[0])
             active_dids.add(did)
             prod_rows.append({
@@ -12179,19 +12196,8 @@ def _aggregate_to_quarters(monthly: dict) -> dict:
     return result
 
 
-@app.post("/api/apex/upload/daily-dump")
-async def apex_upload_daily_dump(
-    file: UploadFile = File(...),
-    partner: str = "",
-    dealer_ids: str = Form(default=""),   # comma-separated dealer IDs from client roster
-    admin=Depends(_require_admin),
-):
-    """
-    Accept a Daily Sales Dump (TSV, UTF-16) and automatically build production
-    data for each calendar month found in the file, filtered to APEX dealers.
-    Creates / updates a period for each month detected.
-    """
-    content = await file.read()
+async def _build_dump_result(content: bytes, partner: str, dealer_ids: str) -> dict:
+    """Read a Daily Sales Dump and work out production per month, quarter and rollup. Writes nothing."""
     df = _read_dump(content)
 
     # Priority 1 — dealer IDs passed by the client (already loaded from AC roster in the UI)
@@ -12222,11 +12228,28 @@ async def apex_upload_daily_dump(
     if not monthly:
         raise HTTPException(400, "No matching APEX dealer rows found in this file.")
 
-    # Build rollup (all months aggregated) once for the whole dump
-    rollup_rows = _dump_to_rollup(df, apex_ids)
-    # Build quarterly aggregates
-    quarterly = _aggregate_to_quarters(monthly)
+    return {
+        "monthly":     monthly,
+        "quarterly":   _aggregate_to_quarters(monthly),      # Build quarterly aggregates
+        "rollup_rows": _dump_to_rollup(df, apex_ids),        # Rollup (all months aggregated) once for the whole dump
+        "apex_ids":    apex_ids,
+        "source":      source,
+        "partner":     partner,
+        "file":        _upload_guard.file_stats(df),
+    }
+
+
+def _apply_dump_result(result: dict, admin) -> dict:
+    """Write a built dump result into the stored Strategic Partner Report data (after taking a snapshot)."""
+    monthly, quarterly = result["monthly"], result["quarterly"]
+    rollup_rows, apex_ids, source = result["rollup_rows"], result["apex_ids"], result["source"]
     now_iso = datetime.now().isoformat()
+
+    try:
+        snap = _upload_guard.snapshot(_APEX_FILE)      # keeps the last few copies so an upload can be rolled back
+    except Exception as exc:
+        snap = None
+        print(f"[apex-dump] WARNING: could not snapshot {_APEX_FILE} before writing: {exc}")
 
     data = _load_apex_data()
     created = updated = 0
@@ -12270,7 +12293,8 @@ async def apex_upload_daily_dump(
 
     summary = {ok: len(v) for ok, v in monthly.items()}
     print(f"[apex-dump] {admin} → processed {sum(summary.values())} dealer-months, "
-          f"{len(quarterly)} quarters (dealer_ids source={source}, count={len(apex_ids)}, rollup_rows={len(rollup_rows)})")
+          f"{len(quarterly)} quarters (dealer_ids source={source}, count={len(apex_ids)}, rollup_rows={len(rollup_rows)}, "
+          f"snapshot={'yes' if snap else 'no'})")
     return {
         "ok": True,
         "periods_created":    created,
@@ -12281,8 +12305,75 @@ async def apex_upload_daily_dump(
         "rollup_dealers":     len(rollup_rows),
         "apex_dealer_ids_used": len(apex_ids),
         "dealer_id_source":   source,
-        "input_fixes":        df.attrs.get("fixes", []),
+        "input_fixes":        result["file"].get("fixes", []),
+        "snapshot":           bool(snap),
     }
+
+
+@app.post("/api/apex/upload/daily-dump")
+async def apex_upload_daily_dump(
+    file: UploadFile = File(...),
+    partner: str = "",
+    dealer_ids: str = Form(default=""),   # comma-separated dealer IDs from client roster
+    admin=Depends(_require_admin),
+):
+    """
+    Accept a Daily Sales Dump (TSV, UTF-16) and automatically build production
+    data for each calendar month found in the file, filtered to APEX dealers.
+    Creates / updates a period for each month detected. (The report page uses the
+    preview + apply pair below so the user can review first; this writes straight away.)
+    """
+    content = await file.read()
+    return _apply_dump_result(await _build_dump_result(content, partner, dealer_ids), admin)
+
+
+_pending_dumps: dict = {}          # token -> {"result", "expires"}; holds computed rows only, not the file
+_PENDING_DUMP_TTL = 900            # seconds a reviewed upload stays ready to apply
+
+def _purge_pending_dumps():
+    now = _time.time()
+    for t in [t for t, p in _pending_dumps.items() if p["expires"] < now]:
+        _pending_dumps.pop(t, None)
+    while len(_pending_dumps) > 3:                     # never hold more than a few at once
+        _pending_dumps.pop(min(_pending_dumps, key=lambda t: _pending_dumps[t]["expires"]), None)
+
+
+@app.post("/api/apex/upload/daily-dump/preview")
+async def apex_upload_daily_dump_preview(
+    file: UploadFile = File(...),
+    partner: str = "",
+    dealer_ids: str = Form(default=""),
+    admin=Depends(_require_admin),
+):
+    """Work out what an upload would change and what to watch out for, without writing anything."""
+    content = await file.read()
+    result = await _build_dump_result(content, partner, dealer_ids)
+    coverage = {"included": len(result["apex_ids"]), "tagged": len(_build_apex_dealer_id_set("")),
+                "partner": partner, "source": result["source"]}
+    analysis = _upload_guard.analyze_upload(_load_apex_data(), result["monthly"], result["quarterly"],
+                                            result["rollup_rows"], result["file"], coverage)
+    storage = _upload_guard.storage_warning(_APEX_FILE, _ON_RENDER)
+    if storage:
+        analysis["warnings"].insert(0, storage)
+    _purge_pending_dumps()
+    token = secrets.token_urlsafe(16)
+    _pending_dumps[token] = {"result": result, "expires": _time.time() + _PENDING_DUMP_TTL}
+    _purge_pending_dumps()
+    return {"token": token, "expires_in": _PENDING_DUMP_TTL, **analysis}
+
+
+class _ApplyDumpIn(_BaseModel):
+    token: str
+
+
+@app.post("/api/apex/upload/daily-dump/apply")
+async def apex_apply_daily_dump(body: _ApplyDumpIn, admin=Depends(_require_admin)):
+    """Write exactly what the preview showed."""
+    _purge_pending_dumps()
+    pending = _pending_dumps.pop(body.token, None)
+    if not pending:
+        raise HTTPException(410, "This preview has expired. Choose the file again to review it.")
+    return _apply_dump_result(pending["result"], admin)
 
 
 _apex_partners_cache: list | None = None
