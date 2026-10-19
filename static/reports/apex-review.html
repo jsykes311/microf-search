@@ -532,7 +532,7 @@ function renderPeriodSelect() {
 }
 
 // ── Periods ───────────────────────────────────────────────────────────────────
-async function initPeriods() {
+async function initPeriods(autoSelectDefault = true) {
   const res  = await fetch('/api/apex/periods');
   const data = await res.json();
   // Support both old (string[]) and new ({label,type}[]) formats
@@ -542,6 +542,32 @@ async function initPeriods() {
       : p
   );
   renderPeriodSelect();
+
+  // Match the Partner Leaderboard: on a fresh visit, open the current month
+  // when it has data, otherwise open the newest populated month (or quarter).
+  // The leaderboard API owns that date-range/default logic, so both screens
+  // remain in sync as new periods are uploaded.
+  if (autoSelectDefault && !currentPeriod && allPeriods.length) {
+    try {
+      const boardRes = await fetch('/api/partner-board');
+      const board = boardRes.ok ? await boardRes.json() : {};
+      const spec = board.periods?.default || '';
+      const defaultType = spec.startsWith('q:') ? 'quarterly' : 'monthly';
+      const defaultLabel = spec.replace(/^[mq]:/, '');
+      const exists = allPeriods.some(p => p.label === defaultLabel && p.type === defaultType);
+      if (defaultLabel && exists) {
+        currentPeriodType = defaultType;
+        document.querySelectorAll('.period-type-btn').forEach(b => {
+          b.classList.toggle('active', b.dataset.t === defaultType);
+        });
+        renderPeriodSelect();
+        document.getElementById('period-select').value = defaultLabel;
+        await loadPeriod();
+      }
+    } catch (e) {
+      console.warn('Could not select the leaderboard date range:', e);
+    }
+  }
 }
 
 async function loadPeriod() {
@@ -577,7 +603,7 @@ async function createPeriod() {
     method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({})
   });
   inp.value = '';
-  await initPeriods();
+  await initPeriods(false);
   document.getElementById('period-select').value = p;
   await loadPeriod();
   toast(`Period "${p}" created`);
@@ -717,7 +743,7 @@ async function applyUploadReview() {
     document.getElementById('zone-dump').classList.add('has-data');
 
     // Refresh period list and load the first imported period
-    await initPeriods();
+    await initPeriods(false);
     if (data.periods.length > 0) {
       document.getElementById('period-select').value = data.periods[0];
       await loadPeriod();
