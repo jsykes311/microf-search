@@ -20,6 +20,9 @@ from datetime import datetime, timedelta, date
 from dotenv import load_dotenv
 import json
 import io as _io
+import html as _html
+import tempfile as _tempfile
+import threading as _threading
 from collections import defaultdict
 try:
     import pandas as _pd
@@ -48,7 +51,10 @@ import traceback
 async def _unhandled_exception_handler(request: Request, exc: Exception):
     tb = traceback.format_exc()
     print(f"[ERROR] {request.url}\n{tb}")
-    return JSONResponse(status_code=500, content={"detail": str(exc), "type": type(exc).__name__})
+    error_id = secrets.token_hex(6)
+    print(f"[ERROR] reference={error_id} type={type(exc).__name__}")
+    return JSONResponse(status_code=500, content={"detail": "Something went wrong. Please try again.",
+                                                  "reference": error_id})
 
 # Allow Azure Static Web Apps + SharePoint + localhost for dev.
 app.add_middleware(
@@ -80,6 +86,24 @@ _signer = URLSafeTimedSerializer(_SESSION_SECRET)
 _SYNC_TOKEN = os.getenv("SYNC_TOKEN", "")
 _WEBHOOK_TOKEN = (os.getenv("AC_WEBHOOK_TOKEN") or
                   os.getenv("DEAL_WEBHOOK_TOKEN") or "")
+
+_PARTNER_UPLOAD_MAX_BYTES = int(os.getenv("PARTNER_UPLOAD_MAX_MB", "50")) * 1024 * 1024
+_TABLE_UPLOAD_MAX_BYTES = int(os.getenv("TABLE_UPLOAD_MAX_MB", "25")) * 1024 * 1024
+
+
+async def _read_upload_limited(file: UploadFile, max_bytes: int, label: str = "File") -> bytes:
+    """Read an UploadFile in bounded chunks and stop before parsing can exhaust RAM."""
+    declared = getattr(file, "size", None)
+    if declared is not None and declared > max_bytes:
+        raise HTTPException(status_code=413,
+                            detail=f"{label} is too large. Maximum size is {max_bytes // (1024 * 1024)} MB.")
+    content = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        content.extend(chunk)
+        if len(content) > max_bytes:
+            raise HTTPException(status_code=413,
+                                detail=f"{label} is too large. Maximum size is {max_bytes // (1024 * 1024)} MB.")
+    return bytes(content)
 
 # ── Scheduled email reports ───────────────────────────────────────────────
 # Set these env vars on Render to enable report delivery.
@@ -285,7 +309,7 @@ class _MSAuthMiddleware(BaseHTTPMiddleware):
     _PUBLIC = {"/login", "/auth/start", "/auth/callback", "/logout", "/health",
                "/api/health", "/api/map-config", "/api/dealer-index/status", "/dealer-locator", "/dealer-locator-beta",
                "/api/accounts/nearest", "/api/accounts/by-state",
-               "/webhook/deal-created", "/webhook/debug-sp", "/webhook/reset-sp-file",
+               "/webhook/deal-created",
                "/api/careers/apply"}
 
     async def dispatch(self, request: _Request, call_next):
@@ -9407,7 +9431,7 @@ def _tag_groups_from_upload(rows: list) -> tuple:
 
 @app.post("/api/tag-dealers/parse-headers")
 async def tag_dealers_parse_headers(file: UploadFile = File(...), user=Depends(require_auth)):
-    content = await file.read()
+    content = await _read_upload_limited(file, _TABLE_UPLOAD_MAX_BYTES, "Upload")
     try:
         headers, data_rows = _parse_file_table(file.filename, content)
     except Exception as e:
@@ -9427,7 +9451,7 @@ async def tag_dealers_parse_headers(file: UploadFile = File(...), user=Depends(r
 @app.post("/api/tag-dealers/preview-file")
 async def tag_dealers_preview_file(file: UploadFile = File(...), dealer_col: int = Form(...),
                                     tag_col: int = Form(...), user=Depends(require_auth)):
-    content = await file.read()
+    content = await _read_upload_limited(file, _TABLE_UPLOAD_MAX_BYTES, "Upload")
     try:
         headers, data_rows = _parse_file_table(file.filename, content)
         rows = _rows_from_columns(headers, data_rows, dealer_col, tag_col)
@@ -9456,7 +9480,7 @@ async def tag_dealers_preview_file(file: UploadFile = File(...), dealer_col: int
 @app.post("/api/tag-dealers/execute-file")
 async def tag_dealers_execute_file(file: UploadFile = File(...), dealer_col: int = Form(...),
                                     tag_col: int = Form(...), user=Depends(require_auth)):
-    content = await file.read()
+    content = await _read_upload_limited(file, _TABLE_UPLOAD_MAX_BYTES, "Upload")
     try:
         headers, data_rows = _parse_file_table(file.filename, content)
         rows = _rows_from_columns(headers, data_rows, dealer_col, tag_col)
@@ -10018,7 +10042,7 @@ def _parse_bracket_form(raw_body: bytes) -> dict:
 
 
 @app.post("/webhook/reset-sp-file")
-async def webhook_reset_sp_file():
+async def webhook_reset_sp_file(admin=Depends(_require_admin)):
     """Delete the cached Deal Tracker file and clear cache so it gets recreated fresh."""
     global _SP_FILE_ID
     try:
@@ -10040,7 +10064,7 @@ async def webhook_reset_sp_file():
 
 
 @app.get("/webhook/debug-sp")
-async def webhook_debug_sp():
+async def webhook_debug_sp(admin=Depends(_require_admin)):
     """Debug: show resolved SharePoint IDs and file location."""
     try:
         await _ensure_sp_ids()
@@ -10227,9 +10251,27 @@ async def webhook_deal_created(request: _Request, background_tasks: BackgroundTa
 _CAREERS_EMAIL = os.getenv("CAREERS_EMAIL", "akava@microf.com")
 _CAREERS_MAX_RESUME_BYTES = 5 * 1024 * 1024   # 5MB, matches the form's own stated limit
 _CAREERS_ALLOWED_EXTS = {".pdf", ".doc", ".docx"}
+_CAREERS_RATE_LIMIT = 5
+_careers_submissions: dict[str, list[float]] = {}
+
+
+def _check_careers_rate_limit(request: _Request) -> None:
+    """Quietly prevent one source from flooding the recruiting inbox."""
+    now = _time.time()
+    cutoff = now - 3600
+    ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    ip = ip or (request.client.host if request.client else "unknown")
+    recent = [t for t in _careers_submissions.get(ip, []) if t >= cutoff]
+    if len(recent) >= _CAREERS_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Too many applications submitted. Please try again later.")
+    recent.append(now)
+    _careers_submissions[ip] = recent
+    for old_ip in [key for key, values in _careers_submissions.items() if not values or values[-1] < cutoff]:
+        _careers_submissions.pop(old_ip, None)
 
 @app.post("/api/careers/apply")
 async def careers_apply(
+    request: _Request,
     applicant_name: str = Form(...),
     applicant_email: str = Form(...),
     applicant_phone: str = Form(""),
@@ -10241,23 +10283,32 @@ async def careers_apply(
     that theme's local wp_mail() call). Emails the application, with the
     resume attached, to _CAREERS_EMAIL via the same SMTP setup used for
     report emails."""
-    resume_bytes = await resume.read()
-    if len(resume_bytes) > _CAREERS_MAX_RESUME_BYTES:
-        raise HTTPException(status_code=400, detail="Resume exceeds 5MB limit")
+    _check_careers_rate_limit(request)
+    resume_bytes = await _read_upload_limited(resume, _CAREERS_MAX_RESUME_BYTES, "Resume")
     ext = os.path.splitext(resume.filename or "")[1].lower()
     if ext not in _CAREERS_ALLOWED_EXTS:
         raise HTTPException(status_code=400, detail="Resume must be a PDF, DOC, or DOCX file")
-    if not applicant_name.strip() or not applicant_email.strip():
+    applicant_name = " ".join(applicant_name.split())[:200]
+    applicant_email = applicant_email.strip()[:320]
+    applicant_phone = applicant_phone.strip()[:100]
+    job_title = " ".join(job_title.split())[:200]
+    cover_letter = cover_letter.strip()[:10000]
+    if not applicant_name or not applicant_email or "@" not in applicant_email or any(c in applicant_email for c in "\r\n"):
         raise HTTPException(status_code=400, detail="Name and email are required")
 
-    subject = f"Job Application: {job_title} — {applicant_name}"
+    safe_name = _html.escape(applicant_name)
+    safe_email = _html.escape(applicant_email)
+    safe_phone = _html.escape(applicant_phone or "—")
+    safe_job = _html.escape(job_title or "General Application")
+    safe_cover = _html.escape(cover_letter or "(none provided)").replace("\n", "<br>")
+    subject = f"Job Application: {job_title or 'General Application'} — {applicant_name}"
     body_html = (
         f"<p>New application received from the Microf Careers page.</p>"
-        f"<p><b>Position:</b> {job_title}<br>"
-        f"<b>Name:</b> {applicant_name}<br>"
-        f"<b>Email:</b> {applicant_email}<br>"
-        f"<b>Phone:</b> {applicant_phone or '—'}</p>"
-        f"<p><b>Cover Letter</b><br>{(cover_letter or '(none provided)').replace(chr(10), '<br>')}</p>"
+        f"<p><b>Position:</b> {safe_job}<br>"
+        f"<b>Name:</b> {safe_name}<br>"
+        f"<b>Email:</b> {safe_email}<br>"
+        f"<b>Phone:</b> {safe_phone}</p>"
+        f"<p><b>Cover Letter</b><br>{safe_cover}</p>"
         f"<p style='color:#6b7280;font-size:0.85em;'>Sent from microf-search</p>"
     )
 
@@ -10271,7 +10322,8 @@ async def careers_apply(
     part = MIMEBase("application", "octet-stream")
     part.set_payload(resume_bytes)
     _enc.encode_base64(part)
-    part.add_header("Content-Disposition", f'attachment; filename="{resume.filename}"')
+    safe_filename = os.path.basename((resume.filename or f"resume{ext}").replace("\\", "/"))[:200]
+    part.add_header("Content-Disposition", "attachment", filename=safe_filename)
     msg.attach(part)
 
     if not _SMTP_USER:
@@ -12323,7 +12375,7 @@ async def apex_upload_daily_dump(
     Creates / updates a period for each month detected. (The report page uses the
     preview + apply pair below so the user can review first; this writes straight away.)
     """
-    content = await file.read()
+    content = await _read_upload_limited(file, _PARTNER_UPLOAD_MAX_BYTES, "Daily Sales Dump")
     return _apply_dump_result(await _build_dump_result(content, partner, dealer_ids), admin)
 
 
@@ -12346,7 +12398,7 @@ async def apex_upload_daily_dump_preview(
     admin=Depends(_require_admin),
 ):
     """Work out what an upload would change and what to watch out for, without writing anything."""
-    content = await file.read()
+    content = await _read_upload_limited(file, _PARTNER_UPLOAD_MAX_BYTES, "Daily Sales Dump")
     result = await _build_dump_result(content, partner, dealer_ids)
     coverage = {"included": len(result["apex_ids"]), "tagged": len(_build_apex_dealer_id_set("")),
                 "partner": partner, "source": result["source"]}
@@ -12431,29 +12483,52 @@ async def apex_get_dealers(partner: str = "", admin=Depends(_require_admin)):
     return {"dealers": rows, "count": len(rows)}
 
 _apex_data_cache: dict | None = None
+_apex_file_lock = _threading.RLock()
 
 def _load_apex_data() -> dict:
     global _apex_data_cache
-    if _apex_data_cache is not None:
-        return _apex_data_cache
-    if os.path.exists(_APEX_FILE):
-        try:
-            with open(_APEX_FILE) as f:
-                _apex_data_cache = json.load(f)
+    with _apex_file_lock:
+        if _apex_data_cache is not None:
+            return _apex_data_cache
+        candidates = [_APEX_FILE]
+        directory = _Path(_APEX_FILE).parent
+        candidates.extend(str(p) for p in sorted(directory.glob("apex_data.backup-*.json"),
+                                                   key=lambda p: p.stat().st_mtime, reverse=True))
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate) as f:
+                    loaded = json.load(f)
+                if not isinstance(loaded, dict) or not isinstance(loaded.get("periods"), dict):
+                    raise ValueError("invalid Partner Report structure")
+                _apex_data_cache = loaded
+                if candidate != _APEX_FILE:
+                    print(f"[apex-data] recovered report data from backup {candidate}")
                 return _apex_data_cache
-        except Exception:
-            pass
-    _apex_data_cache = {"periods": {}}
-    return _apex_data_cache
+            except Exception as exc:
+                print(f"[apex-data] could not load {candidate}: {type(exc).__name__}: {exc}")
+        _apex_data_cache = {"periods": {}}
+        return _apex_data_cache
 
 def _save_apex_data(data: dict):
     global _apex_data_cache
-    _apex_data_cache = data          # update cache in-place so reads are instant
-    dirpath = os.path.dirname(_APEX_FILE)
-    if dirpath:
+    with _apex_file_lock:
+        dirpath = os.path.dirname(_APEX_FILE) or "."
         os.makedirs(dirpath, exist_ok=True)
-    with open(_APEX_FILE, "w") as f:
-        json.dump(data, f, indent=2)
+        tmp_path = None
+        try:
+            with _tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=dirpath,
+                                               prefix=".apex_data-", suffix=".tmp", delete=False) as f:
+                tmp_path = f.name
+                json.dump(data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, _APEX_FILE)
+            _apex_data_cache = data
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
 def _parse_upload(content: bytes, filename: str) -> "_pd.DataFrame":
     if _pd is None:
@@ -12537,7 +12612,7 @@ async def apex_upload_production(
     file: UploadFile = File(...),
     admin=Depends(_require_admin),
 ):
-    content = await file.read()
+    content = await _read_upload_limited(file, _TABLE_UPLOAD_MAX_BYTES, "Production upload")
     df = _parse_upload(content, file.filename or "")
     col_map = {
         "dealer":    ["dealer", "dealer name", "name", "company", "contractor", "location"],
@@ -12571,7 +12646,7 @@ async def apex_upload_rollup(
     file: UploadFile = File(...),
     admin=Depends(_require_admin),
 ):
-    content = await file.read()
+    content = await _read_upload_limited(file, _TABLE_UPLOAD_MAX_BYTES, "Roll-up upload")
     df = _parse_upload(content, file.filename or "")
     col_map = {
         "dealer":            ["dealer", "dealer name", "name", "company", "contractor", "location"],
