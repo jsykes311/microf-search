@@ -127,6 +127,7 @@ _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",  
 _APPS_EMAILS        = _ADMIN_EMAILS | _CONTRACTOR_SUPPORT_EMAILS | _ONBOARDING_EMAILS | _ACCT_MGMT_EMAILS | _SALES_ADMIN_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
 _SCHEDULES_FILE  = os.getenv("SCHEDULES_FILE",  os.path.join(os.path.dirname(__file__), "schedules.json"))
 import upload_guard as _upload_guard
+import address_geocode as _address_geocode
 from pathlib import Path as _Path
 _ON_RENDER       = bool(os.getenv("RENDER"))
 _APEX_LEGACY     = os.path.join(os.path.dirname(__file__), "apex_data.json")
@@ -4611,30 +4612,19 @@ async def accounts_nearest(address: str = "", limit: int = 10):
     except ImportError:
         return {"error": "pgeocode not installed"}
 
-    # Geocode the search input — try as zip first, fall back to Nominatim
+    # Geocode the search input: try it as a ZIP first (offline), then fall back to Nominatim for city/address text
     search_lat, search_lon, search_label = None, None, address
-    zip_clean = address.strip()[:5]
-    if zip_clean.isdigit():
-        r = geo.query_postal_code(zip_clean)
-        try:
-            search_lat = float(r['latitude'])
-            search_lon = float(r['longitude'])
-            search_label = f"{r.get('place_name', zip_clean)}, {r.get('state_code', '')}"
-        except Exception:
-            pass
-
-    if search_lat is None:
-        # Fall back to Nominatim for city/address strings
+    hit = _address_geocode.lookup_zip(geo, address)
+    if hit is None:
         import httpx
-        async with httpx.AsyncClient(timeout=10) as client:
-            nr = await client.get("https://nominatim.openstreetmap.org/search",
-                params={"q": address, "countrycodes": "us", "limit": 1, "format": "json"},
-                headers={"Accept-Language": "en"})
-            results = nr.json()
-            if results:
-                search_lat = float(results[0]["lat"])
-                search_lon = float(results[0]["lon"])
-                search_label = results[0].get("display_name", address).split(",")[0]
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                hit = await _address_geocode.geocode_address(client, address)
+        except _address_geocode.GeocodeError as exc:
+            print(exc.log_line())
+            return JSONResponse({"error": exc.user_message, "code": exc.kind}, status_code=exc.http_status)
+    if hit:
+        search_lat, search_lon, search_label = hit["lat"], hit["lon"], hit["label"]
 
     if search_lat is None:
         return {"error": f"Could not geocode: {address}"}

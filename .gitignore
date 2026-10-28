@@ -19,6 +19,7 @@ __pycache__/
 
 !marketing.py
 !dealer_workspace.py
+!address_geocode.py
 !partner_board.py
 !tableau_dump.py
 !upload_guard.py
