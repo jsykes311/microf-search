@@ -1125,6 +1125,7 @@ async def _lc_cache_loop() -> None:
 # ─── Team Activity raw-data cache ────────────────────────────────────────────
 _ta_cache: dict  = {}
 _ta_cache_ts: float = 0.0
+_ta_refresh_task: Optional[asyncio.Task] = None
 _TA_CACHE_TTL = 900   # 15 minutes
 
 async def _refresh_ta_cache() -> None:
@@ -1202,13 +1203,41 @@ async def _refresh_ta_cache() -> None:
     print(f"[ta-cache] done — {len(slim_notes)} notes, {len(slim_activity)} activities, "
           f"{len(contact_to_account)} contact→account mappings")
 
+async def _run_ta_cache_refresh() -> None:
+    """Refresh once while preserving the last good snapshot on failure."""
+    try:
+        await _refresh_ta_cache()
+    except Exception as e:
+        print(f"[ta-cache] refresh error; keeping previous snapshot: {e}")
+
+def _start_ta_cache_refresh() -> asyncio.Task:
+    """Return the one in-flight refresh task, starting it when necessary."""
+    global _ta_refresh_task
+    if _ta_refresh_task is None or _ta_refresh_task.done():
+        _ta_refresh_task = asyncio.create_task(_run_ta_cache_refresh())
+    return _ta_refresh_task
+
+async def _get_ta_cache() -> dict:
+    """Serve stale data during refresh; block only until the first snapshot exists."""
+    cache_age = _time.time() - _ta_cache_ts
+    if _ta_cache:
+        if cache_age >= _TA_CACHE_TTL:
+            _start_ta_cache_refresh()
+            print(f"[ta-cache] serving stale snapshot ({cache_age:.0f}s old) while refreshing")
+        else:
+            print("[ta-cache] using cached data")
+        return _ta_cache
+
+    print("[ta-cache] no snapshot yet — waiting for shared refresh")
+    await _start_ta_cache_refresh()
+    if not _ta_cache:
+        raise HTTPException(status_code=503, detail="Team Activity data is temporarily unavailable")
+    return _ta_cache
+
 async def _ta_cache_loop() -> None:
     await asyncio.sleep(210)   # staggered among the post-boot cache loops (see _slp_cache_loop stagger note)
     while True:
-        try:
-            await _refresh_ta_cache()
-        except Exception as e:
-            print(f"[ta-cache] loop error: {e}")
+        await _start_ta_cache_refresh()
         await asyncio.sleep(_TA_CACHE_TTL)
 
 # ── Partner-channel BDR sync ─────────────────────────────────────────────────
@@ -3721,30 +3750,11 @@ async def team_activity_report(
     from datetime import timezone
     print("\nTeam activity report...")
 
-    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data         = _ta_cache["users_data"]
-        all_notes_raw      = _ta_cache["all_notes_raw"]
-        contact_to_account = _ta_cache["contact_to_account"]
-        all_activity       = _ta_cache["all_activity"]
-        print("[ta-cache] using cached data")
-    else:
-        print("[ta-cache] cache miss — fetching fresh")
-        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
-            ac_get("users"),
-            ac_get_all("notes", "notes", {}),
-            ac_get_all("contacts", "contacts", {}),
-            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
-        )
-        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
-                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
-        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
-                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
-                         for n in all_notes_raw_raw
-                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
-        all_activity = [{"id": r.get("id"),
-                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
-                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
-                        for r in all_activity_raw]
+    ta_cache           = await _get_ta_cache()
+    users_data         = ta_cache["users_data"]
+    all_notes_raw      = ta_cache["all_notes_raw"]
+    contact_to_account = ta_cache["contact_to_account"]
+    all_activity       = ta_cache["all_activity"]
 
     # Build user map: userid → display name
     users: dict = {}
@@ -3930,28 +3940,11 @@ async def team_activity_breakdown(
     """Per-account breakdown for a single user in the given date range."""
     from datetime import timezone
 
-    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data         = _ta_cache["users_data"]
-        all_notes_raw      = _ta_cache["all_notes_raw"]
-        contact_to_account = _ta_cache["contact_to_account"]
-        all_activity       = _ta_cache["all_activity"]
-    else:
-        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
-            ac_get("users"),
-            ac_get_all("notes", "notes", {}),
-            ac_get_all("contacts", "contacts", {}),
-            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
-        )
-        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
-                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
-        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
-                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
-                         for n in all_notes_raw_raw
-                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
-        all_activity = [{"id": r.get("id"),
-                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
-                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
-                        for r in all_activity_raw]
+    ta_cache           = await _get_ta_cache()
+    users_data         = ta_cache["users_data"]
+    all_notes_raw      = ta_cache["all_notes_raw"]
+    contact_to_account = ta_cache["contact_to_account"]
+    all_activity       = ta_cache["all_activity"]
 
     # Build user map and find target uid(s)
     users: dict = {}
@@ -4068,30 +4061,12 @@ async def team_activity_account_detail(
     """Notes and activities by a specific user on a specific account."""
     from datetime import timezone
 
-    if _ta_cache and (_time.time() - _ta_cache_ts) < _TA_CACHE_TTL:
-        users_data         = _ta_cache["users_data"]
-        all_notes_raw      = _ta_cache["all_notes_raw"]
-        contact_to_account = _ta_cache["contact_to_account"]
-        contact_email_map  = _ta_cache["contact_email_map"]
-        all_activity       = _ta_cache["all_activity"]
-    else:
-        users_data, all_notes_raw_raw, all_contacts_raw, all_activity_raw = await asyncio.gather(
-            ac_get("users"),
-            ac_get_all("notes", "notes", {}),
-            ac_get_all("contacts", "contacts", {}),
-            ac_get_all(f"customObjects/records/{ACCT_ACTIVITY_SCHEMA_ID}", "records", {}),
-        )
-        contact_to_account = {str(c.get("id","")): str(c.get("account","") or "")
-                              for c in all_contacts_raw if str(c.get("account","") or "") not in ("","0")}
-        contact_email_map  = {str(c.get("id","")): c.get("email","") for c in all_contacts_raw if c.get("email")}
-        all_notes_raw = [{"id": n.get("id"), "userid": n.get("userid"), "relid": n.get("relid") or n.get("rel_id"),
-                          "reltype": n.get("reltype"), "cdate": n.get("cdate"), "note": n.get("note") or ""}
-                         for n in all_notes_raw_raw
-                         if (n.get("reltype") or "").lower() in ("contact","customeraccount","deal")]
-        all_activity = [{"id": r.get("id"),
-                         "fields": {f["id"]: f.get("value") for f in r.get("fields", [])},
-                         "account": str(next(iter(r.get("relationships",{}).get("account",[])), "") or "")}
-                        for r in all_activity_raw]
+    ta_cache           = await _get_ta_cache()
+    users_data         = ta_cache["users_data"]
+    all_notes_raw      = ta_cache["all_notes_raw"]
+    contact_to_account = ta_cache["contact_to_account"]
+    contact_email_map  = ta_cache["contact_email_map"]
+    all_activity       = ta_cache["all_activity"]
 
     # Build user map and find target UIDs
     users: dict = {}
