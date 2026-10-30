@@ -32,3 +32,4 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+!account_merge.py

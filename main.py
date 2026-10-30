@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Depends, Body, BackgroundTask
 from pydantic import BaseModel as _BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, JSONResponse, HTMLResponse
+from fastapi.responses import FileResponse, StreamingResponse, RedirectResponse, JSONResponse, HTMLResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.requests import Request as _Request
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -8732,20 +8732,27 @@ async def move_slp(body: _MoveIn, admin=Depends(_require_admin)):
 async def move_account_page(user=Depends(_require_admin)):
     return FileResponse("static/move-account.html")
 
+class _AcClient:
+    """The account_merge module's view of ActiveCampaign (async get/post/put/delete)."""
+    get = staticmethod(ac_get)
+    post = staticmethod(ac_post)
+    put = staticmethod(ac_put)
+    delete = staticmethod(ac_delete)
+
 @app.get("/api/admin/account-contents/{account_id}")
 async def account_contents(account_id: str, admin=Depends(_require_admin)):
-    """Return SLPs, contacts, and note count for a given account."""
-    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
+    """Return SLPs, contacts, deals, and note count for a given account."""
     try:
-        acct_data, slp_data, contact_data, note_data = await asyncio.gather(
+        acct_data, links, deals, slp_records, note_data = await asyncio.gather(
             ac_get(f"accounts/{account_id}"),
-            ac_get(f"customObjects/records/{SLP_SCHEMA}", {"filters[relationships.account][eq]": account_id, "limit": 50}),
-            ac_get(f"accounts/{account_id}/contacts", {"limit": 50}),
+            _account_merge.account_links(_AcClient, account_id),
+            _account_merge.account_deals(_AcClient, account_id),
+            _account_merge.account_slps(_AcClient, account_id),
             ac_get("notes", {"reltype": "CustomerAccount", "rel_id": account_id, "limit": 1}),
         )
         account = acct_data.get("account", {})
         slps = []
-        for rec in slp_data.get("records", []):
+        for rec in slp_records:
             fmap = {f["id"]: (f.get("value") or "").strip() for f in rec.get("fields", [])}
             slps.append({
                 "id": rec["id"],
@@ -8754,22 +8761,27 @@ async def account_contents(account_id: str, admin=Depends(_require_admin)):
                 "channel": fmap.get("channel", ""),
                 "status": fmap.get("slp-status-detail", ""),
             })
-        contacts = []
-        for ac in contact_data.get("accountContacts", []):
-            cid = str(ac["contact"])
-            cdata = await ac_get(f"contacts/{cid}")
-            c = cdata.get("contact", {})
-            contacts.append({
-                "id": cid,
-                "account_contact_id": ac["id"],
+        sem = asyncio.Semaphore(8)
+        async def _contact(link):
+            async with sem:
+                try:
+                    c = (await ac_get(f"contacts/{link['contact']}")).get("contact", {})
+                except Exception:
+                    c = {}
+            return {
+                "id": str(link["contact"]),
+                "account_contact_id": link["id"],
                 "name": f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
                 "email": c.get("email", ""),
-            })
+                "job_title": link.get("jobTitle") or "",
+            }
+        contacts = await asyncio.gather(*[_contact(l) for l in links])
         note_count = int(note_data.get("meta", {}).get("total", 0))
         return {
             "account": {"id": account_id, "name": account.get("name", "")},
             "slps": slps,
             "contacts": contacts,
+            "deals": [{"id": str(d["id"]), "title": d.get("title", ""), "value": d.get("value", "0")} for d in deals],
             "note_count": note_count,
         }
     except Exception as e:
@@ -8781,74 +8793,44 @@ class _ConsolidateIn(_BaseModel):
     target_id: str
     slp_ids: list = []
     contact_ids: list = []
+    deal_ids: list = []
     move_notes: bool = False
     delete_source: bool = False
 
 @app.post("/api/admin/consolidate-account")
 async def consolidate_account(body: _ConsolidateIn, admin=Depends(_require_admin)):
-    """Move selected SLPs and contacts from source account to target account."""
-    SLP_SCHEMA = "d5ccf74f-981f-40ff-8a03-23cd0309808f"
-    results = {"slps": [], "contacts": [], "notes": None, "deleted_source": False, "errors": []}
+    """Back up both accounts, then move the selected contacts, deals, SLPs (and notes) from source to target.
+    Contacts already on the target are not re-inserted. The source is deleted only if it is left empty."""
+    try:
+        results = await _account_merge.merge_accounts(
+            _AcClient, body.source_id, body.target_id, slp_ids=body.slp_ids, contact_ids=body.contact_ids,
+            deal_ids=body.deal_ids, move_notes_too=body.move_notes, delete_source=body.delete_source)
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(e), "errors": [str(e)]})
+    except OSError as e:
+        msg = f"Backup could not be written, so nothing was changed: {e}"
+        return JSONResponse(status_code=500, content={"ok": False, "error": msg, "errors": [msg]})
+    return results
 
-    # Move SLPs — update relationship in-place
-    for slp_id in body.slp_ids:
-        try:
-            rec_data = await ac_get(f"customObjects/records/{SLP_SCHEMA}/{slp_id}")
-            record = rec_data.get("record", {})
-            fields = record.get("fields", [])
-            payload = {"record": {"id": slp_id, "fields": fields, "relationships": {"account": [int(body.target_id)]}}}
-            await ac_post(f"customObjects/records/{SLP_SCHEMA}", payload)
-            results["slps"].append({"id": slp_id, "ok": True})
-        except Exception as e:
-            results["errors"].append(f"SLP {slp_id}: {e}")
-            results["slps"].append({"id": slp_id, "ok": False, "error": str(e)})
+@app.get("/api/admin/account-merge-backup/{name}")
+async def account_merge_backup(name: str, admin=Depends(_require_admin)):
+    """Download a backup written by consolidate-account."""
+    try:
+        text = _account_merge.read_backup(name)
+    except (FileNotFoundError, OSError):
+        return JSONResponse(status_code=404, content={"ok": False, "error": "Backup not found"})
+    return Response(text, media_type="application/json", headers={"Content-Disposition": f"attachment; filename={name}"})
 
-    # Move contacts
-    for contact_id in body.contact_ids:
-        try:
-            # Link to target
-            await ac_post("accountContacts", {"accountContact": {"contact": contact_id, "account": body.target_id}})
-            # Remove from source
-            ac_data = await ac_get("accountContacts", {"contact": contact_id, "limit": 50})
-            for assoc in ac_data.get("accountContacts", []):
-                if str(assoc.get("account")) == str(body.source_id):
-                    await ac_delete(f"accountContacts/{assoc['id']}")
-            results["contacts"].append({"id": contact_id, "ok": True})
-        except Exception as e:
-            results["errors"].append(f"Contact {contact_id}: {e}")
-            results["contacts"].append({"id": contact_id, "ok": False, "error": str(e)})
-
-    # Move notes (optional — can be slow for large accounts)
-    if body.move_notes:
-        moved = errors = 0
-        offset = 0
-        while True:
-            try:
-                note_data = await ac_get("notes", {"reltype": "CustomerAccount", "rel_id": body.source_id, "limit": 25, "offset": offset})
-                notes = note_data.get("notes", [])
-                if not notes:
-                    break
-                for note in notes:
-                    try:
-                        await ac_post("notes", {"note": {"note": note.get("note", ""), "reltype": "CustomerAccount", "relid": body.target_id}})
-                        await ac_delete(f"notes/{note['id']}")
-                        moved += 1
-                    except Exception:
-                        errors += 1
-                offset += len(notes)
-            except Exception:
-                break
-        results["notes"] = {"moved": moved, "errors": errors}
-
-    # Delete source account
-    if body.delete_source and not results["errors"]:
-        try:
-            await ac_delete(f"accounts/{body.source_id}")
-            results["deleted_source"] = True
-        except Exception as e:
-            results["errors"].append(f"Delete source: {e}")
-
-    return {"ok": len(results["errors"]) == 0, **results}
+@app.post("/api/admin/account-backup")
+async def account_backup_only(source_id: str, target_id: str, admin=Depends(_require_admin)):
+    """Write a backup of both accounts without changing anything."""
+    try:
+        source = await _account_merge.snapshot_account(_AcClient, source_id)
+        target = await _account_merge.snapshot_account(_AcClient, target_id)
+        name, _ = _account_merge.write_backup(source_id, target_id, source, target, {"backup_only": True})
+        return {"ok": True, "backup": name}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"ok": False, "error": str(e)})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
