@@ -98,7 +98,7 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
   <div class="card">
     <div class="card-title"><span class="step-badge">1</span> Source Account <span style="font-weight:400;color:#6b7280;font-size:.8rem">(account to move FROM)</span></div>
     <div class="search-row">
-      <input id="src-input" type="text" placeholder="Account name or dealer ID…" onkeydown="if(event.key==='Enter')searchAccount('src')"/>
+      <input id="src-input" type="text" placeholder="Account name, dealer ID, or AC link…" onkeydown="if(event.key==='Enter')searchAccount('src')"/>
       <button onclick="searchAccount('src')">Search</button>
     </div>
     <div class="results-list" id="src-results"></div>
@@ -112,7 +112,7 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
   <div class="card">
     <div class="card-title"><span class="step-badge">2</span> Target Account <span style="font-weight:400;color:#6b7280;font-size:.8rem">(account to move TO)</span></div>
     <div class="search-row">
-      <input id="tgt-input" type="text" placeholder="Account name or dealer ID…" onkeydown="if(event.key==='Enter')searchAccount('tgt')"/>
+      <input id="tgt-input" type="text" placeholder="Account name, dealer ID, or AC link…" onkeydown="if(event.key==='Enter')searchAccount('tgt')"/>
       <button onclick="searchAccount('tgt')">Search</button>
     </div>
     <div class="results-list" id="tgt-results"></div>
@@ -139,7 +139,9 @@ main{max-width:960px;margin:0 auto;padding:24px 20px 60px}
       </label>
     </div>
 
+    <div style="margin-top:14px;font-size:.78rem;color:#6b7280">A backup of both accounts (contacts, deals, SLPs, notes) is saved automatically before anything changes. The source account is only deleted if nothing is left on it.</div>
     <button class="btn-run" id="run-btn" onclick="runMove()">Move Selected Items</button>
+    <button class="btn-run" id="backup-btn" style="background:#fff;color:#1e3a5f;border:1px solid #1e3a5f;margin-top:8px" onclick="backupOnly()">Download backup only (no changes)</button>
     <div class="log" id="log"></div>
   </div>
 
@@ -157,6 +159,14 @@ let state = {
 async function searchAccount(side) {
   const input = document.getElementById(`${side}-input`).value.trim();
   if (!input) return;
+  const idMatch = input.match(/accounts\/(\d+)/) || input.match(/^(\d+)$/);
+  if (idMatch) {  // pasted AC link or account ID
+    try {
+      const r = await fetch(`/api/admin/account-contents/${idMatch[1]}`);
+      const d = await r.json();
+      if (r.ok && d.account) return selectAccount(side, idMatch[1], d.account.name || `Account ${idMatch[1]}`);
+    } catch(e) {}
+  }
   const listEl = document.getElementById(`${side}-results`);
   listEl.innerHTML = '<div class="result-item"><span style="color:#6b7280">Searching…</span></div>';
   listEl.style.display = 'block';
@@ -190,7 +200,7 @@ async function selectAccount(side, id, name) {
   selEl.style.display = 'block';
 
   // Set state immediately so checkShowPreview works even if fetch is slow/fails
-  state[side] = { id, name, slps: [], contacts: [], note_count: 0 };
+  state[side] = { id, name, slps: [], contacts: [], deals: [], note_count: 0 };
   checkShowPreview();
 
   // Fetch contents and update
@@ -201,10 +211,11 @@ async function selectAccount(side, id, name) {
     state[side] = { id, name, ...data };
     const slpCount = data.slps?.length || 0;
     const conCount = data.contacts?.length || 0;
+    const dealCount = data.deals?.length || 0;
     textEl.innerHTML = `
       <strong>${esc(name)}</strong> <span style="color:#6b7280;font-size:.75rem">(ID: ${id})</span><br>
       <span style="font-size:.75rem;color:#374151;margin-top:4px;display:inline-block">
-        ${slpCount} SLP${slpCount!==1?'s':''} · ${conCount} contact${conCount!==1?'s':''} · ${data.note_count?.toLocaleString()||0} notes
+        ${slpCount} SLP${slpCount!==1?'s':''} · ${conCount} contact${conCount!==1?'s':''} · ${dealCount} deal${dealCount!==1?'s':''} · ${data.note_count?.toLocaleString()||0} notes
       </span>`;
     if (state.src && state.tgt) renderMoveOptions();
   } catch(e) {
@@ -255,23 +266,45 @@ function renderMoveOptions() {
     html += `<div class="check-item" style="opacity:.5;cursor:default"><div><div class="check-label">SLPs</div><div class="check-sub">None on this account</div></div></div>`;
   }
 
+  const onTgt = new Set((state.tgt.contacts || []).map(c => c.id));
+  const dupes = (src.contacts || []).filter(c => onTgt.has(c.id)).length;
+
   // Contacts
   if (src.contacts?.length) {
     html += `<div class="check-item">
       <input type="checkbox" id="chk-cons-all" onchange="toggleAll('con', this.checked)" checked/>
       <div>
-        <div class="check-label">Contacts (${src.contacts.length})</div>
+        <div class="check-label">Contacts (${src.contacts.length})${dupes ? ` <span class="badge">${dupes} already on target</span>` : ''}</div>
         <div class="sub-list">
           ${src.contacts.map(c => `
             <div class="sub-item">
               <input type="checkbox" class="con-chk" value="${c.id}" checked/>
-              <span>${esc(c.name||'Unnamed')} ${c.email ? `· <span style="color:#6b7280">${esc(c.email)}</span>` : ''}</span>
+              <span>${esc(c.name||'Unnamed')} ${c.email ? `· <span style="color:#6b7280">${esc(c.email)}</span>` : ''}${c.job_title ? ` · <span style="color:#6b7280">${esc(c.job_title)}</span>` : ''}${onTgt.has(c.id) ? ' <span class="badge">already on target</span>' : ''}</span>
             </div>`).join('')}
         </div>
       </div>
     </div>`;
   } else {
     html += `<div class="check-item" style="opacity:.5;cursor:default"><div><div class="check-label">Contacts</div><div class="check-sub">None on this account</div></div></div>`;
+  }
+
+  // Deals
+  if (src.deals?.length) {
+    html += `<div class="check-item">
+      <input type="checkbox" id="chk-deals-all" onchange="toggleAll('deal', this.checked)" checked/>
+      <div>
+        <div class="check-label">Deals (${src.deals.length})</div>
+        <div class="sub-list">
+          ${src.deals.map(d => `
+            <div class="sub-item">
+              <input type="checkbox" class="deal-chk" value="${d.id}" checked/>
+              <span>${esc(d.title||'Untitled')} <span style="color:#6b7280">· ID ${esc(d.id)}</span></span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  } else {
+    html += `<div class="check-item" style="opacity:.5;cursor:default"><div><div class="check-label">Deals</div><div class="check-sub">None on this account</div></div></div>`;
   }
 
   el.innerHTML = html;
@@ -281,14 +314,33 @@ function toggleAll(type, checked) {
   document.querySelectorAll(`.${type}-chk`).forEach(c => c.checked = checked);
 }
 
+// ── Backup only ───────────────────────────────────────────────────────────────
+async function backupOnly() {
+  const btn = document.getElementById('backup-btn');
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = 'Backing up…';
+  try {
+    const res = await fetch(`/api/admin/account-backup?source_id=${state.src.id}&target_id=${state.tgt.id}`, {method: 'POST'});
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Backup failed');
+    window.location = `/api/admin/account-merge-backup/${encodeURIComponent(data.backup)}`;
+  } catch(e) {
+    alert('Backup failed: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+}
+
 // ── Run move ──────────────────────────────────────────────────────────────────
 async function runMove() {
   const slpIds  = [...document.querySelectorAll('.slp-chk:checked')].map(c => c.value);
   const conIds  = [...document.querySelectorAll('.con-chk:checked')].map(c => c.value);
+  const dealIds = [...document.querySelectorAll('.deal-chk:checked')].map(c => c.value);
   const moveNotes  = document.getElementById('opt-notes').checked;
   const deleteSrc  = document.getElementById('opt-delete').checked;
 
-  if (!slpIds.length && !conIds.length && !moveNotes) {
+  if (!slpIds.length && !conIds.length && !dealIds.length && !moveNotes) {
     alert('Please select at least one item to move.');
     return;
   }
@@ -312,22 +364,32 @@ async function runMove() {
         target_id: state.tgt.id,
         slp_ids: slpIds,
         contact_ids: conIds,
+        deal_ids: dealIds,
         move_notes: moveNotes,
         delete_source: deleteSrc,
       })
     });
     const data = await res.json();
+    if (data.backup) {
+      log.innerHTML += `<span class="info">Backup saved: <a href="/api/admin/account-merge-backup/${encodeURIComponent(data.backup)}" style="color:#93c5fd" download>${esc(data.backup)}</a></span>\n`;
+    }
 
     data.slps?.forEach(s => {
       log.innerHTML += s.ok
         ? `<span class="ok">✓ SLP ${s.id.substring(0,8)}… moved</span>\n`
-        : `<span class="err">✗ SLP ${s.id.substring(0,8)}… failed: ${esc(s.error)}</span>\n`;
+        : `<span class="err">✗ SLP ${s.id.substring(0,8)}… failed: ${esc(s.detail)}</span>\n`;
     });
     data.contacts?.forEach(c => {
       log.innerHTML += c.ok
-        ? `<span class="ok">✓ Contact ${c.id} moved</span>\n`
-        : `<span class="err">✗ Contact ${c.id} failed: ${esc(c.error)}</span>\n`;
+        ? `<span class="ok">✓ Contact ${c.id} ${c.detail === 'already on target' ? 'already on target (source link removed)' : 'moved'}</span>\n`
+        : `<span class="err">✗ Contact ${c.id} failed: ${esc(c.detail)}</span>\n`;
     });
+    data.deals?.forEach(d => {
+      log.innerHTML += d.ok
+        ? `<span class="ok">✓ Deal ${d.id} moved</span>\n`
+        : `<span class="err">✗ Deal ${d.id} failed: ${esc(d.detail)}</span>\n`;
+    });
+    if (data.error && !data.errors) log.innerHTML += `<span class="err">✗ ${esc(data.error)}</span>\n`;
     if (data.notes) {
       log.innerHTML += `<span class="info">Notes: ${data.notes.moved} moved, ${data.notes.errors} errors</span>\n`;
     }
@@ -342,6 +404,7 @@ async function runMove() {
       : `\n<span class="err">⚠ Completed with some errors — check above.</span>`;
 
     btn.innerHTML = data.ok ? '✅ Done' : '⚠ Done (with errors)';
+    if (!data.ok) { btn.disabled = false; btn.innerHTML = 'Retry Move'; }
   } catch(e) {
     log.innerHTML += `<span class="err">✗ Request failed: ${esc(e.message)}</span>`;
     btn.disabled = false;
