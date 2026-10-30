@@ -120,8 +120,8 @@ _RECIPIENTS = [r.strip() for r in os.getenv("REPORT_RECIPIENTS", "").split(",") 
 # ── Admin / Scheduler ─────────────────────────────────────────────────────
 _ADMIN_EMAILS       = {e.strip().lower() for e in os.getenv("ADMIN_EMAIL",       "jsykes@microf.com,bsanders@microf.com,parnold@microf.com,lfutrell@microf.com").split(",") if e.strip()}
 _SALES_ADMIN_EMAILS = {e.strip().lower() for e in os.getenv("SALES_ADMIN_EMAIL", "parnold@microf.com").split(",") if e.strip()}
-_CONTRACTOR_SUPPORT_EMAILS = {e.strip().lower() for e in os.getenv("CONTRACTOR_SUPPORT_EMAIL", "elove@microf.com,cristian.perez@microf.com,rlugo@microf.com").split(",") if e.strip()}
-_ONBOARDING_EMAILS  = {e.strip().lower() for e in os.getenv("ONBOARDING_EMAIL",  "tbillings@microf.com,cristian.perez@microf.com,elove@microf.com").split(",") if e.strip()}
+_CONTRACTOR_SUPPORT_EMAILS = {e.strip().lower() for e in os.getenv("CONTRACTOR_SUPPORT_EMAIL", "elove@microf.com,dtaylor@microf.com,rlugo@microf.com").split(",") if e.strip()}
+_ONBOARDING_EMAILS  = {e.strip().lower() for e in os.getenv("ONBOARDING_EMAIL",  "cristian.perez@microf.com,elove@microf.com").split(",") if e.strip()}
 _ACCT_MGMT_EMAILS   = {e.strip().lower() for e in os.getenv("ACCT_MGMT_EMAIL",   "jtiplady@microf.com,ajones@microf.com,lfutrell@microf.com,abergen@microf.com,wneely@microf.com,charden@microf.com,zolbrys@microf.com,rolbrys@microf.com,ctwiggs@microf.com").split(",") if e.strip()}
 # All groups that can access the Apps tab
 _APPS_EMAILS        = _ADMIN_EMAILS | _CONTRACTOR_SUPPORT_EMAILS | _ONBOARDING_EMAILS | _ACCT_MGMT_EMAILS | _SALES_ADMIN_EMAILS | {e.strip().lower() for e in os.getenv("APPS_EMAIL", "").split(",") if e.strip()}
@@ -267,6 +267,17 @@ def _require_admin(request: _Request):
         return "local"
     if not email or email.lower() not in _ADMIN_EMAILS:
         raise HTTPException(status_code=403, detail="Admin only")
+    return email
+
+
+def _require_move_account(request: _Request):
+    """Admin or Contractor Support group can use the Move Account tool."""
+    email = _get_session_email(request)
+    if not _AZ_CLIENT_ID:
+        return "local"
+    em = (email or "").lower()
+    if not em or (em not in _ADMIN_EMAILS and em not in _CONTRACTOR_SUPPORT_EMAILS):
+        raise HTTPException(status_code=403, detail="Access restricted")
     return email
 
 
@@ -8729,7 +8740,7 @@ async def move_slp(body: _MoveIn, admin=Depends(_require_admin)):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/move-account")
-async def move_account_page(user=Depends(_require_admin)):
+async def move_account_page(user=Depends(_require_move_account)):
     return FileResponse("static/move-account.html")
 
 class _AcClient:
@@ -8739,8 +8750,12 @@ class _AcClient:
     put = staticmethod(ac_put)
     delete = staticmethod(ac_delete)
 
+@app.get("/move-account-guide")
+async def move_account_guide_page(user=Depends(_require_move_account)):
+    return FileResponse("static/move-account-guide.html")
+
 @app.get("/api/admin/account-contents/{account_id}")
-async def account_contents(account_id: str, admin=Depends(_require_admin)):
+async def account_contents(account_id: str, admin=Depends(_require_move_account)):
     """Return SLPs, contacts, deals, and note count for a given account."""
     try:
         acct_data, links, deals, slp_records, note_data = await asyncio.gather(
@@ -8798,7 +8813,7 @@ class _ConsolidateIn(_BaseModel):
     delete_source: bool = False
 
 @app.post("/api/admin/consolidate-account")
-async def consolidate_account(body: _ConsolidateIn, admin=Depends(_require_admin)):
+async def consolidate_account(body: _ConsolidateIn, admin=Depends(_require_move_account)):
     """Back up both accounts, then move the selected contacts, deals, SLPs (and notes) from source to target.
     Contacts already on the target are not re-inserted. The source is deleted only if it is left empty."""
     try:
@@ -8813,7 +8828,7 @@ async def consolidate_account(body: _ConsolidateIn, admin=Depends(_require_admin
     return results
 
 @app.get("/api/admin/account-merge-backup/{name}")
-async def account_merge_backup(name: str, admin=Depends(_require_admin)):
+async def account_merge_backup(name: str, admin=Depends(_require_move_account)):
     """Download a backup written by consolidate-account."""
     try:
         text = _account_merge.read_backup(name)
@@ -8822,7 +8837,7 @@ async def account_merge_backup(name: str, admin=Depends(_require_admin)):
     return Response(text, media_type="application/json", headers={"Content-Disposition": f"attachment; filename={name}"})
 
 @app.post("/api/admin/account-backup")
-async def account_backup_only(source_id: str, target_id: str, admin=Depends(_require_admin)):
+async def account_backup_only(source_id: str, target_id: str, admin=Depends(_require_move_account)):
     """Write a backup of both accounts without changing anything."""
     try:
         source = await _account_merge.snapshot_account(_AcClient, source_id)
