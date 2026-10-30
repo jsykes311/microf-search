@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Move Account Guide — Microf</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Open Sans',Arial,sans-serif;background:#f3f2f1;color:#323130;line-height:1.6;font-size:15px}
+header{background:#1e3a5f;color:#fff;padding:14px 24px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+header h1{font-size:1.05rem;font-weight:700}
+.hbtn{margin-left:auto;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.25);border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;text-decoration:none}
+main{max-width:860px;margin:0 auto;padding:28px 20px 70px}
+h2.lead{font-size:1.5rem;color:#1e3a5f;margin-bottom:6px}
+.sub{color:#605e5c;margin-bottom:22px}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:20px 24px;margin-bottom:18px}
+.card h3{font-size:1rem;color:#1e3a5f;margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.num{background:#1e3a5f;color:#fff;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0}
+p{margin-bottom:10px}
+ul,ol{margin:0 0 10px 22px}
+li{margin-bottom:5px}
+code{background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:.85em}
+.callout{border-left:4px solid #0369a1;background:#f0f9ff;padding:10px 14px;border-radius:0 6px 6px 0;margin:12px 0;font-size:.9rem}
+.callout.warn{border-color:#d97706;background:#fffbeb}
+.callout.ok{border-color:#16a34a;background:#f0fdf4}
+.callout strong:first-child{display:block;margin-bottom:2px}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}
+.toc a{background:#fff;border:1px solid #d1d5db;border-radius:20px;padding:5px 14px;font-size:.82rem;color:#1e3a5f;text-decoration:none;font-weight:600}
+.toc a:hover{background:#eff6ff}
+
+/* mock-ups of the real page */
+.mock{border:1px solid #d1d5db;border-radius:8px;background:#f3f2f1;padding:14px;margin:14px 0;font-size:.82rem}
+.mock .cap{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:8px;font-weight:700}
+.m-card{background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px 14px;margin-bottom:10px}
+.m-title{font-weight:700;color:#1e3a5f;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.m-badge{background:#1e3a5f;color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:.68rem}
+.m-row{display:flex;gap:8px}
+.m-input{flex:1;border:1px solid #d1d5db;border-radius:6px;padding:6px 10px;color:#6b7280;background:#fff}
+.m-btn{background:#1e3a5f;color:#fff;border-radius:6px;padding:6px 14px;white-space:nowrap}
+.m-btn.ghost{background:#fff;color:#1e3a5f;border:1px solid #1e3a5f}
+.m-result{border:1px solid #e5e7eb;border-radius:6px;margin-top:8px;overflow:hidden}
+.m-result div{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+.m-result div:last-child{border:none}
+.m-result .hl{background:#eff6ff;outline:2px solid #f59e0b;outline-offset:-2px}
+.m-sel{margin-top:8px;padding:8px 12px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px}
+.m-check{border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.m-check b{display:block;margin-bottom:3px}
+.m-sub{padding:2px 0;color:#374151}
+.m-sub.off{opacity:.45;text-decoration:line-through}
+.pill{display:inline-block;padding:0 7px;border-radius:10px;font-size:.7rem;background:#e0f2fe;color:#0369a1}
+.m-log{background:#0f172a;color:#e2e8f0;border-radius:6px;padding:10px 12px;font-family:monospace;font-size:.76rem;line-height:1.7}
+.m-log .ok{color:#4ade80}.m-log .err{color:#f87171}.m-log .info{color:#93c5fd}
+.tag{display:inline-block;font-size:.72rem;font-weight:700;background:#fef3c7;color:#92400e;border-radius:4px;padding:0 6px;margin-left:6px}
+
+table{width:100%;border-collapse:collapse;font-size:.88rem;margin:6px 0 12px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top}
+th{background:#f8fafc;color:#1e3a5f}
+@media print{
+  @page{size:Letter;margin:14mm}
+  body{background:#fff;font-size:13px}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .hbtn,.toc{display:none}
+  header{box-shadow:none}
+  main{max-width:none;padding:18px 0 0}
+  .card,.mock,table,.callout{break-inside:avoid}
+  .card{padding:14px 18px}
+  .mock{margin:10px 0;padding:10px}
+  .callout{margin:8px 0}
+  .card{margin-bottom:12px}
+  h3{break-after:avoid}
+}
+@media (max-width:600px){main{padding:18px 14px 60px}.card{padding:16px}.m-row{flex-direction:column}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔀 Move Account Guide</h1>
+  <a class="hbtn" href="/move-account">Open the tool →</a>
+</header>
+<main>
+  <h2 class="lead">Moving a dealer ID to another account</h2>
+  <p class="sub">Use this when the same dealer has two accounts in ActiveCampaign (for example one for the Microf dealer ID and one for the Optimus dealer ID) and you want them on one account, or when a dealer ID was filed under the wrong account.</p>
+
+  <div class="toc">
+    <a href="#before">Before you start</a>
+    <a href="#steps">Steps</a>
+    <a href="#only-one">Moving just one dealer ID</a>
+    <a href="#after">After the move</a>
+    <a href="#trouble">If something goes wrong</a>
+  </div>
+
+  <div class="card" id="before">
+    <h3>Before you start</h3>
+    <ul>
+      <li><strong>A dealer ID (DID) is an SLP record.</strong> Moving a dealer ID means moving its SLP onto the other account. Its contacts and deals are separate and move only if you tick them.</li>
+      <li><strong>Decide which account you are keeping.</strong> The <em>source</em> is the account you are emptying. The <em>target</em> is the account that stays. The source is the only one that can be deleted.</li>
+    </ul>
+    <div class="callout">
+      <strong>Which account should I keep?</strong>
+      Keep the one that is more complete: usually the older activation, more contacts, a filled-in DBA name and revenue, and any Strategic Partner field. If an account is only a stub (one contact, few fields), make that one the source.
+    </div>
+  </div>
+
+  <div id="steps"></div>
+
+  <div class="card">
+    <h3><span class="num">1</span> Open Move Account</h3>
+    <p>From the Apps page choose <strong>Move Account</strong> under <em>Accounts &amp; Dealers</em>, or go straight to <code>/move-account</code>.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">2</span> Pick the source account</h3>
+    <p>In <strong>Step 1: Source Account</strong> search by account name or dealer ID. You can also <strong>paste the ActiveCampaign link</strong> (for example <code>…/app/accounts/7577</code>) or just the account number. Click the right result.</p>
+    <div class="mock"><div class="cap">What you will see</div>
+      <div class="m-card">
+        <div class="m-title"><span class="m-badge">1</span> Source Account <span style="font-weight:400;color:#6b7280">(account to move FROM)</span></div>
+        <div class="m-row"><div class="m-input">https://microf.activehosted.com/app/accounts/7577</div><div class="m-btn">Search</div></div>
+        <div class="m-sel"><b style="color:#0369a1">FAMILY AC SERVICE SOLUTIONS INC</b> <span style="color:#6b7280">(ID: 7577)</span><br>1 SLP · 9 contacts · 1 deal · 0 notes</div>
+      </div>
+    </div>
+    <p>The line under the name tells you what is on the account. Check it matches what you expect before going on.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">3</span> Pick the target account</h3>
+    <p>Do the same in <strong>Step 2: Target Account</strong> for the account you are keeping.</p>
+    <div class="callout warn"><strong>Double-check the order</strong>
+      Source and target are easy to swap. The source is the one that will be emptied (and optionally deleted).</div>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">4</span> Choose what to move</h3>
+    <p>Once both accounts are chosen, <strong>Step 3</strong> lists everything on the source. Everything starts ticked.</p>
+    <div class="mock"><div class="cap">What you will see</div>
+      <div class="m-check"><b>SLPs (1)</b><div class="m-sub">☑ FAMILY AC SERVICE SOLUTIONS INC-15149 · DID 15149 · <span class="pill">Microf Direct</span></div></div>
+      <div class="m-check"><b>Contacts (9) <span class="pill">1 already on target</span></b>
+        <div class="m-sub">☑ Mitch Bailey · mbaileyfhaa@gmail.com · Dealer Employee</div>
+        <div class="m-sub">☑ Sonya Fowler · sonya@familyheatingandac.com · Dealer Admin</div>
+        <div class="m-sub">☑ David Lowry · familytech28@gmail.com · Sales rep <span class="pill">already on target</span></div>
+        <div class="m-sub off">☐ Jeff Rougeaux · jeffr.fhaa@gmail.com</div></div>
+      <div class="m-check"><b>Deals (1)</b><div class="m-sub">☑ FAMILY AC SERVICE SOLUTIONS INC - LTO · ID 8538</div></div>
+    </div>
+    <ul>
+      <li><strong>SLPs</strong> are the dealer IDs. Leave ticked to move them.</li>
+      <li><strong>Contacts</strong> keep their job titles. Contacts marked <span class="pill">already on target</span> are not added twice; they are simply taken off the source.</li>
+      <li><strong>Deals</strong> move with the account. If you plan to delete the source, leave them ticked so they are not lost.</li>
+      <li>Untick anything you want to leave behind.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">5</span> Set the options</h3>
+    <table>
+      <tr><th>Option</th><th>What it does</th></tr>
+      <tr><td><strong>Move notes</strong></td><td>Copies each note to the target and removes it from the source. Slow on big accounts. The copy loses the original author and date, so skip it unless the notes matter. The backup keeps the originals.</td></tr>
+      <tr><td><strong>Delete source account after move</strong></td><td>Deletes the source only if every step worked <em>and</em> nothing is left on it. Otherwise the account is kept and the message tells you what remains.</td></tr>
+    </table>
+    <div class="callout ok"><strong>You are covered by a backup</strong>
+      Before anything changes, the tool saves a backup of both accounts (contacts, deals, SLPs, notes). If the backup cannot be saved, nothing is moved.</div>
+    <p>Want to look first? Click <strong>Download backup only (no changes)</strong> to save the backup without moving anything.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="num">6</span> Run it and read the log</h3>
+    <p>Click <strong>Move Selected Items</strong>. If you ticked delete, you will be asked to confirm.</p>
+    <div class="mock"><div class="cap">What you will see</div>
+      <div class="m-log">
+        <span class="info">Moving from FAMILY AC SERVICE SOLUTIONS INC → FAMILY HEATING &amp; AIR CONDITIONING…</span><br>
+        <span class="info">Backup saved: account_merge_7577_to_4813_20261030_153000.json</span><br>
+        <span class="ok">✓ SLP 9d291c6d… moved</span><br>
+        <span class="ok">✓ Contact 46708 moved</span><br>
+        <span class="ok">✓ Contact 65809 already on target (source link removed)</span><br>
+        <span class="ok">✓ Deal 8538 moved</span><br>
+        <span class="ok">✓ Source account deleted</span><br><br>
+        <span class="ok">✅ Done — all items moved successfully.</span>
+      </div>
+    </div>
+    <p><strong>Click the backup file name to download it</strong> and keep it. It is your way back if something looks wrong later.</p>
+  </div>
+
+  <div class="card" id="only-one">
+    <h3>Moving just one dealer ID</h3>
+    <p>To move one dealer ID without touching the rest of the account:</p>
+    <ol>
+      <li>Choose the account it is on now as the <strong>source</strong>, and where it should go as the <strong>target</strong>.</li>
+      <li>In Step 3, tick only that dealer ID's SLP. Untick every contact and deal.</li>
+      <li>Leave <strong>Delete source account</strong> unticked.</li>
+      <li>Click <strong>Move Selected Items</strong>.</li>
+    </ol>
+    <p>The dealer ID now sits on the target, and the source account is unchanged.</p>
+  </div>
+
+  <div class="card" id="after">
+    <h3>After the move</h3>
+    <ul>
+      <li><strong>Open the target in ActiveCampaign</strong> and confirm the SLPs, contacts and deals you expected are there.</li>
+      <li><strong>Account fields are not copied.</strong> Address, revenue, DBA name and Oracle IDs on the account itself stay as they are on the target. If the source had better values, copy them over by hand before you delete it. They are in the backup.</li>
+      <li><strong>Duplicate people are not merged.</strong> If the same person was on both accounts under different email addresses, you will now see them twice. Combine them in ActiveCampaign if needed.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="trouble">
+    <h3>If something goes wrong</h3>
+    <table>
+      <tr><th>You see</th><th>What to do</th></tr>
+      <tr><td>Some lines in red, button says <strong>Retry Move</strong></td><td>Click it. The move is safe to repeat: items already moved are skipped, and contacts already on the target are not added twice.</td></tr>
+      <tr><td>"Source account not deleted: still has…"</td><td>Something was left on the source. Re-run with those items ticked, or move them in ActiveCampaign, then delete it.</td></tr>
+      <tr><td>"Backup could not be written, so nothing was changed"</td><td>Nothing moved. Try again; if it repeats, tell Jeremy.</td></tr>
+      <tr><td>"Error loading contents" under an account</td><td>Search again and re-pick the account. If it keeps failing, ActiveCampaign may be slow; wait a minute and retry.</td></tr>
+      <tr><td>You moved the wrong thing</td><td>Do not delete anything else. Send the backup file to Jeremy. It holds the full before-state of both accounts.</td></tr>
+    </table>
+  </div>
+</main>
+<script src="/static/js/status-widget.js" defer></script>
+</body>
+</html>
