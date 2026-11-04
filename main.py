@@ -90,6 +90,22 @@ _WEBHOOK_TOKEN = (os.getenv("AC_WEBHOOK_TOKEN") or
 _PARTNER_UPLOAD_MAX_BYTES = int(os.getenv("PARTNER_UPLOAD_MAX_MB", "50")) * 1024 * 1024
 _TABLE_UPLOAD_MAX_BYTES = int(os.getenv("TABLE_UPLOAD_MAX_MB", "25")) * 1024 * 1024
 
+# SLP "Status Detail" is being renamed from "Contractor Activated" to "Activated". Reads accept both
+# spellings so reports keep working before, during and after the AC cutover; writes use
+# ACTIVATED_STATUS_VALUE (default: the old spelling, set to "Activated" once the AC dropdown has it).
+_ACTIVATED_STATUSES = frozenset({"Activated", "Contractor Activated"})
+ACTIVATED_STATUS_VALUE = os.getenv("ACTIVATED_STATUS_VALUE", "Contractor Activated").strip() or "Contractor Activated"
+
+
+def _is_activated(status) -> bool:
+    return str(status or "").strip() in _ACTIVATED_STATUSES
+
+
+def _status_matches(rec_status, wanted) -> bool:
+    """Status filter match; either spelling of the activated status matches the other."""
+    rec_status, wanted = str(rec_status or "").strip(), str(wanted or "").strip()
+    return rec_status == wanted or (rec_status in _ACTIVATED_STATUSES and wanted in _ACTIVATED_STATUSES)
+
 
 async def _read_upload_limited(file: UploadFile, max_bytes: int, label: str = "File") -> bytes:
     """Read an UploadFile in bounded chunks and stop before parsing can exhaust RAM."""
@@ -2759,7 +2775,7 @@ async def activations_report(
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
 
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
 
         plat      = str(fields.get("channel", "")).strip()
@@ -2869,6 +2885,7 @@ _SLP_STATUSES = [
     "Awaiting Dealer Agreement Signature",
     "Awaiting Training",
     "Training Completed",
+    "Activated",
     "Contractor Activated",
     "Awaiting Contractor Response",
     "Declined",
@@ -2877,6 +2894,7 @@ _SLP_STATUSES = [
     "Account on Hold (Suspended)",
     "Being Reviewed By Ops Manager",
     "Deactivated",
+    "Deactivated - Fraud",
     "Deactivated for Dormancy",
     "Deactivated w/ Cause",
     "Declined by Lender",
@@ -2930,7 +2948,7 @@ async def enrollment_report(
 
         # Status filter
         rec_status = fields.get("slp-status-detail", "")
-        if slp_status and rec_status != slp_status:
+        if slp_status and not _status_matches(rec_status, slp_status):
             continue
 
         # Platform filter
@@ -3218,7 +3236,7 @@ async def not_activated_report(
     for r in slp_records:
         fields     = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
         status_val = str(fields.get("slp-status-detail", "")).strip()
-        if status_val in ("Contractor Activated", "Inactive", "Deactivated", "Deactivated for Dormancy", "Declined by Onboarding", "Not Active"):
+        if status_val in ("Contractor Activated", "Activated", "Inactive", "Deactivated", "Deactivated - Fraud", "Deactivated for Dormancy", "Declined by Onboarding", "Not Active"):
             continue
         if status and status_val != status:
             continue
@@ -3429,7 +3447,7 @@ async def bdr_summary_report(
         bdr    = str(fields.get("assigned-bdr", "")).strip() or "Unassigned"
         bdr_data[bdr]["total_slps"] += 1
 
-        if fields.get("slp-status-detail") == "Contractor Activated":
+        if _is_activated(fields.get("slp-status-detail")):
             act_str  = str(fields.get("contractor-activated-date", "")).strip()
             in_range = True
             if act_str and (from_date or to_date):
@@ -4339,7 +4357,7 @@ async def _get_qualifying_microf_accounts() -> set:
     result: set = set()
     for r in raw:
         fields = {f.get("field") or f.get("id"): f.get("value") for f in r.get("fields", [])}
-        if str(fields.get("slp-status-detail", "")).strip() != "Contractor Activated":
+        if not _is_activated(str(fields.get("slp-status-detail", "")).strip()):
             continue
         if not _is_microf_channel(str(fields.get("channel", ""))):
             continue
@@ -4484,7 +4502,7 @@ async def _build_location_index() -> dict:
         qualifying: set = set()
         for _r in slp_snapshot:
             _flds = {_f.get("field") or _f.get("id"): _f.get("value") for _f in _r.get("fields", [])}
-            if str(_flds.get("slp-status-detail", "")).strip() != "Contractor Activated":
+            if not _is_activated(str(_flds.get("slp-status-detail", "")).strip()):
                 continue
             if not _is_microf_channel(str(_flds.get("channel", ""))):
                 continue
@@ -5691,7 +5709,7 @@ async def report_stale_untrained(
     candidates = []
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        if fields.get("slp-status-detail") != "Contractor Activated": continue
+        if not _is_activated(fields.get("slp-status-detail")): continue
         slp_plat = str(fields.get("channel", "")).strip()
         slp_bdr  = str(fields.get("assigned-bdr", "")).strip()
         rel      = r.get("relationships", {}).get("account", [])
@@ -5785,7 +5803,7 @@ async def report_platform_breakdown(
         bdr    = (str(fields.get("assigned-bdr", "")).strip()
                   or _account_to_bdr.get(acc_id or "", "") or "Unassigned")
         plat_data[plat]["total_slps"] += 1
-        if fields.get("slp-status-detail") == "Contractor Activated":
+        if _is_activated(fields.get("slp-status-detail")):
             plat_data[plat]["active_slps"] += 1
             act_str = str(fields.get("contractor-activated-date", "")).strip()
             if act_str and (from_dt or to_dt):
@@ -5868,7 +5886,7 @@ async def report_oracle_missing(
     candidates = []
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        if fields.get("slp-status-detail") != "Contractor Activated": continue
+        if not _is_activated(fields.get("slp-status-detail")): continue
         rel      = r.get("relationships", {}).get("account", [])
         acc_id   = str(rel[0]) if rel else None
         if cf_map.get(acc_id or "", {}).get("118"): continue
@@ -6221,7 +6239,7 @@ async def _job_activations(start_date: Optional[date] = None, end_date: Optional
     candidates = []
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
         plat = str(fields.get("channel", "")).strip()
         plat_norm = _normalize_platform(plat)
@@ -6340,7 +6358,7 @@ async def _job_enrollment(start_date: Optional[date] = None, end_date: Optional[
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
 
-        if slp_status and fields.get("slp-status-detail") != slp_status:
+        if slp_status and not _status_matches(fields.get("slp-status-detail"), slp_status):
             continue
 
         # Date filter on contractor-activated-date, fall back to enrollment-request-date
@@ -6577,7 +6595,7 @@ async def _job_bdr_summary(start_date: Optional[date] = None, end_date: Optional
         fallback = acct_cf_cache.get(acc_id, {}) if acc_id else {}
         bdr      = rd["bdr"] or fallback.get("bdr", "") or "Unassigned"
         bdr_data[bdr]["total_slps"] += 1
-        if fields.get("slp-status-detail") == "Contractor Activated":
+        if _is_activated(fields.get("slp-status-detail")):
             act_str = str(fields.get("contractor-activated-date", "")).strip()
             if act_str:
                 try:
@@ -6769,7 +6787,7 @@ async def _job_stale_untrained(start_date: Optional[date] = None, end_date: Opti
     candidates = []
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
         slp_plat = str(fields.get("channel", "")).strip()
         if platform and slp_plat != platform:
@@ -6916,7 +6934,7 @@ async def _job_platform_breakdown(start_date: Optional[date] = None, end_date: O
         bdr    = (str(fields.get("assigned-bdr", "")).strip()
                   or _account_to_bdr.get(acc_id or "", "") or "Unassigned")
         plat_data[plat]["total_slps"] += 1
-        if fields.get("slp-status-detail") == "Contractor Activated":
+        if _is_activated(fields.get("slp-status-detail")):
             plat_data[plat]["active_slps"] += 1
             act_str = str(fields.get("contractor-activated-date", "")).strip()
             if act_str:
@@ -7040,7 +7058,7 @@ async def _job_oracle_missing(start_date: Optional[date] = None, end_date: Optio
     candidates = []
     for r in slp_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
         rel    = r.get("relationships", {}).get("account", [])
         acc_id = str(rel[0]) if rel else None
@@ -7400,7 +7418,7 @@ async def _job_not_activated(start_date=None, end_date=None,
     for r in slp_records:
         fields     = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
         status_val = str(fields.get("slp-status-detail", "")).strip()
-        if status_val in ("Contractor Activated", "Inactive", "Deactivated", "Deactivated for Dormancy", "Declined by Onboarding", "Not Active"):
+        if status_val in ("Contractor Activated", "Activated", "Inactive", "Deactivated", "Deactivated - Fraud", "Deactivated for Dormancy", "Declined by Onboarding", "Not Active"):
             continue
         if status and status_val != status:
             continue
@@ -8241,7 +8259,7 @@ async def optimus_reactivate_confirm(
 
             # Build updated fields
             existing = {f["id"]: f.get("value", "") for f in record.get("fields", [])}
-            existing["slp-status-detail"] = "Contractor Activated"
+            existing["slp-status-detail"] = ACTIVATED_STATUS_VALUE
             existing["contractor-activated-date"] = today_iso
             # Clear deactivation date
             existing["deactivation-date"] = ""
@@ -8371,7 +8389,7 @@ async def _license_expiration_candidates() -> list:
         fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
         if fields.get("channel") != _LICENSE_DEACT_CHANNEL:
             continue
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
         for aid in rec.get("relationships", {}).get("account", []):
             acct_qualifies[str(aid)] = True
@@ -8589,7 +8607,7 @@ async def license_expiration_partners_report(
         ch = fields.get("channel") or ""
         if not ch or ch == _LICENSE_DEACT_CHANNEL:
             continue
-        if fields.get("slp-status-detail") != "Contractor Activated":
+        if not _is_activated(fields.get("slp-status-detail")):
             continue
         for aid in rec.get("relationships", {}).get("account", []):
             acct_channel[str(aid)] = ch
@@ -11382,7 +11400,7 @@ async def welcome_account_slps(account_id: str, _admin=Depends(_require_welcome)
     # fall back to most recently activated supported row of any status.
     recommended_id = None
     for row in rows:
-        if row["supported"] and row["activated"] and row["status"] == "Contractor Activated":
+        if row["supported"] and row["activated"] and _is_activated(row["status"]):
             recommended_id = row["record_id"]
             break
     if not recommended_id:
@@ -12734,8 +12752,10 @@ async def dash_onboarding_pipeline(admin=Depends(_require_admin)):
         "Waiting_on_BDR_Approval",
         "On Indefinite Hold - Agreement/Documents Not Signed",
         "Account on Hold (Suspended)",
+        "Activated",
         "Contractor Activated",
         "Deactivated",
+        "Deactivated - Fraud",
         "Deactivated for Dormancy",
         "Declined by Onboarding",
         "Not Active",
@@ -12793,7 +12813,7 @@ async def dash_onboarding_pipeline(admin=Depends(_require_admin)):
         })
 
     total = sum(b["count"] for b in buckets.values())
-    activated = buckets.get("Contractor Activated", {}).get("count", 0)
+    activated = sum(buckets.get(k, {}).get("count", 0) for k in _ACTIVATED_STATUSES)
     return {
         "total_slps":       total,
         "total_activated":  activated,
@@ -13023,7 +13043,7 @@ async def dash_activation_trends(admin=Depends(_require_admin)):
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         act_str = _slp_get_field(slp, "contractor-activated-date")
@@ -13083,7 +13103,7 @@ async def dash_channel_mix(admin=Depends(_require_admin)):
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         platform = _slp_get_field(slp, "platform") or "Unknown"
@@ -13209,7 +13229,7 @@ async def dash_oracle_coverage(admin=Depends(_require_admin)):
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         total_activated += 1
@@ -13421,7 +13441,7 @@ async def dash_multi_channel(
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         aid = get_account_id(slp)
@@ -13458,7 +13478,7 @@ async def dash_multi_channel(
         if sid in seen_ids2:
             continue
         seen_ids2.add(sid)
-        if _slp_get_field(slp, "slp-status-detail") == "Contractor Activated":
+        if _is_activated(_slp_get_field(slp, "slp-status-detail")):
             p = _slp_get_field(slp, "platform")
             if p:
                 all_platforms.add(p)
@@ -13490,7 +13510,7 @@ async def dash_geographic(admin=Depends(_require_admin)):
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         states_str = _slp_get_field(slp, "doing-business-in-states")
@@ -13557,7 +13577,7 @@ async def dash_training_funnel(admin=Depends(_require_admin)):
             continue
         seen_ids.add(sid)
 
-        if _slp_get_field(slp, "slp-status-detail") != "Contractor Activated":
+        if not _is_activated(_slp_get_field(slp, "slp-status-detail")):
             continue
 
         aid = get_account_id(slp)
