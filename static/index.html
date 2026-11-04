@@ -4220,6 +4220,7 @@ function abRenderDetail(d) {
   // ── Right sidebar ─────────────────────────────────────────────
   // Group channels by SLP status
   const statusOrder = [
+    'Activated',
     'Contractor Activated',
     'Account on Hold (Suspended)',
     'On Indefinite Hold - Agreement/Docs Not Signed',
@@ -4848,7 +4849,7 @@ async function optimusPreview() {
           <th style="padding:7px 10px;border:1px solid #e5e7eb;">SLP Record</th>
         </tr></thead><tbody>`;
       for (const row of preview) {
-        const statusColor = row.current_status === 'Contractor Activated' ? '#166534' : '#92400e';
+        const statusColor = ['Activated', 'Contractor Activated'].includes(row.current_status) ? '#166534' : '#92400e';
         html += `<tr>
           <td style="padding:7px 10px;border:1px solid #e5e7eb;">${esc(row.dealer_id)}</td>
           <td style="padding:7px 10px;border:1px solid #e5e7eb;">${esc(row.account_name)}</td>
@@ -4933,7 +4934,7 @@ async function optimusReactPreview() {
           <th style="padding:7px 10px;border:1px solid #e5e7eb;">SLP Record</th>
         </tr></thead><tbody>`;
       for (const row of preview) {
-        const statusColor = row.current_status === 'Contractor Activated' ? '#166534' : '#92400e';
+        const statusColor = ['Activated', 'Contractor Activated'].includes(row.current_status) ? '#166534' : '#92400e';
         html += `<tr>
           <td style="padding:7px 10px;border:1px solid #e5e7eb;">${esc(row.dealer_id)}</td>
           <td style="padding:7px 10px;border:1px solid #e5e7eb;">${esc(row.account_name)}</td>
@@ -4955,7 +4956,7 @@ async function optimusReactPreview() {
 }
 
 async function optimusReactConfirm(recordIds) {
-  if (!confirm(`Set ${recordIds.length} OPTIMUS SLP(s) to Contractor Activated?`)) return;
+  if (!confirm(`Set ${recordIds.length} OPTIMUS SLP(s) to Activated?`)) return;
   const cs = document.getElementById('optimus-react-confirm-status');
   cs.textContent = 'Updating…';
   const emailText = document.getElementById('optimus-react-email-body').value.trim();

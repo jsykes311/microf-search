@@ -145,7 +145,9 @@
       <label>SLP Status</label>
       <select id="slp_status">
         <option value="">All Statuses</option>
+        <option>Activated</option>
         <option>Contractor Activated</option>
+        <option>Deactivated - Fraud</option>
         <option>Deactivated</option>
         <option>Not Active</option>
         <option>Deactivated for Dormancy</option>
@@ -238,7 +240,7 @@ function normalizeChannel(ch) {
 }
 
 const STATUSES = [
-  'Contractor Activated','Deactivated','Not Active','Deactivated for Dormancy',
+  'Activated','Contractor Activated','Deactivated','Deactivated - Fraud','Not Active','Deactivated for Dormancy',
   'Account on Hold (Suspended)','Not Started','Declined by Onboarding',
   'Pending - Training Not Completed','Waiting_on_BDR_Approval',
   'On Indefinite Hold - Agreement/Docs Not Signed',
@@ -247,7 +249,9 @@ const STATUSES = [
 ];
 
 const STATUS_COLORS = {
+  'Activated':  '#23A455',
   'Contractor Activated':  '#23A455',
+  'Deactivated - Fraud':  '#b91c1c',
   'Deactivated':           '#9ca3af',
   'Not Active':            '#6b7280',
   'Deactivated for Dormancy': '#8b5cf6',
@@ -371,9 +375,9 @@ async function runReport() {
 
 function renderStats(records) {
   const total     = records.length;
-  const activated = records.filter(r => r.slp_status === 'Contractor Activated').length;
+  const activated = records.filter(r => ['Activated','Contractor Activated'].includes(r.slp_status)).length;
   const inProg    = records.filter(r => (r.slp_status||'').toLowerCase().includes('progress') || (r.slp_status||'').toLowerCase().includes('pending') || (r.slp_status||'').toLowerCase().includes('waiting')).length;
-  const inactive  = records.filter(r => ['Deactivated','Not Active','Deactivated for Dormancy'].includes(r.slp_status)).length;
+  const inactive  = records.filter(r => ['Deactivated','Deactivated - Fraud','Not Active','Deactivated for Dormancy'].includes(r.slp_status)).length;
   const platforms = [...new Set(records.map(r => normalizeChannel(r.channel)))].length;
 
   const pct = (n) => total ? Math.round(n/total*100) + '%' : '—';
