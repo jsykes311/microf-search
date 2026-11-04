@@ -2875,7 +2875,7 @@ async def activations_report(
 # ═══════════════════════════════════════════════════════════════════════════
 
 _SLP_STATUSES = [
-    # Current workflow, in flow order
+    # Mirrors the AC "Status Detail" dropdown (cleaned up 2026-11-04), in flow order
     "Pre-activation",
     "BDR Review",
     "Onboarding Review",
@@ -2886,37 +2886,15 @@ _SLP_STATUSES = [
     "Awaiting Training",
     "Training Completed",
     "Activated",
-    "Contractor Activated",
     "Awaiting Contractor Response",
     "Declined",
-    # Legacy / other statuses still present on older SLP records in AC
-    "Declined by Onboarding",
-    "Account on Hold (Suspended)",
-    "Being Reviewed By Ops Manager",
     "Deactivated",
     "Deactivated - Fraud",
-    "Deactivated for Dormancy",
-    "Deactivated w/ Cause",
-    "Declined by Lender",
-    "In Progress – Other",
-    "In Progress – Signed Contract Needed",
     "Not Active",
-    "Not Started",
-    "On Hold",
-    "On Definite Hold – Signed Training Attestation Not Returned",
-    "On Indefinite Hold - Agreement/Documents Not Signed",
-    "On Indefinite Hold - Lender ID Not Provided",
-    "On Indefinite Hold - Online Reviews Not Available",
-    "On Indefinite Hold - Training Not Completed",
-    "On Indefinite Hold - Valid BL or PL Not Provided",
-    "Pending - Lender ID Verification",
-    "Pending - Training Not Completed",
-    "Pending - Waiting on Contractor to provide BL or PL License",
-    "Pending - Waiting on Online Reviews",
-    "Pending Activation - GS UCA Agreement",
-    "Pending Lender Training",
-    "Waiting_on_BDR_Approval",
     "Withdrawn",
+    # Kept temporarily: still in the AC dropdown, to be removed later
+    "Contractor Activated",
+    "Not Started",
 ]
 
 @app.get("/api/report/enrollment")
