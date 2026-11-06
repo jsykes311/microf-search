@@ -16,6 +16,8 @@ Usage:
 import asyncio
 import httpx
 import os
+import random
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,8 +26,13 @@ BASE_URL = (os.getenv("AC_BASE_URL") or os.getenv("PROD_URL", "https://microf.ap
 API_KEY  = os.getenv("AC_API_KEY") or os.getenv("PROD_KEY", "")
 
 _HEADERS = {"Api-Token": API_KEY}
-_CONCURRENCY = 15   # parallel page fetches
+_CONCURRENCY = 4    # shared AC ceiling; background jobs use this same gate
 _PAGE_SIZE   = 100
+_MIN_REQUEST_INTERVAL = float(os.getenv("AC_MIN_REQUEST_INTERVAL", "0.20"))
+_MAX_ATTEMPTS = 5
+_request_gate = asyncio.Semaphore(_CONCURRENCY)
+_pace_lock = asyncio.Lock()
+_next_request_at = 0.0
 
 
 def _client() -> httpx.AsyncClient:
@@ -37,11 +44,63 @@ def _client() -> httpx.AsyncClient:
     )
 
 
+async def request_json(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    body: dict | None = None,
+    retry_writes: bool = False,
+) -> tuple[int, dict]:
+    """Make one rate-limited AC request with bounded, Retry-After-aware retries.
+
+    GET and DELETE are safe to retry. A caller must explicitly opt a write into
+    retries after establishing that its payload is idempotent.
+    """
+    global _next_request_at
+    method = method.upper()
+    attempts = _MAX_ATTEMPTS if method in {"GET", "DELETE"} or retry_writes else 1
+
+    for attempt in range(attempts):
+        async with _request_gate:
+            async with _pace_lock:
+                now = time.monotonic()
+                if now < _next_request_at:
+                    await asyncio.sleep(_next_request_at - now)
+                _next_request_at = time.monotonic() + _MIN_REQUEST_INTERVAL
+
+            async with _client() as c:
+                response = await c.request(
+                    method,
+                    f"/api/3/{path.lstrip('/')}",
+                    params=params or {},
+                    json=body,
+                )
+
+        retryable = response.status_code == 429 or response.status_code in {502, 503, 504, 520}
+        if not retryable or attempt == attempts - 1:
+            response.raise_for_status()
+            try:
+                data = response.json()
+            except Exception:
+                data = {}
+            return response.status_code, data
+
+        retry_after = response.headers.get("Retry-After", "").strip()
+        try:
+            delay = min(30.0, max(0.0, float(retry_after)))
+        except ValueError:
+            delay = 0.0
+        if delay <= 0:
+            delay = min(30.0, (2 ** attempt) + random.uniform(0, 1.0))
+        await asyncio.sleep(delay)
+
+    raise RuntimeError("ActiveCampaign request retry loop exited unexpectedly")
+
+
 async def ac_get(path: str, params: dict = None) -> dict:
-    async with _client() as c:
-        r = await c.get(f"/api/3/{path}", params=params or {})
-        r.raise_for_status()
-        return r.json()
+    _, data = await request_json("GET", path, params=params)
+    return data
 
 
 async def ac_post(path: str, body: dict) -> tuple[int, dict]:
@@ -75,9 +134,8 @@ async def ac_patch(path: str, body: dict) -> tuple[int, dict]:
 
 
 async def ac_delete(path: str) -> int:
-    async with _client() as c:
-        r = await c.delete(f"/api/3/{path}")
-        return r.status_code
+    status, _ = await request_json("DELETE", path)
+    return status
 
 
 async def fetch_all_pages(
@@ -106,22 +164,21 @@ async def fetch_all_pages(
         records: list = []
 
         # First, get the total count so we know how many pages to fetch
-        async with _client() as c:
-            for attempt in range(3):
-                try:
-                    r = await c.get(f"/api/3/{endpoint}", params={**base_params, "offset": 0})
-                    r.raise_for_status()
-                    first = r.json()
-                    total = int(first.get("meta", {}).get("total", 0))
-                    for rec in first.get(key, []):
-                        if rec.get("id") not in seen:
-                            seen.add(rec.get("id"))
-                            records.append(rec)
-                    break
-                except Exception:
-                    if attempt == 2:
-                        total = 0
-                    await asyncio.sleep(1)
+        for attempt in range(3):
+            try:
+                _, first = await request_json(
+                    "GET", endpoint, params={**base_params, "offset": 0}
+                )
+                total = int(first.get("meta", {}).get("total", 0))
+                for rec in first.get(key, []):
+                    if rec.get("id") not in seen:
+                        seen.add(rec.get("id"))
+                        records.append(rec)
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1)
 
         if not total:
             return records
@@ -132,20 +189,17 @@ async def fetch_all_pages(
         num_pages = math.ceil(total / page_size)
         for page_num in range(1, num_pages + 1):
             offset = page_num * page_size
-            async with _client() as c:
-                for attempt in range(3):
-                    try:
-                        r = await c.get(
-                            f"/api/3/{endpoint}",
-                            params={**base_params, "offset": offset},
-                        )
-                        r.raise_for_status()
-                        page = r.json().get(key, [])
-                        break
-                    except Exception:
-                        if attempt == 2:
-                            page = []
-                        await asyncio.sleep(1)
+            for attempt in range(3):
+                try:
+                    _, page_data = await request_json(
+                        "GET", endpoint, params={**base_params, "offset": offset}
+                    )
+                    page = page_data.get(key, [])
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(1)
             for rec in page:
                 if rec.get("id") not in seen:
                     seen.add(rec.get("id"))
@@ -156,10 +210,7 @@ async def fetch_all_pages(
 
     # ── Concurrent path ────────────────────────────────────────────────────────
     # Fetch page 0 to get total
-    async with _client() as client:
-        r = await client.get(f"/api/3/{endpoint}", params={**base_params, "offset": 0})
-        r.raise_for_status()
-        first = r.json()
+    _, first = await request_json("GET", endpoint, params={**base_params, "offset": 0})
 
     total = int(first.get("meta", {}).get("total", 0))
     records = list(first.get(key, []))
@@ -173,20 +224,17 @@ async def fetch_all_pages(
 
     async def fetch_page(offset: int):
         async with sem:
-            async with _client() as c:
-                for attempt in range(3):
-                    try:
-                        r = await c.get(
-                            f"/api/3/{endpoint}",
-                            params={**base_params, "offset": offset},
-                        )
-                        r.raise_for_status()
-                        pages[offset] = r.json().get(key, [])
-                        return
-                    except Exception:
-                        if attempt == 2:
-                            pages[offset] = []
-                        await asyncio.sleep(1)
+            for attempt in range(3):
+                try:
+                    _, page_data = await request_json(
+                        "GET", endpoint, params={**base_params, "offset": offset}
+                    )
+                    pages[offset] = page_data.get(key, [])
+                    return
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(1)
 
     await asyncio.gather(*[fetch_page(o) for o in offsets])
 
