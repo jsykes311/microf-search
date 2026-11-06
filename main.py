@@ -1053,12 +1053,25 @@ async def get_slp_cache() -> list:
 # ── Last-Contacted cache ──────────────────────────────────────────────────────
 _lc_cache: dict  = {}    # account_id → "YYYY-MM-DD"
 _lc_cache_ts: float = 0.0
+_lc_cache_refreshing: bool = False
+_lc_cache_last_error: str = ""
+_lc_cache_source_status: dict = {}
 _LC_CACHE_TTL = 1800     # 30 minutes
 
 async def _refresh_lc_cache() -> None:
-    global _lc_cache, _lc_cache_ts
+    global _lc_cache, _lc_cache_ts, _lc_cache_refreshing
+    global _lc_cache_last_error, _lc_cache_source_status
+    if _lc_cache_refreshing:
+        return
+    _lc_cache_refreshing = True
     today = date.today()
     latest: dict = {}   # aid → {"date": "YYYY-MM-DD", "type": str}
+    source_status = {
+        "account_activity": {"ok": False},
+        "account_notes": {"ok": False},
+        "account_contacts": {"ok": False},
+        "contact_notes": {"ok": False},
+    }
 
     def _update(aid: str, raw_date: str, contact_type: str) -> None:
         if not aid or not raw_date:
@@ -1083,13 +1096,17 @@ async def _refresh_lc_cache() -> None:
             aid  = next(iter(r.get("relationships", {}).get("account", [])), "")
             _update(aid, str(fmap.get("activity-date", ""))[:10], "Activity")
         print(f"[lc-cache] account activity: {len(activity_records)} records")
+        source_status["account_activity"] = {"ok": True, "count": len(activity_records)}
     except Exception as e:
         print(f"[lc-cache] activity fetch error: {e}")
+        source_status["account_activity"]["error"] = type(e).__name__
 
     # ── 2. Account Notes ──────────────────────────────────────────────────────
     try:
-        all_notes = await ac_get_all("notes", "notes",
-                                     {"reltype": "CustomerAccount", "limit": 100})
+        all_notes = await ac_get_all("notes", "notes", {
+            "filters[reltype]": "CustomerAccount",
+            "orders[cdate]": "ASC",
+        })
         acct_note_n = 0
         for n in all_notes:
             if (n.get("reltype") or "").lower() != "customeraccount":
@@ -1098,8 +1115,10 @@ async def _refresh_lc_cache() -> None:
             _update(aid, n.get("cdate", ""), "Note")
             acct_note_n += 1
         print(f"[lc-cache] account notes: {acct_note_n} notes")
+        source_status["account_notes"] = {"ok": True, "count": acct_note_n}
     except Exception as e:
         print(f"[lc-cache] notes fetch error: {e}")
+        source_status["account_notes"]["error"] = type(e).__name__
 
     # ── 3. Build contact → account map from accountContacts ──────────────────
     contact_to_acct: dict = {}
@@ -1111,14 +1130,18 @@ async def _refresh_lc_cache() -> None:
             if cid and aid:
                 contact_to_acct[cid] = aid
         print(f"[lc-cache] contact→account map: {len(contact_to_acct)} contacts")
+        source_status["account_contacts"] = {"ok": True, "count": len(contact_to_acct)}
     except Exception as e:
         print(f"[lc-cache] accountContacts fetch error: {e}")
+        source_status["account_contacts"]["error"] = type(e).__name__
 
     # ── 4. Contact Notes ──────────────────────────────────────────────────────
     if contact_to_acct:
         try:
-            contact_notes = await ac_get_all("notes", "notes",
-                                             {"reltype": "Subscriber", "limit": 100})
+            contact_notes = await ac_get_all("notes", "notes", {
+                "filters[reltype]": "Subscriber",
+                "orders[cdate]": "ASC",
+            })
             contact_note_n = 0
             for n in contact_notes:
                 if (n.get("reltype") or "").lower() != "subscriber":
@@ -1129,17 +1152,29 @@ async def _refresh_lc_cache() -> None:
                     _update(aid, n.get("cdate", ""), "Note")
                     contact_note_n += 1
             print(f"[lc-cache] contact notes: {contact_note_n} notes mapped to accounts")
+            source_status["contact_notes"] = {"ok": True, "count": contact_note_n}
         except Exception as e:
             print(f"[lc-cache] contact notes fetch error: {e}")
+            source_status["contact_notes"]["error"] = type(e).__name__
+    elif source_status["account_contacts"]["ok"]:
+        # A successful empty relationship set makes contact notes a valid empty source.
+        source_status["contact_notes"] = {"ok": True, "count": 0}
 
     # Source 5 (email activity) removed — the /activities endpoint without a
     # contact filter pages through every AC event ever recorded and can take
     # 10+ minutes.  Account Activity + Notes already cover AM-initiated contact.
 
-    if latest:
+    failed_sources = [name for name, state in source_status.items() if not state["ok"]]
+    _lc_cache_source_status = source_status
+    if latest and not failed_sources:
         _lc_cache    = latest
         _lc_cache_ts = _time.time()
+        _lc_cache_last_error = ""
         print(f"[lc-cache] refreshed — {len(latest)} accounts with last-contacted date")
+    else:
+        _lc_cache_last_error = ",".join(failed_sources) or "empty_candidate"
+        print(f"[lc-cache] refresh incomplete ({_lc_cache_last_error}) — keeping previous healthy snapshot")
+    _lc_cache_refreshing = False
 
 async def _lc_cache_loop() -> None:
     await asyncio.sleep(270)   # staggered last of the post-boot cache loops (see _slp_cache_loop stagger note)
@@ -1433,79 +1468,138 @@ async def _sync_pandadoc_signed() -> None:
             print(f"[pandadoc-signed-sync] tag {PANDADOC_SIGNED_TAG_NAME!r} not found in AC yet — skipping")
             return
 
-    tagged = await ac_get_all("contacts", "contacts", {"tagid": _pandadoc_signed_tag_id})
+    tagged = await ac_get_all("contacts", "contacts", {
+        "tagid": _pandadoc_signed_tag_id,
+        "orders[id]": "ASC",
+    })
     if not tagged:
         return
 
-    # account_id -> [SLP records currently Awaiting Dealer Agreement Signature]
-    awaiting_by_account: dict[str, list] = {}
+    # Build a complete account-local view so a no-match can be classified without
+    # ever inspecting another client's records.
+    slps_by_account: dict[str, list] = {}
     for rec in _slp_cache_records:
-        fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
-        if (fields.get("slp-status-detail") or "").strip() != "Awaiting Dealer Agreement Signature":
-            continue
         for acct_id in rec.get("relationships", {}).get("account", []):
-            awaiting_by_account.setdefault(str(acct_id), []).append(rec)
+            slps_by_account.setdefault(str(acct_id), []).append(rec)
 
-    checked = updated = errors = untagged_only = 0
-    for contact in tagged:
+    counts = {
+        "checked": 0,
+        "lookup_failed": 0,
+        "no_account": 0,
+        "no_slp": 0,
+        "wrong_status": 0,
+        "transition_failed": 0,
+        "tags_removed": 0,
+        "tag_remove_failed": 0,
+        "aborted": 0,
+    }
+    transitioned_ids: set[str] = set()
+    consecutive_lookup_failures = 0
+
+    for position, contact in enumerate(tagged):
         cid = contact.get("id")
-        checked += 1
+        counts["checked"] += 1
         try:
-            acct_links = await ac_get_all("accountContacts", "accountContacts", {"contact": cid})
+            acct_links = await ac_get_all(
+                "accountContacts", "accountContacts", {"filters[contact]": cid}
+            )
+            if any(str(link.get("contact")) != str(cid) for link in acct_links):
+                raise RuntimeError("ActiveCampaign returned an unscoped account-contact result")
             account_ids = {str(a.get("account")) for a in acct_links if a.get("account")}  # set — dedupe repeat links
         except Exception as e:
-            errors += 1
-            print(f"[pandadoc-signed-sync] failed to look up account for contact {cid}: {e}")
+            counts["lookup_failed"] += 1
+            consecutive_lookup_failures += 1
+            print(f"[pandadoc-signed-sync] scoped account lookup failed: {type(e).__name__}")
+            if consecutive_lookup_failures >= 5:
+                counts["aborted"] = len(tagged) - position - 1
+                print("[pandadoc-signed-sync] aborting run after 5 consecutive lookup failures")
+                break
+            continue
+        consecutive_lookup_failures = 0
+
+        if not account_ids:
+            counts["no_account"] += 1
             continue
 
         seen_rec_ids: set = set()
-        matching_slps = []
+        related_slps = []
         for aid in account_ids:
-            for rec in awaiting_by_account.get(aid, []):
+            for rec in slps_by_account.get(aid, []):
                 if rec["id"] not in seen_rec_ids:
                     seen_rec_ids.add(rec["id"])
-                    matching_slps.append(rec)
-        if not matching_slps:
-            print(f"[pandadoc-signed-sync] contact {cid} tagged but no SLP in "
-                  f"'Awaiting Dealer Agreement Signature' found for its account(s) {account_ids} — leaving tag, will retry")
-            untagged_only += 1
+                    related_slps.append(rec)
+        if not related_slps:
+            counts["no_slp"] += 1
             continue
 
+        matching_slps = []
+        for rec in related_slps:
+            fields = {f.get("id"): f.get("value") for f in rec.get("fields", [])}
+            if (fields.get("slp-status-detail") or "").strip() == "Awaiting Dealer Agreement Signature":
+                matching_slps.append(rec)
+        if not matching_slps:
+            counts["wrong_status"] += 1
+            continue
+
+        contact_transitioned = False
+        contact_transition_failed = False
         for rec in matching_slps:
-            dealer_id = next((f.get("value") for f in rec.get("fields", []) if f.get("id") == "dealer-id"), "")
             if PANDADOC_SIGNED_SYNC_DRY_RUN:
-                print(f"[pandadoc-signed-sync] DRY RUN would advance dealer {dealer_id} "
-                      f"(contact {cid}) -> Awaiting Training, then remove tag")
-                updated += 1
+                transitioned_ids.add(str(rec["id"]))
+                contact_transitioned = True
                 continue
             try:
-                raw_fields = list(rec.get("fields", []))
+                # Re-read the exact record before the write. A stale cache must
+                # never advance a record that another workflow already changed.
+                fresh = await ac_get(f"customObjects/records/{SLP_SCHEMA_ID}/{rec['id']}")
+                fresh_records = fresh.get("records") or []
+                fresh_rec = fresh.get("record") or (fresh_records[0] if fresh_records else None)
+                if not fresh_rec:
+                    raise RuntimeError("SLP record was not returned")
+                raw_fields = list(fresh_rec.get("fields", []))
+                current_status = next(
+                    ((f.get("value") or "").strip() for f in raw_fields if f.get("id") == "slp-status-detail"),
+                    "",
+                )
+                if current_status != "Awaiting Dealer Agreement Signature":
+                    counts["wrong_status"] += 1
+                    contact_transition_failed = True
+                    continue
                 for f in raw_fields:
                     if f.get("id") == "slp-status-detail":
                         f["value"] = "Awaiting Training"
                         break
                 payload = {"record": {"id": rec["id"], "fields": raw_fields,
-                                       "relationships": rec.get("relationships", {})}}
+                                       "relationships": fresh_rec.get("relationships", {})}}
                 await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
-                updated += 1
+                transitioned_ids.add(str(rec["id"]))
+                contact_transitioned = True
             except Exception as e:
-                errors += 1
-                print(f"[pandadoc-signed-sync] failed to advance dealer {dealer_id}: {e}")
+                counts["transition_failed"] += 1
+                contact_transition_failed = True
+                print(f"[pandadoc-signed-sync] scoped SLP transition failed: {type(e).__name__}")
                 continue
 
-        if not PANDADOC_SIGNED_SYNC_DRY_RUN:
+        if contact_transitioned and not contact_transition_failed and not PANDADOC_SIGNED_SYNC_DRY_RUN:
             try:
-                tag_assoc = await ac_get("contactTags", {"contact": cid, "tag": _pandadoc_signed_tag_id})
-                for assoc in tag_assoc.get("contactTags", []):
-                    await ac_delete(f"contactTags/{assoc['id']}")
+                # This path is scoped by both contact and tag in the URL; it can
+                # never delete another contact's tags or another tag on this contact.
+                await ac_delete(f"contacts/{cid}/tags/{_pandadoc_signed_tag_id}")
+                counts["tags_removed"] += 1
             except Exception as e:
-                print(f"[pandadoc-signed-sync] advanced dealer(s) but failed to remove tag from contact {cid}: {e}")
+                counts["tag_remove_failed"] += 1
+                print(f"[pandadoc-signed-sync] scoped tag removal failed: {type(e).__name__}")
 
-    if checked:
+    if counts["checked"]:
         mode = "DRY RUN — " if PANDADOC_SIGNED_SYNC_DRY_RUN else ""
-        print(f"[pandadoc-signed-sync] {mode}checked {checked} tagged contacts, "
-              f"{'would advance' if PANDADOC_SIGNED_SYNC_DRY_RUN else 'advanced'} {updated} SLP(s), "
-              f"{untagged_only} left tagged (no match yet), errors {errors}")
+        print(
+            f"[pandadoc-signed-sync] {mode}summary "
+            f"checked={counts['checked']} unique_slps_transitioned={len(transitioned_ids)} "
+            f"lookup_failed={counts['lookup_failed']} no_account={counts['no_account']} "
+            f"no_slp={counts['no_slp']} wrong_status={counts['wrong_status']} "
+            f"transition_failed={counts['transition_failed']} tags_removed={counts['tags_removed']} "
+            f"tag_remove_failed={counts['tag_remove_failed']} aborted={counts['aborted']}"
+        )
 
 async def _slp_cache_loop() -> None:
     """Background task: keep SLP cache warm, refreshing every 5 minutes.
@@ -1624,29 +1718,24 @@ def ac_url(path: str) -> str:
     return f"{AC_BASE_URL}/api/3/{path.lstrip('/')}"
 
 async def ac_get(path: str, params: dict = None):
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.get(ac_url(path), headers=HEADERS, params=params or {})
-        r.raise_for_status()
-        return r.json()
+    from ac_client import request_json
+    _, data = await request_json("GET", path, params=params)
+    return data
 
 async def ac_post(path: str, body: dict):
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(ac_url(path), headers=HEADERS, json=body)
-        if not r.is_success:
-            raise Exception(f"HTTP {r.status_code} {r.text[:300]}")
-        return r.json()
+    from ac_client import request_json
+    _, data = await request_json("POST", path, body=body)
+    return data
 
 async def ac_put(path: str, body: dict):
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.put(ac_url(path), headers=HEADERS, json=body)
-        if not r.is_success:
-            raise Exception(f"HTTP {r.status_code} {r.text[:300]}")
-        return r.json()
+    from ac_client import request_json
+    _, data = await request_json("PUT", path, body=body)
+    return data
 
 async def ac_delete(path: str) -> int:
-    async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.delete(ac_url(path), headers=HEADERS)
-        return r.status_code
+    from ac_client import request_json
+    status, _ = await request_json("DELETE", path)
+    return status
 
 async def ac_get_all(path: str, key: str, params: dict = None) -> list:
     """Paginate through all records, deduplicating by id.
@@ -10581,13 +10670,23 @@ async def am_last_contacted(user=Depends(require_auth)):
     Served from in-memory cache (refreshes every 30 min). If cache is empty
     (e.g. first minute after deploy) triggers a background build and returns empty.
     """
-    if not _lc_cache:
+    if not _lc_cache and not _lc_cache_refreshing:
         asyncio.create_task(_refresh_lc_cache())
     age = int(_time.time() - _lc_cache_ts) if _lc_cache_ts else None
     # Flatten to {aid: date} and {aid: type} for frontend
     dates = {aid: v["date"] for aid, v in _lc_cache.items()}
     types = {aid: v["type"] for aid, v in _lc_cache.items()}
-    return {"last_contacted": dates, "last_contacted_type": types, "cache_age_seconds": age}
+    return {
+        "last_contacted": dates,
+        "last_contacted_type": types,
+        "cache_age_seconds": age,
+        "stale": bool(_lc_cache_last_error),
+        "partial": False,
+        "refreshing": _lc_cache_refreshing,
+        "refresh_error_sources": [
+            name for name, state in _lc_cache_source_status.items() if not state.get("ok")
+        ],
+    }
 
 
 # ── Verdata Active Report ─────────────────────────────────────────────────────
