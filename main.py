@@ -495,7 +495,7 @@ async def _startup():
     asyncio.create_task(_slp_cache_loop())  # waits 90s, then fetches SLPs and kicks off location/state indexes
     asyncio.create_task(_lc_cache_loop())   # waits 90s then builds last-contacted cache
     asyncio.create_task(_ta_cache_loop())   # waits 90s then caches raw notes+activity for team report
-    asyncio.create_task(_license_deactivation_loop())  # waits 330s, then runs daily license-expiration tagging
+    asyncio.create_task(_license_deactivation_loop())  # daily license-expiration tagging; never replay immediately after deploy
     _load_schedules_from_disk()
     _scheduler.start()
     print(f"[scheduler] Started with {len(_schedules)} job(s)")
@@ -8606,9 +8606,12 @@ async def _run_license_expiration_tagging() -> dict:
 
 
 async def _license_deactivation_loop() -> None:
-    """Background task: run the tagging pass once a day. Staggered like the
-    other startup loops so it doesn't compete with cache warming."""
-    await asyncio.sleep(330)
+    """Background task: run the tagging pass once a day.
+
+    Wait a full interval before the first pass so a deploy/restart cannot replay
+    contact writes shortly after a completed run.
+    """
+    await asyncio.sleep(86400)
     while True:
         try:
             await _run_license_expiration_tagging()
