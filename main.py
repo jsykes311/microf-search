@@ -13,6 +13,7 @@ import csv
 import io
 import asyncio
 import secrets
+import hashlib
 import time as _time
 import base64
 import urllib.parse
@@ -8399,10 +8400,9 @@ async def optimus_reactivate_confirm(
 # contractor-facing tags/automations: see /api/report/license-expiration
 # with platform filters for that half).
 #
-# Design: this job only ever APPLIES tags. The actual contractor emails are
-# owned by AC Automations triggered off each tag (same pattern as the
-# welcome-{channel}/resend-{channel} tags above) — those automations must be
-# built in AC directly; this code can't create them.
+# Design: this job only ever APPLIES tags. It does not enroll contacts or send
+# messages. Any future ActiveCampaign automation using these tags must be built
+# and reviewed in ActiveCampaign separately.
 #
 # Thresholds (days until expiration; today = 0):
 #   30 days out  → LICENSE_TAG_30    (reminder email #1)
@@ -8438,24 +8438,64 @@ def _license_bucket(days_until: int) -> Optional[str]:
     return None
 
 
-async def _contact_has_tag(contact_id: str, tag_id: str) -> bool:
-    try:
-        d = await ac_get(f"contacts/{contact_id}/contactTags")
-        return any(str(t.get("tag")) == str(tag_id) for t in d.get("contactTags", []))
-    except Exception:
-        return False
+_TAG_ALREADY_PRESENT    = "already_present"
+_TAG_APPLIED            = "newly_applied"
+_TAG_APPLIED_RECONCILED = "applied_reconciled"
+_TAG_PRECHECK_FAILED    = "precheck_failed"
+_TAG_WRITE_FAILED       = "write_failed"
+_TAG_WRITE_UNCERTAIN    = "write_uncertain"
 
 
-async def _apply_tag_if_missing(contact_id: str, tag_id: str) -> bool:
-    """Returns True if the tag was newly applied, False if it was already there or the call failed."""
-    if await _contact_has_tag(contact_id, tag_id):
-        return False
+def _license_contact_ref(contact_id: str) -> str:
+    """Stable opaque log reference; never log contact data here."""
+    return hashlib.sha256(str(contact_id).encode("utf-8")).hexdigest()[:12]
+
+
+async def _contact_tag_state(contact_id: str, tag_id: str) -> str:
+    """Return present/absent/read_failed after checking every tag page."""
     try:
-        s, _r = await ac_post("contactTags", {"contactTag": {"contact": contact_id, "tag": tag_id}})
-        return s in (200, 201)
-    except Exception as e:
-        print(f"[license-deact] tag apply failed for contact {contact_id}: {e}")
-        return False
+        tags = await ac_get_all(f"contacts/{contact_id}/contactTags", "contactTags", {})
+        return "present" if any(str(t.get("tag")) == str(tag_id) for t in tags) else "absent"
+    except Exception as exc:
+        print(f"[license-deact] tag precheck failed ref={_license_contact_ref(contact_id)} "
+              f"tag={tag_id} error={type(exc).__name__}")
+        return "read_failed"
+
+
+async def _reconcile_uncertain_tag_write(contact_id: str, tag_id: str, reason: str) -> str:
+    """Resolve an uncertain POST once, without issuing a second write."""
+    state = await _contact_tag_state(contact_id, tag_id)
+    ref = _license_contact_ref(contact_id)
+    if state == "present":
+        print(f"[license-deact] tag write reconciled ref={ref} tag={tag_id} reason={reason}")
+        return _TAG_APPLIED_RECONCILED
+    if state == "absent":
+        print(f"[license-deact] tag write failed ref={ref} tag={tag_id} reason={reason}")
+        return _TAG_WRITE_FAILED
+    print(f"[license-deact] tag write uncertain ref={ref} tag={tag_id} reason={reason}")
+    return _TAG_WRITE_UNCERTAIN
+
+
+async def _apply_tag_if_missing(contact_id: str, tag_id: str) -> str:
+    """Apply one tag idempotently and return an explicit, countable outcome."""
+    state = await _contact_tag_state(contact_id, tag_id)
+    if state == "present":
+        return _TAG_ALREADY_PRESENT
+    if state == "read_failed":
+        return _TAG_PRECHECK_FAILED
+
+    try:
+        response = await ac_post("contactTags", {"contactTag": {"contact": contact_id, "tag": tag_id}})
+    except Exception as exc:
+        return await _reconcile_uncertain_tag_write(contact_id, tag_id, f"post_{type(exc).__name__}")
+
+    association = response.get("contactTag") if isinstance(response, dict) else None
+    if (isinstance(association, dict)
+            and str(association.get("contact")) == str(contact_id)
+            and str(association.get("tag")) == str(tag_id)):
+        return _TAG_APPLIED
+
+    return await _reconcile_uncertain_tag_write(contact_id, tag_id, "unexpected_post_response")
 
 
 async def _license_expiration_candidates() -> list:
@@ -8537,15 +8577,29 @@ async def _run_license_expiration_tagging() -> dict:
             print(f"[license-deact] WARNING: tag '{name}' does not exist in AC — skipping that bucket")
         tag_ids[name] = tid
 
-    summary = {name: {"matched_accounts": 0, "newly_tagged_contacts": 0} for name in tag_ids}
+    outcome_keys = (
+        _TAG_ALREADY_PRESENT, _TAG_APPLIED, _TAG_APPLIED_RECONCILED,
+        _TAG_PRECHECK_FAILED, _TAG_WRITE_FAILED, _TAG_WRITE_UNCERTAIN,
+    )
+    summary = {
+        name: {"matched_accounts": 0, "contacts_considered": 0,
+               **{outcome: 0 for outcome in outcome_keys}}
+        for name in tag_ids
+    }
+    processed = set()
     for c in candidates:
         bucket = c["bucket"]
         if not bucket or not tag_ids.get(bucket):
             continue
         summary[bucket]["matched_accounts"] += 1
         for cid in c["contact_ids"]:
-            if await _apply_tag_if_missing(cid, tag_ids[bucket]):
-                summary[bucket]["newly_tagged_contacts"] += 1
+            operation = (str(cid), str(tag_ids[bucket]))
+            if operation in processed:
+                continue
+            processed.add(operation)
+            summary[bucket]["contacts_considered"] += 1
+            outcome = await _apply_tag_if_missing(*operation)
+            summary[bucket][outcome] += 1
 
     print(f"[license-deact] tagging complete: {summary}")
     return {"ran_at": datetime.utcnow().isoformat(), "candidates_scanned": len(candidates), "summary": summary}
@@ -8646,7 +8700,8 @@ async def license_deactivations_deactivate_confirm(
                 await ac_post(f"customObjects/records/{SLP_SCHEMA_ID}", payload)
 
             for cid in acct_to_contacts.get(acct_id, []):
-                if await _apply_tag_if_missing(cid, tag_id):
+                outcome = await _apply_tag_if_missing(cid, tag_id)
+                if outcome in (_TAG_APPLIED, _TAG_APPLIED_RECONCILED):
                     results["tagged_contacts"].append(cid)
 
             note_payload = {
