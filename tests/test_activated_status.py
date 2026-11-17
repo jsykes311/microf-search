@@ -47,5 +47,26 @@ class ActivatedStatus(unittest.TestCase):
         self.assertEqual(left, [], "use _is_activated() instead of comparing to the old spelling")
 
 
+class StatusList(unittest.TestCase):
+    REMOVED = ["Declined by Onboarding", "Declined by Lender", "Deactivated for Dormancy", "Deactivated w/ Cause",
+               "Account on Hold (Suspended)", "Being Reviewed By Ops Manager", "On Hold", "Pending Lender Training",
+               "Pending - Training Not Completed", "Waiting_on_BDR_Approval", "Pending - Lender ID Verification"]
+
+    def statuses(self):
+        for node in ast.parse(SRC).body:
+            if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "_SLP_STATUSES":
+                return ast.literal_eval(node.value)
+        self.fail("_SLP_STATUSES not found")
+
+    def test_matches_the_cleaned_up_dropdown(self):
+        got = self.statuses()
+        self.assertEqual(len(got), len(set(got)))
+        for removed in self.REMOVED:
+            self.assertNotIn(removed, got)
+        for kept in ("Activated", "Deactivated - Fraud", "Not Active", "Pre-activation", "Declined",
+                     "Contractor Activated", "Not Started"):
+            self.assertIn(kept, got)
+
+
 if __name__ == "__main__":
     unittest.main()
