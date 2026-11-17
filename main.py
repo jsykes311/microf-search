@@ -17,7 +17,7 @@ import hashlib
 import time as _time
 import base64
 import urllib.parse
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from dotenv import load_dotenv
 import json
 import io as _io
@@ -8445,6 +8445,43 @@ _TAG_PRECHECK_FAILED    = "precheck_failed"
 _TAG_WRITE_FAILED       = "write_failed"
 _TAG_WRITE_UNCERTAIN    = "write_uncertain"
 
+# Only one license-tagging pass may run in this process.  The manual endpoint
+# and the daily loop share this task so a slow ActiveCampaign run cannot be
+# duplicated.  On Render, the small PII-free checkpoint lives on the persistent
+# disk and survives an OOM/restart for later reconciliation.
+_license_tagging_task: Optional[asyncio.Task] = None
+_license_tagging_state: dict = {}
+_LICENSE_TAGGING_STATE_FILE = os.getenv(
+    "LICENSE_TAGGING_STATE_FILE",
+    "/var/data/license_tagging_state.json" if _ON_RENDER else "",
+)
+
+
+def _save_license_tagging_state(state: dict) -> None:
+    """Atomically persist counters only; never write contact/account data."""
+    global _license_tagging_state
+    _license_tagging_state = dict(state)
+    if not _LICENSE_TAGGING_STATE_FILE:
+        return
+    directory = os.path.dirname(_LICENSE_TAGGING_STATE_FILE) or "."
+    tmp_path = ""
+    try:
+        os.makedirs(directory, exist_ok=True)
+        with _tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=directory,
+            prefix=".license-tagging-", suffix=".tmp", delete=False,
+        ) as handle:
+            tmp_path = handle.name
+            json.dump(_license_tagging_state, handle, indent=2, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, _LICENSE_TAGGING_STATE_FILE)
+    except Exception as exc:
+        print(f"[license-deact] checkpoint write failed: {type(exc).__name__}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
 
 def _license_contact_ref(contact_id: str) -> str:
     """Stable opaque log reference; never log contact data here."""
@@ -8523,12 +8560,6 @@ async def _license_expiration_candidates() -> list:
         for aid in rec.get("relationships", {}).get("account", []):
             acct_qualifies[str(aid)] = True
 
-    # Bulk-fetch accountContacts once instead of one call per account.
-    all_links = await ac_get_all("accountContacts", "accountContacts", {"limit": 100})
-    acct_to_contacts: dict = defaultdict(list)
-    for link in all_links:
-        acct_to_contacts[str(link.get("account"))].append(str(link.get("contact")))
-
     out = []
     for r in lic_records:
         fields = {fo["id"]: fo.get("value", "") for fo in r.get("fields", [])}
@@ -8558,51 +8589,114 @@ async def _license_expiration_candidates() -> list:
             "days_until":   days_until,
             "bucket":       _license_bucket(days_until),
             "deactivate_ready": days_until <= -30,
-            "contact_ids":  acct_to_contacts.get(acct_id, []),
+            "contact_ids":  [],
             "state_of_issue": fields.get("state-of-issue", ""),
         })
+
+    # Fetch relationships only for accounts that actually have a qualifying
+    # license row.  The previous unfiltered read materialized every account-
+    # contact relationship twice (the raw list and a grouped copy), adding
+    # hundreds of MB to an already cache-heavy process.  Validate the server-
+    # side filter so a bad AC response can never cross client/account scope.
+    acct_to_contacts: dict[str, list[str]] = {}
+    for acct_id in sorted({row["account_id"] for row in out}):
+        links = await ac_get_all(
+            "accountContacts", "accountContacts",
+            {"filters[account]": acct_id, "orders[id]": "ASC"},
+        )
+        if any(str(link.get("account")) != acct_id for link in links):
+            raise RuntimeError("ActiveCampaign returned an unscoped account-contact result")
+        acct_to_contacts[acct_id] = list(dict.fromkeys(
+            str(link.get("contact")) for link in links if link.get("contact")
+        ))
+    for row in out:
+        row["contact_ids"] = acct_to_contacts.get(row["account_id"], [])
     return out
 
 
-async def _run_license_expiration_tagging() -> dict:
+async def _run_license_expiration_tagging_once() -> dict:
     """The scheduled/manually-triggered job: tags every contact on every
     qualifying account per its current bucket. Idempotent — see module docstring."""
-    print("[license-deact] Running license expiration tagging…")
-    candidates = await _license_expiration_candidates()
+    run_id = _uuid.uuid4().hex[:12]
+    started_at = datetime.now(timezone.utc).isoformat()
+    state = {"run_id": run_id, "status": "running", "started_at": started_at,
+             "phase": "loading_candidates", "operations_completed": 0}
+    _save_license_tagging_state(state)
+    print(f"[license-deact] run={run_id} starting")
 
-    tag_ids = {}
-    for name in (LICENSE_TAG_30, LICENSE_TAG_15, LICENSE_TAG_CALL, LICENSE_TAG_GRACE):
-        tid = await _get_tag_id(name)
-        if not tid:
-            print(f"[license-deact] WARNING: tag '{name}' does not exist in AC — skipping that bucket")
-        tag_ids[name] = tid
+    try:
+        candidates = await _license_expiration_candidates()
+        state.update({"phase": "resolving_tags", "candidates_scanned": len(candidates)})
+        _save_license_tagging_state(state)
 
-    outcome_keys = (
-        _TAG_ALREADY_PRESENT, _TAG_APPLIED, _TAG_APPLIED_RECONCILED,
-        _TAG_PRECHECK_FAILED, _TAG_WRITE_FAILED, _TAG_WRITE_UNCERTAIN,
-    )
-    summary = {
-        name: {"matched_accounts": 0, "contacts_considered": 0,
-               **{outcome: 0 for outcome in outcome_keys}}
-        for name in tag_ids
-    }
-    processed = set()
-    for c in candidates:
-        bucket = c["bucket"]
-        if not bucket or not tag_ids.get(bucket):
-            continue
-        summary[bucket]["matched_accounts"] += 1
-        for cid in c["contact_ids"]:
-            operation = (str(cid), str(tag_ids[bucket]))
-            if operation in processed:
+        tag_ids = {}
+        for name in (LICENSE_TAG_30, LICENSE_TAG_15, LICENSE_TAG_CALL, LICENSE_TAG_GRACE):
+            tid = await _get_tag_id(name)
+            if not tid:
+                print(f"[license-deact] WARNING: tag '{name}' does not exist in AC — skipping that bucket")
+            tag_ids[name] = tid
+
+        outcome_keys = (
+            _TAG_ALREADY_PRESENT, _TAG_APPLIED, _TAG_APPLIED_RECONCILED,
+            _TAG_PRECHECK_FAILED, _TAG_WRITE_FAILED, _TAG_WRITE_UNCERTAIN,
+        )
+        summary = {
+            name: {"matched_accounts": 0, "contacts_considered": 0,
+                   **{outcome: 0 for outcome in outcome_keys}}
+            for name in tag_ids
+        }
+        state.update({"phase": "tagging", "summary": summary})
+        _save_license_tagging_state(state)
+        processed = set()
+        for c in candidates:
+            bucket = c["bucket"]
+            if not bucket or not tag_ids.get(bucket):
                 continue
-            processed.add(operation)
-            summary[bucket]["contacts_considered"] += 1
-            outcome = await _apply_tag_if_missing(*operation)
-            summary[bucket][outcome] += 1
+            summary[bucket]["matched_accounts"] += 1
+            for cid in c["contact_ids"]:
+                operation = (str(cid), str(tag_ids[bucket]))
+                if operation in processed:
+                    continue
+                processed.add(operation)
+                summary[bucket]["contacts_considered"] += 1
+                outcome = await _apply_tag_if_missing(*operation)
+                summary[bucket][outcome] += 1
+                state["operations_completed"] = len(processed)
+                if len(processed) % 25 == 0:
+                    _save_license_tagging_state(state)
 
-    print(f"[license-deact] tagging complete: {summary}")
-    return {"ran_at": datetime.utcnow().isoformat(), "candidates_scanned": len(candidates), "summary": summary}
+        completed_at = datetime.now(timezone.utc).isoformat()
+        state.update({"status": "completed", "phase": "complete",
+                      "completed_at": completed_at, "summary": summary})
+        _save_license_tagging_state(state)
+        print(f"[license-deact] run={run_id} tagging complete: {summary}")
+        return {"run_id": run_id, "status": "completed", "ran_at": completed_at,
+                "candidates_scanned": len(candidates), "summary": summary}
+    except BaseException as exc:
+        state.update({"status": "interrupted" if isinstance(exc, asyncio.CancelledError) else "failed",
+                      "phase": "stopped", "stopped_at": datetime.now(timezone.utc).isoformat(),
+                      "error_type": type(exc).__name__})
+        _save_license_tagging_state(state)
+        print(f"[license-deact] run={run_id} stopped error={type(exc).__name__}")
+        raise
+
+
+async def _run_license_expiration_tagging() -> dict:
+    """Start one pass, or report the existing pass without starting another."""
+    global _license_tagging_task
+    if _license_tagging_task is not None and not _license_tagging_task.done():
+        print("[license-deact] tagging request skipped; a run is already in progress")
+        return {"status": "already_running", "run_id": _license_tagging_state.get("run_id"),
+                "phase": _license_tagging_state.get("phase"),
+                "operations_completed": _license_tagging_state.get("operations_completed", 0)}
+
+    task = asyncio.create_task(_run_license_expiration_tagging_once())
+    _license_tagging_task = task
+    try:
+        return await task
+    finally:
+        if _license_tagging_task is task:
+            _license_tagging_task = None
 
 
 async def _license_deactivation_loop() -> None:
