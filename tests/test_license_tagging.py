@@ -1,6 +1,8 @@
 """Mocked regression tests for license-tag writes; no app or network is started."""
 import sys
+import asyncio
 import unittest
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -88,6 +90,75 @@ class LicenseTagSummaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary[main._TAG_APPLIED], 1)
         self.assertEqual(summary[main._TAG_WRITE_UNCERTAIN], 1)
         self.assertEqual(apply_mock.await_count, 3)
+
+    async def test_second_run_is_skipped_while_first_is_active(self):
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_run():
+            started.set()
+            await release.wait()
+            return {"status": "completed"}
+
+        main._license_tagging_task = None
+        main._license_tagging_state = {"run_id": "active", "phase": "tagging",
+                                       "operations_completed": 7}
+        with patch.object(main, "_run_license_expiration_tagging_once", AsyncMock(side_effect=slow_run)) as once:
+            first = asyncio.create_task(main._run_license_expiration_tagging())
+            await started.wait()
+            duplicate = await main._run_license_expiration_tagging()
+            release.set()
+            completed = await first
+
+        self.assertEqual(completed["status"], "completed")
+        self.assertEqual(duplicate, {"status": "already_running", "run_id": "active",
+                                     "phase": "tagging", "operations_completed": 7})
+        self.assertEqual(once.await_count, 1)
+        self.assertIsNone(main._license_tagging_task)
+
+
+class LicenseCandidateScopeTests(unittest.IsolatedAsyncioTestCase):
+    def _license(self, account="77"):
+        expiration = (date.today() + timedelta(days=30)).isoformat()
+        return {"id": "lic-1", "fields": [{"id": "expiration-date", "value": expiration}],
+                "relationships": {"account": [account]}}
+
+    def _slp(self, account="77"):
+        return {"id": "slp-1", "fields": [
+            {"id": "channel", "value": main._LICENSE_DEACT_CHANNEL},
+            {"id": "slp-status-detail", "value": "Activated"},
+        ], "relationships": {"account": [account]}}
+
+    async def test_fetches_contacts_only_for_qualifying_accounts(self):
+        calls = []
+
+        async def get_all(path, key, params=None):
+            calls.append((path, params or {}))
+            if path.startswith("customObjects/records/"):
+                return [self._license()]
+            self.assertEqual(path, "accountContacts")
+            self.assertEqual((params or {}).get("filters[account]"), "77")
+            return [{"id": "1", "account": "77", "contact": "10"},
+                    {"id": "2", "account": "77", "contact": "10"},
+                    {"id": "3", "account": "77", "contact": "11"}]
+
+        with patch.object(main, "ac_get_all", AsyncMock(side_effect=get_all)), \
+             patch.object(main, "get_slp_cache", AsyncMock(return_value=[self._slp()])):
+            rows = await main._license_expiration_candidates()
+
+        self.assertEqual(rows[0]["contact_ids"], ["10", "11"])
+        self.assertEqual(len([c for c in calls if c[0] == "accountContacts"]), 1)
+
+    async def test_rejects_unscoped_account_contact_results(self):
+        async def get_all(path, key, params=None):
+            if path.startswith("customObjects/records/"):
+                return [self._license()]
+            return [{"id": "1", "account": "other-client", "contact": "10"}]
+
+        with patch.object(main, "ac_get_all", AsyncMock(side_effect=get_all)), \
+             patch.object(main, "get_slp_cache", AsyncMock(return_value=[self._slp()])):
+            with self.assertRaisesRegex(RuntimeError, "unscoped"):
+                await main._license_expiration_candidates()
 
 
 if __name__ == "__main__":
